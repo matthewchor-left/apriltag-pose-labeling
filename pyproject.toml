@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paddle-apriltag"
+version = "0.1.0"
+description = "AprilTag-based table tennis paddle pose estimation"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "opencv-python>=4.8",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+viz = ["matplotlib>=3.7"]
+
+[project.scripts]
+paddle-detect = "paddle_apriltag.cli.detect:main"
+paddle-calibrate-layout = "paddle_apriltag.cli.calibrate_layout:main"
+paddle-calibrate-camera = "paddle_apriltag.cli.calibrate_camera:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.uv]
+package = true

@@ -1,0 +1,25 @@
+{
+  "units": "meters",
+  "coordinate_frame": {
+    "origin": "bottom (blade/handle junction)",
+    "x_axis": "left -> right",
+    "y_axis": "top -> bottom (blade tip)",
+    "z_axis": "out of rubber surface"
+  },
+  "keypoints": {
+    "top": [0.0, 0.154, 0.0],
+    "left": [-0.0755, 0.077, 0.0],
+    "bottom": [0.0, 0.0, 0.0],
+    "handle": [0.0, -0.103, 0.0],
+    "right": [0.0755, 0.077, 0.0]
+  },
+  "skeleton": [
+    ["top", "left"],
+    ["top", "right"],
+    ["bottom", "left"],
+    ["bottom", "right"],
+    ["bottom", "handle"],
+    ["bottom", "top"],
+    ["left", "right"]
+  ]
+}
