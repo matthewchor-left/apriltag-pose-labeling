@@ -18,7 +18,32 @@ Core only (no matplotlib):
 uv sync
 ```
 
-## 1. Calibrate camera (chessboard pattern)
+## 1. Configure paddle geometry
+
+Before running detection, edit the JSON files in `calibration/` to match **your** paddle and sticker placement.
+
+### `calibration/marker_layout.json` (required)
+
+Defines where each AprilTag sits on the paddle. The detector reads this to fuse multi-marker pose.
+
+- Set `marker_size_m` to the physical sticker side length in meters.
+- For each marker id, set all four corners (`top_left`, `top_right`, `bottom_right`, `bottom_left`) as `[x, y, z]` in the layout frame (see [Coordinate frames](#coordinate-frames) below).
+- Set `reference_marker_id` to the marker whose center is the paddle origin (default: `0`, front rubber).
+
+Validate the layout after editing:
+
+```bash
+uv run paddle-calibrate-layout --visualize
+```
+
+### `calibration/paddle_model.json` (visualization only)
+
+Defines skeleton keypoints and edges drawn when using `--visualize` or `--plot-graph`. Not used by the core `PaddleDetector` API.
+
+- Update `keypoints` to your paddle landmarks in meters (origin at `bottom`).
+- Update `skeleton` with `[start, end]` pairs between keypoint names.
+
+## 2. Calibrate camera (chessboard pattern)
 
 ```bash
 uv run paddle-calibrate-camera --save-board calibration/calibration_board.png
@@ -27,10 +52,10 @@ uv run paddle-calibrate-camera --save-board calibration/calibration_board.png
 - **Space** — capture a frame when enough corners are detected
 - **q** — finish and save `calibration/camera_calibration.json`
 
-## 2. Detect paddle pose
+## 3. Detect paddle pose
 
 ```bash
-uv run paddle-detect --camera 2 --calibration calibration/camera_calibration.json --visualize
+uv run paddle-detect --camera 0 --calibration calibration/camera_calibration.json --visualize
 ```
 
 Press **q** to quit.
@@ -49,7 +74,7 @@ detector = PaddleDetector(
     marker_layout="calibration/marker_layout.json",
 )
 
-cap = cv2.VideoCapture(2)
+cap = cv2.VideoCapture(0)
 ok, frame = cap.read()
 pose = detector.detect(frame)  # PaddlePose(origin, rotation) or None
 ```

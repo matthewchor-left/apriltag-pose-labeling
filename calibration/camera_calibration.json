@@ -1,21 +1,21 @@
 {
-  "calibration_source": "charuco",
+  "calibration_source": "calibration_board",
   "image_size": [
-    1920,
-    1080
+    1280,
+    720
   ],
-  "image_width": 1920,
-  "image_height": 1080,
+  "image_width": 1280,
+  "image_height": 720,
   "camera_matrix": [
     [
-      1415.5349338431581,
+      980.6517361194749,
       0.0,
-      956.3697816386788
+      626.4316574899233
     ],
     [
       0.0,
-      1413.6584485332214,
-      544.0584533738516
+      980.9406887529823,
+      354.328836439579
     ],
     [
       0.0,
@@ -24,19 +24,19 @@
     ]
   ],
   "dist_coeffs": [
-    -0.11137394247411586,
-    0.6749844465829633,
-    0.00036183058803984793,
-    -0.000260770019016022,
-    -1.1726847536254932
+    0.0014000649555844249,
+    -0.03483276825848834,
+    -0.002714132372708007,
+    -0.002692935301945114,
+    0.10295544738241925
   ],
-  "mean_reprojection_error_px": 0.6788550575980208,
+  "mean_reprojection_error_px": 0.2244223810211101,
   "squares_x": 10,
   "squares_y": 7,
   "inner_corners_x": 10,
   "inner_corners_y": 7,
-  "square_size": 0.024,
-  "marker_size": 0.018000000000000002,
+  "square_size": 0.028,
+  "marker_size": 0.021,
   "dictionary": "4x4_50",
-  "captured_frames": 24
+  "captured_frames": 13
 }
