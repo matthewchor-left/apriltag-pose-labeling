@@ -1,4 +1,4 @@
-"""Live AprilTag eraser: paste a captured background plate over detected markers."""
+"""Live AprilTag eraser: paste a background plate over the projected layout bounds."""
 
 from __future__ import annotations
 
@@ -10,27 +10,88 @@ import numpy as np
 
 from paddle_apriltag.apriltag import DEFAULT_APRILTAG_DICTIONARY
 from paddle_apriltag.calibration import DEFAULT_CALIBRATION_PATH, load_intrinsics
-from paddle_apriltag.detector import PaddleDetector
-from paddle_apriltag.layout import DEFAULT_MARKER_LAYOUT_PATH
-from paddle_apriltag.pose import Detection
-from paddle_apriltag.viz import draw_marker_annotations
+from paddle_apriltag.detector import PaddleDetector, PaddlePose
+from paddle_apriltag.layout import DEFAULT_MARKER_LAYOUT_PATH, MarkerLayout, layout_axis_limits, layout_point_to_camera
+from paddle_apriltag.viz.projection import project_camera_point
 
 
-def erase_markers(
+def layout_bounds_corners(layout: MarkerLayout, padding_m: float) -> np.ndarray:
+    xmin, xmax, ymin, ymax, zmin, zmax = layout_axis_limits(layout, padding_m=padding_m)
+    return np.array(
+        [
+            [xmin, ymin, zmin],
+            [xmax, ymin, zmin],
+            [xmax, ymax, zmin],
+            [xmin, ymax, zmin],
+            [xmin, ymin, zmax],
+            [xmax, ymin, zmax],
+            [xmax, ymax, zmax],
+            [xmin, ymax, zmax],
+        ],
+        dtype=np.float64,
+    )
+
+
+def project_layout_bounds_hull(
+    paddle_rotation: np.ndarray,
+    paddle_origin: np.ndarray,
+    layout: MarkerLayout,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+    *,
+    bounds_padding_m: float,
+    image_width: int,
+    image_height: int,
+) -> np.ndarray | None:
+    image_points: list[np.ndarray] = []
+    for corner in layout_bounds_corners(layout, bounds_padding_m):
+        camera_point = layout_point_to_camera(corner, paddle_rotation, paddle_origin, layout)
+        if camera_point[2] <= 0.0:
+            continue
+        projected = project_camera_point(camera_point, camera_matrix, dist_coeffs)
+        if not (np.isfinite(projected[0]) and np.isfinite(projected[1])):
+            continue
+        if not (0.0 <= projected[0] < image_width and 0.0 <= projected[1] < image_height):
+            continue
+        image_points.append(projected)
+
+    if len(image_points) < 3:
+        return None
+
+    points = np.asarray(image_points, dtype=np.float32).reshape(-1, 1, 2)
+    return cv2.convexHull(points).reshape(-1, 2)
+
+
+def erase_with_hull(
     frame: np.ndarray,
     plate: np.ndarray,
-    detections: list[Detection],
+    hull: np.ndarray | None,
 ) -> np.ndarray:
     if plate.shape != frame.shape:
         raise ValueError("Background plate must match the frame shape.")
+    if hull is None:
+        return frame.copy()
 
+    mask = np.zeros(frame.shape[:2], dtype=np.uint8)
+    hull_int = np.round(hull).astype(np.int32)
+    cv2.fillConvexPoly(mask, hull_int, 255)
     output = frame.copy()
-    for corners, _marker_id in detections:
-        mask = np.zeros(frame.shape[:2], dtype=np.uint8)
-        pts = corners.reshape(4, 2).astype(np.int32)
-        cv2.fillConvexPoly(mask, pts, 255)
-        output[mask > 0] = plate[mask > 0]
+    output[mask > 0] = plate[mask > 0]
     return output
+
+
+def draw_bounds_hull(frame: np.ndarray, hull: np.ndarray | None) -> None:
+    if hull is None:
+        return
+    hull_int = np.round(hull).astype(np.int32)
+    cv2.polylines(
+        frame,
+        [hull_int],
+        isClosed=True,
+        color=(0, 255, 255),
+        thickness=2,
+        lineType=cv2.LINE_AA,
+    )
 
 
 def open_camera(camera_index: int, width: int, height: int) -> cv2.VideoCapture:
@@ -42,7 +103,7 @@ def open_camera(camera_index: int, width: int, height: int) -> cv2.VideoCapture:
     return capture
 
 
-def draw_status_hud(frame: np.ndarray, *, plate_captured: bool) -> None:
+def draw_status_hud(frame: np.ndarray, *, plate_captured: bool, bounds_padding_m: float) -> None:
     status = "plate: captured (erasing)" if plate_captured else "plate: none (press C to capture)"
     cv2.putText(
         frame,
@@ -56,8 +117,18 @@ def draw_status_hud(frame: np.ndarray, *, plate_captured: bool) -> None:
     )
     cv2.putText(
         frame,
-        "C capture plate | q quit",
+        f"bounds padding: {bounds_padding_m:.3f} m",
         (10, 60),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        (220, 220, 220),
+        1,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        frame,
+        "C capture plate | q quit",
+        (10, 90),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.6,
         (220, 220, 220),
@@ -66,8 +137,34 @@ def draw_status_hud(frame: np.ndarray, *, plate_captured: bool) -> None:
     )
 
 
+def erase_layout_bounds(
+    frame: np.ndarray,
+    plate: np.ndarray,
+    pose: PaddlePose,
+    layout: MarkerLayout,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+    *,
+    bounds_padding_m: float,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    height, width = frame.shape[:2]
+    hull = project_layout_bounds_hull(
+        pose.rotation,
+        pose.origin,
+        layout,
+        camera_matrix,
+        dist_coeffs,
+        bounds_padding_m=bounds_padding_m,
+        image_width=width,
+        image_height=height,
+    )
+    return erase_with_hull(frame, plate, hull), hull
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Erase AprilTag markers using a captured background plate.")
+    parser = argparse.ArgumentParser(
+        description="Erase AprilTag marker regions using a projected layout-bounds mask.",
+    )
     parser.add_argument("--camera", type=int, default=0)
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
@@ -76,8 +173,16 @@ def main() -> None:
     parser.add_argument("--dictionary", default=DEFAULT_APRILTAG_DICTIONARY)
     parser.add_argument("--marker-size", type=float, default=None)
     parser.add_argument("--marker-layout", type=Path, default=DEFAULT_MARKER_LAYOUT_PATH)
+    parser.add_argument(
+        "--bounds-padding",
+        type=float,
+        default=0.02,
+        help="Padding around layout marker bounds, in meters",
+    )
     args = parser.parse_args()
 
+    if args.bounds_padding < 0.0:
+        raise RuntimeError("--bounds-padding must be non-negative.")
     if not args.calibration.exists():
         raise RuntimeError(f"Calibration file not found: {args.calibration}")
     if not args.marker_layout.exists():
@@ -97,6 +202,7 @@ def main() -> None:
 
     print(f"Using marker layout: {args.marker_layout} ({len(layout.marker_ids)} markers)")
     print(f"Marker size: {marker_size_m:.4f} m")
+    print(f"Layout bounds padding: {args.bounds_padding:.4f} m")
     print(f"Using camera calibration: {args.calibration}")
     if calibration_source:
         print(f"Calibration source: {calibration_source}")
@@ -114,20 +220,22 @@ def main() -> None:
 
         detections = detector.find_markers(frame)
         preview = frame.copy()
+        hull: np.ndarray | None = None
         if background_plate is not None:
-            preview = erase_markers(preview, background_plate, detections)
-            for corners, marker_id in detections:
-                draw_marker_annotations(
+            pose = detector.fuse(detections)
+            if pose is not None:
+                preview, hull = erase_layout_bounds(
                     preview,
-                    corners,
-                    marker_id,
-                    marker_size_m,
+                    background_plate,
+                    pose,
+                    layout,
                     camera_matrix,
                     dist_coeffs,
-                    layout,
-                    draw=True,
+                    bounds_padding_m=args.bounds_padding,
                 )
-        draw_status_hud(preview, plate_captured=background_plate is not None)
+            draw_bounds_hull(preview, hull)
+
+        draw_status_hud(preview, plate_captured=background_plate is not None, bounds_padding_m=args.bounds_padding)
 
         cv2.imshow("AprilTag Eraser", preview)
         key = cv2.waitKey(1) & 0xFF
