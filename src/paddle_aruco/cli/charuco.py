@@ -8,7 +8,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from paddle_apriltag.calibration import DEFAULT_CALIBRATION_PATH, save_calibration_json
+from paddle_aruco.calibration import DEFAULT_CALIBRATION_PATH, save_calibration_json
 
 ARUCO_DICTS = {
     "4x4_50": cv2.aruco.DICT_4X4_50,

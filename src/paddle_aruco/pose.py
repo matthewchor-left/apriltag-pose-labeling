@@ -5,7 +5,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from paddle_apriltag.layout import MarkerLayout
+from paddle_aruco.layout import MarkerLayout
 
 Detection = tuple[np.ndarray, int]
 
@@ -13,10 +13,8 @@ Detection = tuple[np.ndarray, int]
 def marker_corner_object_points(marker_size_m: float) -> np.ndarray:
     """3D corners in marker frame aligned with the paddle frame.
 
-    Origin at bottom-center of the sticker. Axes match the paddle frame:
-    +X left->right along the bottom edge, +Y handle->tip, +Z out of the rubber.
-
-    Corner order matches OpenCV ``detectMarkers``: 0,1 on the bottom edge, 2,3 on top.
+    Origin at bottom-center. +X left->right, +Y handle->tip, +Z out of rubber.
+    OpenCV corner order: 0,1 bottom edge, 2,3 top edge.
     """
     half = marker_size_m / 2.0
     return np.array(
@@ -143,12 +141,10 @@ def paddle_pose_from_marker_pose(
     marker_id: int,
     layout: MarkerLayout,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return paddle orientation and origin in the camera frame."""
     marker_rotation, _ = cv2.Rodrigues(rvec)
     marker_rotation = marker_rotation.astype(np.float64)
     transform = layout.transforms[marker_id]
-    marker_to_paddle = transform.rotation
-    paddle_rotation = marker_rotation @ marker_to_paddle
+    paddle_rotation = marker_rotation @ transform.rotation
     if np.linalg.det(paddle_rotation) < 0.0:
         raise RuntimeError(f"Paddle rotation for marker {marker_id} is improper.")
     paddle_origin = marker_rotation @ transform.offset + tvec.reshape(3)

@@ -2,4 +2,4 @@
 
 Legacy scripts kept for reference. Not maintained.
 
-- `legacy_aruco_detector.py` — replaced by `paddle-detect` and the `paddle_apriltag` package.
+- `aruco_detector.py` — replaced by `apriltag_detector.py` and shared logic in `paddle_marker.py`.

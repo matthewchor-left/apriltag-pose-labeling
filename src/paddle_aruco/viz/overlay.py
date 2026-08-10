@@ -5,16 +5,16 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from paddle_apriltag.detector import PaddlePose
-from paddle_apriltag.layout import CORNER_LABELS, MarkerLayout, layout_point_to_camera, marker_color_bgr
-from paddle_apriltag.pose import paddle_pose_from_marker
-from paddle_apriltag.viz.projection import (
+from paddle_aruco.detector import PaddlePose
+from paddle_aruco.layout import CORNER_LABELS, MarkerLayout, layout_point_to_camera, marker_color_bgr
+from paddle_aruco.pose import paddle_pose_from_marker
+from paddle_aruco.viz.projection import (
     marker_axis_image_points,
     paddle_axis_image_points,
     paddle_origin_image_coords,
     project_camera_point,
 )
-from paddle_apriltag.viz.skeleton import PaddleModel
+from paddle_aruco.viz.skeleton import PaddleModel
 
 KEYPOINT_COLORS_BGR = {
     "top": (128, 0, 128),

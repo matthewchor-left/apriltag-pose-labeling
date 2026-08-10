@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "paddle-apriltag"
+name = "paddle-aruco"
 version = "0.1.0"
 description = "AprilTag-based table tennis paddle pose estimation"
 readme = "README.md"
@@ -17,9 +17,10 @@ dependencies = [
 viz = ["matplotlib>=3.7"]
 
 [project.scripts]
-paddle-detect = "paddle_apriltag.cli.detect:main"
-paddle-calibrate-layout = "paddle_apriltag.cli.calibrate_layout:main"
-paddle-calibrate-camera = "paddle_apriltag.cli.calibrate_camera:main"
+paddle-detect = "paddle_aruco.cli.detect:main"
+paddle-calibrate-layout = "paddle_aruco.cli.calibrate_layout:main"
+paddle-charuco = "paddle_aruco.cli.charuco:main"
+paddle-projection = "paddle_aruco.cli.projection:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

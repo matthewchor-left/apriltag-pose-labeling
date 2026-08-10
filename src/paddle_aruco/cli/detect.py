@@ -7,12 +7,12 @@ from pathlib import Path
 
 import cv2
 
-from paddle_apriltag.apriltag import DEFAULT_APRILTAG_DICTIONARY
-from paddle_apriltag.calibration import DEFAULT_CALIBRATION_PATH, load_intrinsics
-from paddle_apriltag.detector import PaddleDetector
-from paddle_apriltag.layout import DEFAULT_MARKER_LAYOUT_PATH
-from paddle_apriltag.pose import mean_reprojection_error
-from paddle_apriltag.viz import (
+from paddle_aruco.apriltag import DEFAULT_APRILTAG_DICTIONARY
+from paddle_aruco.calibration import DEFAULT_CALIBRATION_PATH, load_intrinsics
+from paddle_aruco.detector import PaddleDetector
+from paddle_aruco.layout import DEFAULT_MARKER_LAYOUT_PATH
+from paddle_aruco.pose import mean_reprojection_error
+from paddle_aruco.viz import (
     DEFAULT_AXIS_LIMITS,
     LiveHud,
     draw_live_hud,
@@ -55,7 +55,7 @@ def main() -> None:
     if not args.preview and not args.plot_graph:
         raise RuntimeError("Enable at least one of --preview or --plot-graph.")
     if not args.calibration.exists():
-        raise RuntimeError(f"Calibration file not found: {args.calibration}\nRun paddle-calibrate-camera first.")
+        raise RuntimeError(f"Calibration file not found: {args.calibration}\nRun paddle-charuco first.")
     if not args.marker_layout.exists():
         raise RuntimeError(f"Marker layout file not found: {args.marker_layout}")
 
@@ -75,7 +75,7 @@ def main() -> None:
     if args.marker_size is not None and abs(marker_size_m - layout.marker_size_m) > 1e-4:
         raise RuntimeError(f"--marker-size {marker_size_m} does not match layout marker_size_m {layout.marker_size_m}.")
 
-    from paddle_apriltag.calibration import DEFAULT_PADDLE_MODEL_PATH
+    from paddle_aruco.calibration import DEFAULT_PADDLE_MODEL_PATH
 
     paddle_model = load_paddle_model(DEFAULT_PADDLE_MODEL_PATH)
 

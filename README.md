@@ -1,4 +1,4 @@
-# Paddle AprilTag Tracker
+# Paddle ArUco Tracker
 
 AprilTag-based table tennis paddle pose estimation.
 
@@ -18,44 +18,19 @@ Core only (no matplotlib):
 uv sync
 ```
 
-## 1. Configure paddle geometry
-
-Before running detection, edit the JSON files in `calibration/` to match **your** paddle and sticker placement.
-
-### `calibration/marker_layout.json` (required)
-
-Defines where each AprilTag sits on the paddle. The detector reads this to fuse multi-marker pose.
-
-- Set `marker_size_m` to the physical sticker side length in meters.
-- For each marker id, set all four corners (`top_left`, `top_right`, `bottom_right`, `bottom_left`) as `[x, y, z]` in the layout frame (see [Coordinate frames](#coordinate-frames) below).
-- Set `reference_marker_id` to the marker whose center is the paddle origin (default: `0`, front rubber).
-
-Validate the layout after editing:
+## 1. Calibrate camera (ChArUco board)
 
 ```bash
-uv run paddle-calibrate-layout --visualize
-```
-
-### `calibration/paddle_model.json` (visualization only)
-
-Defines skeleton keypoints and edges drawn when using `--visualize` or `--plot-graph`. Not used by the core `PaddleDetector` API.
-
-- Update `keypoints` to your paddle landmarks in meters (origin at `bottom`).
-- Update `skeleton` with `[start, end]` pairs between keypoint names.
-
-## 2. Calibrate camera (chessboard pattern)
-
-```bash
-uv run paddle-calibrate-camera --save-board calibration/calibration_board.png
+uv run paddle-charuco --save-board calibration/charuco_board.png
 ```
 
 - **Space** — capture a frame when enough corners are detected
 - **q** — finish and save `calibration/camera_calibration.json`
 
-## 3. Detect paddle pose
+## 2. Detect paddle pose
 
 ```bash
-uv run paddle-detect --camera 0 --calibration calibration/camera_calibration.json --visualize
+uv run paddle-detect --camera 2 --calibration calibration/camera_calibration.json --visualize
 ```
 
 Press **q** to quit.
@@ -64,8 +39,8 @@ Press **q** to quit.
 
 ```python
 import cv2
-from paddle_apriltag import PaddleDetector
-from paddle_apriltag.calibration import load_intrinsics
+from paddle_aruco import PaddleDetector
+from paddle_aruco.calibration import load_intrinsics
 
 camera_matrix, dist_coeffs, _, _, _ = load_intrinsics("calibration/camera_calibration.json")
 detector = PaddleDetector(
@@ -74,41 +49,47 @@ detector = PaddleDetector(
     marker_layout="calibration/marker_layout.json",
 )
 
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(2)
 ok, frame = cap.read()
 pose = detector.detect(frame)  # PaddlePose(origin, rotation) or None
 ```
 
 `PaddlePose.origin` and `PaddlePose.rotation` are in the **camera frame**.
 
-## Coordinate frames
+`PaddlePose.rotation` maps paddle-frame vectors to the camera frame using:
 
-### `marker_layout.json` (camera-aligned when marker 0 faces the camera)
+- **+X** `[1, 0, 0]` — left → right  
+- **+Y** `[0, -1, 0]` — handle → tip (the matrix’s second column points tip → handle)  
+- **+Z** `[0, 0, 1]` — out of the rubber  
 
-Corner positions in `calibration/marker_layout.json` use a paddle-fixed frame that **matches the OpenCV camera axes when marker 0 (front rubber) faces the camera**:
+Example: `pose.rotation @ np.array([0.0, -1.0, 0.0])` is the handle→tip direction in the camera frame.
+
+## Marker layout coordinates
+
+`calibration/marker_layout.json` stores sticker corner positions in a **paddle-fixed layout frame**, not in camera coordinates. The frame stays attached to the paddle regardless of where the camera is.
 
 | Axis | Direction |
 |------|-----------|
-| **+X** | Right in the image |
-| **+Y** | Down in the image |
-| **+Z** | Into the scene (away from the camera) |
+| **+X** | Left → right across the paddle |
+| **+Y** | Handle → blade tip |
+| **+Z** | Out of the rubber (normal to the striking surface) |
 
-Marker 0 (front rubber) sits on the **z = 0** plane. The back marker and edge markers use **positive Z** because they are farther from the camera along the optical axis.
+Marker 0 (front rubber) sits at **z = 0** on that reference plane. The back marker (id 1) is at **z ≈ −0.073** because it lies on the opposite side of the rubber: you move **into** the paddle, opposite **+Z**. Side and edge markers use negative **z** where they wrap around the blade.
+
+When the **rubber faces the camera**, **+Z** points toward the camera and **−Z** points through the blade toward the back — so negative **z** in the layout file corresponds to points that are farther from the camera. That is expected; it does not mean layout **z** is defined as camera depth.
 
 ```
         camera
           │
           ▼
     ═════════════  z = 0   (marker 0, rubber)
-    │   paddle  │
-    ═════════════  z ≈ +0.07  (marker 1, back)
+    │   paddle    │
+    ═════════════  z ≈ −0.073   (marker 1, back)
 ```
 
-When the paddle rotates away from this view, layout coordinates no longer line up with the live camera frame — only this reference pose is aligned for easier debugging.
+If the paddle is viewed from the back or from the side, the mapping between layout **±Z** and closer/farther relative to the camera changes because the paddle rotated — the layout frame itself does not change.
 
-### Detector output (camera frame)
-
-`PaddleDetector` returns pose in the **camera frame** (same OpenCV convention as above). Layout coordinates are transformed into this frame at runtime via the detected marker poses and layout transforms.
+`PaddleDetector` fuses marker poses into **camera-frame** `origin` and `rotation`. Layout coordinates are converted to the camera only through the detected pose and per-marker transforms in `layout.py`.
 
 ## Optional visualization
 
@@ -132,13 +113,13 @@ After changing dependencies in `pyproject.toml`, run `uv lock` to refresh `uv.lo
 ## Project layout
 
 ```
-src/paddle_apriltag/
+src/paddle_aruco/
   detector.py          # PaddleDetector — frame in, pose out
   pose.py              # marker PnP + multi-marker fusion
   layout.py            # marker layout JSON + transforms
   calibration.py       # camera intrinsics loader
   viz/                 # optional overlays and plots
-  cli/                 # paddle-detect, paddle-calibrate-camera, paddle-calibrate-layout
+  cli/                 # paddle-detect, paddle-charuco, paddle-calibrate-layout
 calibration/           # single source of truth for all JSON config
   camera_calibration.json
   marker_layout.json
@@ -151,8 +132,8 @@ uv.lock                # locked dependency versions (commit this)
 
 | Command | Flag | Description |
 |---------|------|-------------|
-| `paddle-calibrate-camera` | `--square-size` | Chess square size in meters (default 0.024) |
-| `paddle-calibrate-camera` | `--output` | Calibration JSON path |
+| `paddle-charuco` | `--square-size` | Chess square size in meters (default 0.024) |
+| `paddle-charuco` | `--output` | Calibration JSON path |
 | `paddle-detect` | `--calibration` | Path to camera calibration JSON |
 | `paddle-detect` | `--marker-layout` | Marker layout JSON path |
 | `paddle-detect` | `--marker-id` | Use a specific marker id only |

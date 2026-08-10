@@ -4,12 +4,6 @@ Paddle / layout coordinate frame:
   +X: left -> right on the paddle
   +Y: handle -> tip
   +Z: out of the rubber surface
-
-Corner names (``top_left``, etc.) refer to the sticker edge toward the blade tip
-(``top``) or handle (``bottom``), not image coordinates.
-
-Marker 0 (front rubber) lies on the z = 0 plane. Points on the back or into the
-blade use negative Z.
 """
 
 from __future__ import annotations
@@ -45,7 +39,7 @@ CORNER_LABELS = {
 }
 
 
-from paddle_apriltag.calibration import DEFAULT_MARKER_LAYOUT_PATH
+from paddle_aruco.calibration import DEFAULT_MARKER_LAYOUT_PATH
 
 
 @dataclass(frozen=True)

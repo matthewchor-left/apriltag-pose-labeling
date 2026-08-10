@@ -6,9 +6,9 @@ import unittest
 
 import numpy as np
 
-from paddle_apriltag import PaddleDetector, PaddlePose
-from paddle_apriltag.layout import DEFAULT_MARKER_LAYOUT_PATH, load_marker_layout
-from paddle_apriltag.pose import estimate_fused_pose, paddle_pose_from_marker
+from paddle_aruco import PaddleDetector, PaddlePose
+from paddle_aruco.layout import DEFAULT_MARKER_LAYOUT_PATH, load_marker_layout
+from paddle_aruco.pose import estimate_fused_pose, paddle_pose_from_marker
 
 
 class PaddleDetectorTests(unittest.TestCase):

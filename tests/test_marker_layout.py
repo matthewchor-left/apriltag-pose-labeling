@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from paddle_apriltag.layout import (
+from paddle_aruco.layout import (
     DEFAULT_MARKER_LAYOUT_PATH,
     derive_marker_to_paddle_transform,
     footprint_edge_lengths,
@@ -23,7 +23,7 @@ from paddle_apriltag.layout import (
     rectangle_center,
     validate_footprint_size,
 )
-from paddle_apriltag.pose import fuse_rotations
+from paddle_aruco.pose import fuse_rotations
 
 
 def _square_payload(half: float, z: float = 0.0) -> dict[str, list[float]]:
@@ -45,7 +45,7 @@ class MarkerLayoutDerivationTests(unittest.TestCase):
 
         np.testing.assert_allclose(transform.rotation, np.eye(3), atol=1e-9)
         self.assertAlmostEqual(transform.offset[0], 0.0, places=6)
-        self.assertAlmostEqual(transform.offset[1], side / 2, places=6)
+        self.assertAlmostEqual(transform.offset[1], -side / 2, places=6)
         self.assertAlmostEqual(transform.offset[2], 0.0, places=6)
 
     def test_requires_all_four_corners(self) -> None:
@@ -55,6 +55,16 @@ class MarkerLayoutDerivationTests(unittest.TestCase):
     def test_accepts_legacy_xy_coordinates(self) -> None:
         footprint = footprint_from_dict(0, _square_payload(0.024))
         np.testing.assert_allclose(footprint.top_left, [-0.024, -0.024, 0.0])
+
+    def test_reference_marker_y_points_handle_to_tip(self) -> None:
+        layout = load_marker_layout(DEFAULT_MARKER_LAYOUT_PATH)
+        y_axis = layout.footprints[0].orientation[:, 1]
+        np.testing.assert_allclose(y_axis, [0.0, 1.0, 0.0], atol=1e-9)
+
+    def test_reference_marker_z_points_out_of_rubber(self) -> None:
+        layout = load_marker_layout(DEFAULT_MARKER_LAYOUT_PATH)
+        z_axis = layout.footprints[0].orientation[:, 2]
+        np.testing.assert_allclose(z_axis, [0.0, 0.0, 1.0], atol=1e-9)
 
     def test_footprint_orientation_is_orthonormal(self) -> None:
         orientation = footprint_orientation(
@@ -121,7 +131,7 @@ class MarkerLayoutDerivationTests(unittest.TestCase):
         top_left = layout.footprints[0].top_left
         point_paddle = layout_point_to_paddle_frame(top_left, layout)
         self.assertAlmostEqual(point_paddle[0], -0.024, places=6)
-        self.assertAlmostEqual(point_paddle[1], 0.024, places=6)
+        self.assertAlmostEqual(point_paddle[1], -0.024, places=6)
         self.assertAlmostEqual(point_paddle[2], 0.0, places=6)
 
     def test_layout_point_to_camera_matches_marker_pose_for_reference_marker(self) -> None:

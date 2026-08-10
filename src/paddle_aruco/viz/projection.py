@@ -27,7 +27,6 @@ def _to_xy(point: np.ndarray) -> tuple[int, int]:
 
 
 # Paddle frame unit vectors: +X left->right, +Y handle->tip, +Z out of rubber.
-# Rotation matrix columns are (X, Y_tip_to_handle, Z); +Y handle->tip uses -Y column.
 PADDLE_UNIT_AXES = np.array(
     [[1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]],
     dtype=np.float64,
@@ -61,7 +60,7 @@ def marker_axis_image_points(
     dist_coeffs: np.ndarray,
     axis_length_m: float | None = None,
 ) -> tuple[tuple[int, int], tuple[int, int], tuple[int, int]]:
-    from paddle_apriltag.pose import estimate_marker_pose
+    from paddle_aruco.pose import estimate_marker_pose
 
     if axis_length_m is None:
         axis_length_m = marker_size_m * 0.35
@@ -86,7 +85,7 @@ def paddle_origin_image_coords(
     dist_coeffs: np.ndarray,
     layout,
 ) -> tuple[int, int]:
-    from paddle_apriltag.pose import paddle_pose_from_marker
+    from paddle_aruco.pose import paddle_pose_from_marker
 
     paddle_rotation, paddle_origin = paddle_pose_from_marker(
         corners, marker_id, marker_size_m, camera_matrix, dist_coeffs, layout
