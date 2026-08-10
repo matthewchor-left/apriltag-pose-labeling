@@ -1,15 +1,12 @@
 """Load marker sticker layout on the paddle and derive marker-to-paddle transforms.
 
-Paddle / layout coordinate frame:
-  +X: left -> right on the paddle
-  +Y: handle -> tip
-  +Z: out of the rubber surface
+Layout coordinate frame (matches OpenCV camera axes when marker 0 faces the camera):
+  +X: right in the image
+  +Y: down in the image
+  +Z: into the scene (away from the camera)
 
-Corner names (``top_left``, etc.) refer to the sticker edge toward the blade tip
-(``top``) or handle (``bottom``), not image coordinates.
-
-Marker 0 (front rubber) lies on the z = 0 plane. Points on the back or into the
-blade use negative Z.
+Marker 0 (front rubber) lies on the z = 0 plane. The back marker and edge markers
+use positive Z because they are farther into the scene.
 """
 
 from __future__ import annotations
@@ -142,13 +139,12 @@ def footprint_orientation(
         raise ValueError("Degenerate footprint: left edge has zero length.")
     y_axis /= y_norm
 
-    z_axis = np.cross(y_axis, x_axis)
+    z_axis = np.cross(x_axis, y_axis)
     z_norm = np.linalg.norm(z_axis)
     if z_norm <= 0.0:
         raise ValueError("Degenerate footprint: sticker axes are not independent.")
     z_axis /= z_norm
 
-    # Right-handed frame (det +1): Y column points tip->handle; paddle +Y is the opposite.
     y_axis = np.cross(z_axis, x_axis)
     y_axis /= np.linalg.norm(y_axis)
 

@@ -17,10 +17,11 @@ dependencies = [
 viz = ["matplotlib>=3.7"]
 
 [project.scripts]
-paddle-detect = "paddle_aruco.cli.detect:main"
-paddle-calibrate-layout = "paddle_aruco.cli.calibrate_layout:main"
-paddle-charuco = "paddle_aruco.cli.charuco:main"
-paddle-projection = "paddle_aruco.cli.projection:main"
+annotation-tool = "paddle_apriltag.cli.annotation_tool:main"
+paddle-detect = "paddle_apriltag.cli.detect:main"
+paddle-calibrate-layout = "paddle_apriltag.cli.calibrate_layout:main"
+paddle-charuco = "paddle_apriltag.cli.charuco:main"
+paddle-projection = "paddle_apriltag.cli.projection:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

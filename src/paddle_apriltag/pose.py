@@ -9,20 +9,18 @@ from paddle_apriltag.layout import MarkerLayout
 
 Detection = tuple[np.ndarray, int]
 
+# Layout footprints use camera-aligned axes when marker 0 faces forward (+Z into scene).
+# paddle_model.json uses +X left→right and +Z out of the rubber surface.
+_PADDLE_AXIS_FLIP = np.diag([-1.0, 1.0, -1.0])
+
 
 def marker_corner_object_points(marker_size_m: float) -> np.ndarray:
-    """3D corners in marker frame aligned with the paddle frame.
-
-    Origin at bottom-center of the sticker. Axes match the paddle frame:
-    +X left->right along the bottom edge, +Y handle->tip, +Z out of the rubber.
-
-    Corner order matches OpenCV ``detectMarkers``: 0,1 on the bottom edge, 2,3 on top.
-    """
+    """3D corners in marker frame: origin at bottom-center, +Y toward tag top."""
     half = marker_size_m / 2.0
     return np.array(
         [
-            [-half, 0.0, 0.0],
-            [half, 0.0, 0.0],
+            [-half, 0, 0.0],
+            [half, 0, 0.0],
             [half, marker_size_m, 0.0],
             [-half, marker_size_m, 0.0],
         ],
@@ -143,12 +141,10 @@ def paddle_pose_from_marker_pose(
     marker_id: int,
     layout: MarkerLayout,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return paddle orientation and origin in the camera frame."""
     marker_rotation, _ = cv2.Rodrigues(rvec)
     marker_rotation = marker_rotation.astype(np.float64)
     transform = layout.transforms[marker_id]
-    marker_to_paddle = transform.rotation
-    paddle_rotation = marker_rotation @ marker_to_paddle
+    paddle_rotation = marker_rotation @ transform.rotation @ _PADDLE_AXIS_FLIP
     if np.linalg.det(paddle_rotation) < 0.0:
         raise RuntimeError(f"Paddle rotation for marker {marker_id} is improper.")
     paddle_origin = marker_rotation @ transform.offset + tvec.reshape(3)

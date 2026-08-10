@@ -17,8 +17,7 @@ from paddle_apriltag.viz import (
     LiveHud,
     draw_live_hud,
     draw_marker_annotations,
-    draw_marker_layout_footprints,
-    draw_paddle_axes,
+    draw_paddle_orientation,
     load_paddle_model,
     make_side_by_side,
     paddle_world_points_from_pose,
@@ -50,12 +49,17 @@ def main() -> None:
     parser.add_argument("--preview", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--visualize", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--plot-graph", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--axis-length", type=float, default=0.08, help="Paddle axis length to draw, in meters")
     args = parser.parse_args()
 
     if not args.preview and not args.plot_graph:
         raise RuntimeError("Enable at least one of --preview or --plot-graph.")
     if not args.calibration.exists():
-        raise RuntimeError(f"Calibration file not found: {args.calibration}\nRun paddle-calibrate-camera first.")
+        raise RuntimeError(
+            f"Calibration file not found: {args.calibration}\n"
+            "Run `uv run paddle calibrate-camera` from the repo root first "
+            "(use --output calibration/camera_intrinsics.json)."
+        )
     if not args.marker_layout.exists():
         raise RuntimeError(f"Marker layout file not found: {args.marker_layout}")
 
@@ -104,12 +108,23 @@ def main() -> None:
         if args.visualize:
             for corners, marker_id in detections:
                 draw_marker_annotations(
-                    preview_frame, corners, marker_id, marker_size_m,
-                    camera_matrix, dist_coeffs, layout, draw=True,
+                    preview_frame,
+                    corners,
+                    marker_id,
+                    marker_size_m,
+                    camera_matrix,
+                    dist_coeffs,
+                    layout,
+                    draw=True,
                 )
             if pose is not None:
-                draw_paddle_axes(preview_frame, pose, camera_matrix, dist_coeffs, marker_size_m)
-                draw_marker_layout_footprints(preview_frame, pose, camera_matrix, dist_coeffs, layout)
+                draw_paddle_orientation(
+                    preview_frame,
+                    pose,
+                    camera_matrix,
+                    dist_coeffs,
+                    args.axis_length,
+                )
 
         reproj_error = mean_reprojection_error(detections, marker_size_m, camera_matrix, dist_coeffs)
         fps, avg_reproj_error = hud.tick(reproj_error)

@@ -8,16 +8,20 @@ from typing import Any
 
 import numpy as np
 
-DEFAULT_CALIBRATION_DIR = Path("calibration")
-DEFAULT_CALIBRATION_PATH = DEFAULT_CALIBRATION_DIR / "camera_calibration.json"
+
+def calibration_dir() -> Path:
+    """Return the shared repo ``calibration/`` directory."""
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "calibration"
+        if (candidate / "marker_layout.json").exists():
+            return candidate
+    return Path("calibration")
+
+
+DEFAULT_CALIBRATION_DIR = calibration_dir()
+DEFAULT_CALIBRATION_PATH = DEFAULT_CALIBRATION_DIR / "camera_intrinsics.json"
 DEFAULT_MARKER_LAYOUT_PATH = DEFAULT_CALIBRATION_DIR / "marker_layout.json"
 DEFAULT_PADDLE_MODEL_PATH = DEFAULT_CALIBRATION_DIR / "paddle_model.json"
-
-
-def save_calibration_json(path: str | Path, payload: dict[str, Any]) -> None:
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
 def load_calibration_dict(path: str | Path) -> dict[str, Any]:

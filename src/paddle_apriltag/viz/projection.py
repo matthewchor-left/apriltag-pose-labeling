@@ -22,18 +22,6 @@ def project_camera_point(
     return projected.reshape(2)
 
 
-def _to_xy(point: np.ndarray) -> tuple[int, int]:
-    return int(round(point[0])), int(round(point[1]))
-
-
-# Paddle frame unit vectors: +X left->right, +Y handle->tip, +Z out of rubber.
-# Rotation matrix columns are (X, Y_tip_to_handle, Z); +Y handle->tip uses -Y column.
-PADDLE_UNIT_AXES = np.array(
-    [[1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]],
-    dtype=np.float64,
-)
-
-
 def paddle_axis_image_points(
     paddle_rotation: np.ndarray,
     paddle_origin: np.ndarray,
@@ -41,17 +29,24 @@ def paddle_axis_image_points(
     dist_coeffs: np.ndarray,
     axis_length_m: float,
 ) -> tuple[tuple[int, int], tuple[int, int], tuple[int, int], tuple[int, int]]:
-    """Return origin and paddle +X/+Y/+Z axis endpoints in the image."""
+    axis_points = np.array(
+        [
+            paddle_origin + paddle_rotation @ np.array([axis_length_m, 0.0, 0.0]),
+            paddle_origin + paddle_rotation @ np.array([0.0, axis_length_m, 0.0]),
+            paddle_origin + paddle_rotation @ np.array([0.0, 0.0, axis_length_m]),
+        ],
+        dtype=np.float64,
+    )
     origin_xy = project_camera_point(paddle_origin, camera_matrix, dist_coeffs)
-    ends = [
-        project_camera_point(
-            paddle_origin + paddle_rotation @ (axis * axis_length_m),
-            camera_matrix,
-            dist_coeffs,
-        )
-        for axis in PADDLE_UNIT_AXES
-    ]
-    return _to_xy(origin_xy), _to_xy(ends[0]), _to_xy(ends[1]), _to_xy(ends[2])
+    x_xy = project_camera_point(axis_points[0], camera_matrix, dist_coeffs)
+    y_xy = project_camera_point(axis_points[1], camera_matrix, dist_coeffs)
+    z_xy = project_camera_point(axis_points[2], camera_matrix, dist_coeffs)
+    return (
+        (int(round(origin_xy[0])), int(round(origin_xy[1]))),
+        (int(round(x_xy[0])), int(round(x_xy[1]))),
+        (int(round(y_xy[0])), int(round(y_xy[1]))),
+        (int(round(z_xy[0])), int(round(z_xy[1]))),
+    )
 
 
 def marker_axis_image_points(

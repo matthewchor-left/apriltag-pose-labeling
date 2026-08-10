@@ -7,11 +7,8 @@ import numpy as np
 
 from paddle_apriltag.detector import PaddlePose
 from paddle_apriltag.layout import CORNER_LABELS, MarkerLayout, layout_point_to_camera, marker_color_bgr
-from paddle_apriltag.pose import paddle_pose_from_marker
 from paddle_apriltag.viz.projection import (
-    marker_axis_image_points,
     paddle_axis_image_points,
-    paddle_origin_image_coords,
     project_camera_point,
 )
 from paddle_apriltag.viz.skeleton import PaddleModel
@@ -83,31 +80,45 @@ def draw_paddle_origin(
     return x, y
 
 
-def draw_paddle_axes(
+def draw_paddle_orientation(
     frame: np.ndarray,
     pose: PaddlePose,
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
-    marker_size_m: float,
+    axis_length_m: float,
 ) -> None:
-    """Draw fused paddle origin with X/Y/Z orientation axes."""
+    """Draw fused paddle X/Y/Z axes in the camera image (OpenCV camera frame)."""
     try:
         origin_xy, x_end, y_end, z_end = paddle_axis_image_points(
-            pose.rotation, pose.origin, camera_matrix, dist_coeffs, marker_size_m * 0.5
+            pose.rotation,
+            pose.origin,
+            camera_matrix,
+            dist_coeffs,
+            axis_length_m,
         )
     except (RuntimeError, ValueError):
         return
 
-    cv2.circle(frame, origin_xy, 6, (255, 255, 255), -1, lineType=cv2.LINE_AA)
-    cv2.circle(frame, origin_xy, 6, (0, 0, 0), 1, lineType=cv2.LINE_AA)
+    cv2.circle(frame, origin_xy, 5, (255, 255, 255), -1, lineType=cv2.LINE_AA)
+    cv2.circle(frame, origin_xy, 5, (0, 0, 0), 1, lineType=cv2.LINE_AA)
 
-    for end_xy, color, label in (
+    axes = (
         (x_end, (0, 0, 255), "X"),
         (y_end, (0, 255, 0), "Y"),
         (z_end, (255, 0, 0), "Z"),
-    ):
-        cv2.arrowedLine(frame, origin_xy, end_xy, color, 2, tipLength=0.25)
-        cv2.putText(frame, label, (end_xy[0] + 4, end_xy[1] - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+    )
+    for tip, color, label in axes:
+        cv2.arrowedLine(frame, origin_xy, tip, color, 2, tipLength=0.2, line_type=cv2.LINE_AA)
+        cv2.putText(
+            frame,
+            label,
+            (tip[0] + 4, tip[1] - 4),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            color,
+            2,
+            cv2.LINE_AA,
+        )
 
 
 def draw_paddle_pose(
@@ -119,7 +130,15 @@ def draw_paddle_pose(
     model: PaddleModel,
 ) -> None:
     draw_paddle_origin(frame, pose.origin, camera_matrix, dist_coeffs, label="paddle origin")
-    draw_paddle_axes(frame, pose, camera_matrix, dist_coeffs, marker_size_m)
+    try:
+        origin_xy, x_end, y_end, z_end = paddle_axis_image_points(
+            pose.rotation, pose.origin, camera_matrix, dist_coeffs, marker_size_m * 0.5
+        )
+        cv2.arrowedLine(frame, origin_xy, x_end, (0, 0, 255), 2, tipLength=0.25)
+        cv2.arrowedLine(frame, origin_xy, y_end, (0, 255, 0), 2, tipLength=0.25)
+        cv2.arrowedLine(frame, origin_xy, z_end, (255, 0, 0), 2, tipLength=0.25)
+    except (RuntimeError, ValueError):
+        return
 
     image_points = []
     for point in model.object_points:
@@ -192,33 +211,23 @@ def draw_marker_annotations(
     *,
     draw: bool = True,
 ) -> bool:
-    try:
-        (mx, my), _, _ = marker_axis_image_points(corners, marker_size_m, camera_matrix, dist_coeffs)
-        px, py = paddle_origin_image_coords(corners, marker_id, marker_size_m, camera_matrix, dist_coeffs, layout)
-    except RuntimeError:
-        return False
-
+    del marker_size_m, camera_matrix, dist_coeffs, layout
     if not draw:
         return True
 
     pts = corners.reshape(4, 2).astype(np.int32)
     cv2.polylines(frame, [pts], isClosed=True, color=(0, 255, 255), thickness=2)
-
-    try:
-        paddle_rotation, paddle_origin = paddle_pose_from_marker(
-            corners, marker_id, marker_size_m, camera_matrix, dist_coeffs, layout
-        )
-        _, x_end, y_end, _ = paddle_axis_image_points(
-            paddle_rotation, paddle_origin, camera_matrix, dist_coeffs, marker_size_m * 0.35
-        )
-        cv2.arrowedLine(frame, (px, py), y_end, (255, 0, 255), 2, tipLength=0.25)
-        cv2.arrowedLine(frame, (px, py), x_end, (255, 255, 0), 2, tipLength=0.25)
-    except RuntimeError:
-        pass
-
-    cv2.circle(frame, (mx, my), 4, (255, 255, 255), -1)
-    cv2.circle(frame, (px, py), 4, (255, 128, 0), -1)
-    cv2.putText(frame, f"id={marker_id}", (mx + 8, my - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 1, cv2.LINE_AA)
+    anchor = tuple(int(round(v)) for v in pts[0])
+    cv2.putText(
+        frame,
+        f"id={marker_id}",
+        (anchor[0] + 8, anchor[1] - 8),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.55,
+        (0, 255, 255),
+        1,
+        cv2.LINE_AA,
+    )
     return True
 
 
