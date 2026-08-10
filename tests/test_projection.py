@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from paddle_aruco.cli.projection import calibration_graphics_data, camera_projection
+from paddle_apriltag.cli.projection import calibration_graphics_data, camera_projection
 
 
 def test_projection_maps_opencv_principal_ray_to_ndc_origin() -> None:

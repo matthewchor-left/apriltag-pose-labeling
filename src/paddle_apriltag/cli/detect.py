@@ -18,6 +18,7 @@ from paddle_apriltag.viz import (
     draw_live_hud,
     draw_marker_annotations,
     draw_paddle_orientation,
+    draw_paddle_pose,
     load_paddle_model,
     make_side_by_side,
     paddle_world_points_from_pose,
@@ -49,6 +50,12 @@ def main() -> None:
     parser.add_argument("--preview", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--visualize", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--plot-graph", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument(
+        "--overlay-model",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Project paddle_model.json skeleton onto the camera preview",
+    )
     parser.add_argument("--axis-length", type=float, default=0.08, help="Paddle axis length to draw, in meters")
     args = parser.parse_args()
 
@@ -81,7 +88,7 @@ def main() -> None:
 
     from paddle_apriltag.calibration import DEFAULT_PADDLE_MODEL_PATH
 
-    paddle_model = load_paddle_model(DEFAULT_PADDLE_MODEL_PATH)
+    paddle_model = load_paddle_model(DEFAULT_PADDLE_MODEL_PATH) if args.overlay_model or args.plot_graph else None
 
     print(f"Using marker layout: {args.marker_layout} ({len(layout.marker_ids)} markers)")
     print(f"Marker size: {marker_size_m:.4f} m")
@@ -118,20 +125,34 @@ def main() -> None:
                     draw=True,
                 )
             if pose is not None:
-                draw_paddle_orientation(
-                    preview_frame,
-                    pose,
-                    camera_matrix,
-                    dist_coeffs,
-                    args.axis_length,
-                )
+                if args.overlay_model:
+                    draw_paddle_pose(
+                        preview_frame,
+                        pose,
+                        camera_matrix,
+                        dist_coeffs,
+                        marker_size_m,
+                        paddle_model,
+                    )
+                else:
+                    draw_paddle_orientation(
+                        preview_frame,
+                        pose,
+                        camera_matrix,
+                        dist_coeffs,
+                        args.axis_length,
+                    )
 
         reproj_error = mean_reprojection_error(detections, marker_size_m, camera_matrix, dist_coeffs)
         fps, avg_reproj_error = hud.tick(reproj_error)
         if args.visualize:
             draw_live_hud(preview_frame, fps, avg_reproj_error)
 
-        world_points = paddle_world_points_from_pose(pose.rotation, pose.origin, paddle_model) if pose else {}
+        world_points = (
+            paddle_world_points_from_pose(pose.rotation, pose.origin, paddle_model)
+            if pose is not None and paddle_model is not None
+            else {}
+        )
         if args.preview and args.plot_graph:
             plot_bgr = render_pose_plots(world_points, paddle_model, DEFAULT_AXIS_LIMITS, figsize=plot_figsize)
             display_frame = make_side_by_side(preview_frame, plot_bgr, preview_frame.shape[0])

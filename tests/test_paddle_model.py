@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from paddle_aruco.viz.skeleton import DEFAULT_PADDLE_MODEL_PATH, load_paddle_model
+from paddle_apriltag.viz.skeleton import DEFAULT_PADDLE_MODEL_PATH, load_paddle_model
 
 
 class PaddleModelJsonTests(unittest.TestCase):

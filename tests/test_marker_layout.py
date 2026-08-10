@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from paddle_aruco.layout import (
+from paddle_apriltag.layout import (
     DEFAULT_MARKER_LAYOUT_PATH,
     derive_marker_to_paddle_transform,
     footprint_edge_lengths,
@@ -23,7 +23,7 @@ from paddle_aruco.layout import (
     rectangle_center,
     validate_footprint_size,
 )
-from paddle_aruco.pose import fuse_rotations
+from paddle_apriltag.pose import fuse_rotations
 
 
 def _square_payload(half: float, z: float = 0.0) -> dict[str, list[float]]:

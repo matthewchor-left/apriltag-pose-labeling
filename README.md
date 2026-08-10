@@ -39,8 +39,8 @@ Press **q** to quit.
 
 ```python
 import cv2
-from paddle_aruco import PaddleDetector
-from paddle_aruco.calibration import load_intrinsics
+from paddle_apriltag import PaddleDetector
+from paddle_apriltag.calibration import load_intrinsics
 
 camera_matrix, dist_coeffs, _, _, _ = load_intrinsics("calibration/camera_calibration.json")
 detector = PaddleDetector(
@@ -113,7 +113,7 @@ After changing dependencies in `pyproject.toml`, run `uv lock` to refresh `uv.lo
 ## Project layout
 
 ```
-src/paddle_aruco/
+src/paddle_apriltag/
   detector.py          # PaddleDetector — frame in, pose out
   pose.py              # marker PnP + multi-marker fusion
   layout.py            # marker layout JSON + transforms
