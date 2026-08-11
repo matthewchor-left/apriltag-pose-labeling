@@ -17,6 +17,7 @@ from paddle_apriltag.viz import (
     LiveHud,
     draw_live_hud,
     draw_marker_annotations,
+    draw_marker_layout_footprints,
     draw_paddle_orientation,
     draw_paddle_pose,
     load_paddle_model,
@@ -51,6 +52,12 @@ def main() -> None:
     parser.add_argument("--visualize", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--plot-graph", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument(
+        "--overlay-layout",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Project marker_layout.json sticker footprints onto the camera preview",
+    )
+    parser.add_argument(
         "--overlay-model",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -59,6 +66,8 @@ def main() -> None:
     parser.add_argument("--axis-length", type=float, default=0.08, help="Paddle axis length to draw, in meters")
     args = parser.parse_args()
 
+    if args.overlay_model and args.overlay_layout:
+        raise RuntimeError("Use only one of --overlay-model or --overlay-layout.")
     if not args.preview and not args.plot_graph:
         raise RuntimeError("Enable at least one of --preview or --plot-graph.")
     if not args.calibration.exists():
@@ -133,6 +142,14 @@ def main() -> None:
                         dist_coeffs,
                         marker_size_m,
                         paddle_model,
+                    )
+                elif args.overlay_layout:
+                    draw_marker_layout_footprints(
+                        preview_frame,
+                        pose,
+                        camera_matrix,
+                        dist_coeffs,
+                        layout,
                     )
                 else:
                     draw_paddle_orientation(

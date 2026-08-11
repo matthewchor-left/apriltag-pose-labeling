@@ -5,13 +5,11 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from paddle_apriltag.layout import MarkerLayout
+from paddle_apriltag.layout import MarkerLayout, PADDLE_AXIS_FLIP
 
 Detection = tuple[np.ndarray, int]
 
-# Layout footprints use camera-aligned axes when marker 0 faces forward (+Z into scene).
 # paddle_model.json uses +X left→right and +Z out of the rubber surface.
-_PADDLE_AXIS_FLIP = np.diag([-1.0, 1.0, -1.0])
 
 
 def marker_corner_object_points(marker_size_m: float) -> np.ndarray:
@@ -144,7 +142,7 @@ def paddle_pose_from_marker_pose(
     marker_rotation, _ = cv2.Rodrigues(rvec)
     marker_rotation = marker_rotation.astype(np.float64)
     transform = layout.transforms[marker_id]
-    paddle_rotation = marker_rotation @ transform.rotation @ _PADDLE_AXIS_FLIP
+    paddle_rotation = marker_rotation @ transform.rotation @ PADDLE_AXIS_FLIP
     if np.linalg.det(paddle_rotation) < 0.0:
         raise RuntimeError(f"Paddle rotation for marker {marker_id} is improper.")
     paddle_origin = marker_rotation @ transform.offset + tvec.reshape(3)

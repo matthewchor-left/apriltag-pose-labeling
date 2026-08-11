@@ -45,7 +45,7 @@ class MarkerLayoutDerivationTests(unittest.TestCase):
 
         np.testing.assert_allclose(transform.rotation, np.eye(3), atol=1e-9)
         self.assertAlmostEqual(transform.offset[0], 0.0, places=6)
-        self.assertAlmostEqual(transform.offset[1], -side / 2, places=6)
+        self.assertAlmostEqual(transform.offset[1], side / 2, places=6)
         self.assertAlmostEqual(transform.offset[2], 0.0, places=6)
 
     def test_requires_all_four_corners(self) -> None:
@@ -56,15 +56,15 @@ class MarkerLayoutDerivationTests(unittest.TestCase):
         footprint = footprint_from_dict(0, _square_payload(0.024))
         np.testing.assert_allclose(footprint.top_left, [-0.024, -0.024, 0.0])
 
-    def test_reference_marker_y_points_handle_to_tip(self) -> None:
+    def test_reference_marker_y_points_toward_tag_top_in_layout_frame(self) -> None:
         layout = load_marker_layout(DEFAULT_MARKER_LAYOUT_PATH)
         y_axis = layout.footprints[0].orientation[:, 1]
-        np.testing.assert_allclose(y_axis, [0.0, 1.0, 0.0], atol=1e-9)
+        np.testing.assert_allclose(y_axis, [0.0, -1.0, 0.0], atol=1e-9)
 
-    def test_reference_marker_z_points_out_of_rubber(self) -> None:
+    def test_reference_marker_z_points_into_paddle_in_layout_frame(self) -> None:
         layout = load_marker_layout(DEFAULT_MARKER_LAYOUT_PATH)
         z_axis = layout.footprints[0].orientation[:, 2]
-        np.testing.assert_allclose(z_axis, [0.0, 0.0, 1.0], atol=1e-9)
+        np.testing.assert_allclose(z_axis, [0.0, 0.0, -1.0], atol=1e-9)
 
     def test_footprint_orientation_is_orthonormal(self) -> None:
         orientation = footprint_orientation(
@@ -130,19 +130,39 @@ class MarkerLayoutDerivationTests(unittest.TestCase):
         np.testing.assert_allclose(layout_point_to_paddle_frame(origin, layout), np.zeros(3), atol=1e-9)
         top_left = layout.footprints[0].top_left
         point_paddle = layout_point_to_paddle_frame(top_left, layout)
-        self.assertAlmostEqual(point_paddle[0], -0.024, places=6)
-        self.assertAlmostEqual(point_paddle[1], -0.024, places=6)
+        self.assertAlmostEqual(point_paddle[0], 0.024, places=6)
+        self.assertAlmostEqual(point_paddle[1], 0.024, places=6)
         self.assertAlmostEqual(point_paddle[2], 0.0, places=6)
 
-    def test_layout_point_to_camera_matches_marker_pose_for_reference_marker(self) -> None:
+    def test_layout_point_to_camera_matches_marker_pose_for_each_marker(self) -> None:
+        import cv2
+
+        from paddle_apriltag.layout import marker_origin_on_paddle
+        from paddle_apriltag.pose import estimate_marker_pose, marker_corner_object_points, paddle_pose_from_marker_pose
+
         layout = load_marker_layout(DEFAULT_MARKER_LAYOUT_PATH)
-        footprint = layout.footprints[0]
-        paddle_rotation = footprint.orientation
-        paddle_origin = np.zeros(3)
-        corner = footprint.top_right
-        camera_point = layout_point_to_camera(corner, paddle_rotation, paddle_origin, layout)
-        expected = paddle_rotation @ layout_point_to_paddle_frame(corner, layout)
-        np.testing.assert_allclose(camera_point, expected, atol=1e-9)
+        camera_matrix = np.array(
+            [[900.0, 0.0, 320.0], [0.0, 900.0, 240.0], [0.0, 0.0, 1.0]],
+            dtype=np.float64,
+        )
+        dist_coeffs = np.zeros((5, 1), dtype=np.float64)
+        rvec_true = np.array([0.3, -0.2, 0.1], dtype=np.float64)
+        tvec_true = np.array([[0.05], [-0.02], [0.55]], dtype=np.float64)
+        object_points = marker_corner_object_points(layout.marker_size_m)
+        image_points, _ = cv2.projectPoints(object_points, rvec_true, tvec_true, camera_matrix, dist_coeffs)
+        corners = image_points.reshape(1, 4, 2).astype(np.float32)
+
+        for marker_id in sorted(layout.footprints):
+            rvec, tvec = estimate_marker_pose(corners, layout.marker_size_m, camera_matrix, dist_coeffs)
+            paddle_rotation, paddle_origin = paddle_pose_from_marker_pose(rvec, tvec, marker_id, layout)
+            footprint = layout.footprints[marker_id]
+            marker_origin = marker_origin_on_paddle(footprint.bottom_left, footprint.bottom_right)
+            for corner_layout in footprint.corners():
+                marker_point = footprint.orientation.T @ (corner_layout - marker_origin)
+                rotation, _ = cv2.Rodrigues(rvec)
+                expected_camera = rotation @ marker_point + tvec.reshape(3)
+                actual_camera = layout_point_to_camera(corner_layout, paddle_rotation, paddle_origin, layout)
+                np.testing.assert_allclose(actual_camera, expected_camera, atol=1e-6)
 
     def test_invalid_footprint_size_raises(self) -> None:
         footprint = footprint_from_dict(

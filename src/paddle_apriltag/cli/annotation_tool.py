@@ -32,6 +32,56 @@ def layout_bounds_corners(layout: MarkerLayout, padding_m: float) -> np.ndarray:
     )
 
 
+def clip_polygon_to_rect(polygon: np.ndarray, width: int, height: int) -> np.ndarray | None:
+    """Clip a polygon to the image rectangle [0, width] x [0, height]."""
+    if len(polygon) < 3:
+        return None
+
+    def _clip(points: np.ndarray, inside, intersect) -> np.ndarray:
+        if len(points) == 0:
+            return np.empty((0, 2), dtype=np.float64)
+        output: list[np.ndarray] = []
+        previous = points[-1]
+        for current in points:
+            current_inside = inside(current)
+            previous_inside = inside(previous)
+            if current_inside:
+                if previous_inside:
+                    output.append(current)
+                else:
+                    output.append(intersect(previous, current))
+                    output.append(current)
+            elif previous_inside:
+                output.append(intersect(previous, current))
+            previous = current
+        if not output:
+            return np.empty((0, 2), dtype=np.float64)
+        return np.asarray(output, dtype=np.float64)
+
+    def _intersect_x(edge_x: float, a: np.ndarray, b: np.ndarray) -> np.ndarray:
+        delta_x = b[0] - a[0]
+        t = 0.0 if delta_x == 0.0 else (edge_x - a[0]) / delta_x
+        return np.array([edge_x, a[1] + t * (b[1] - a[1])], dtype=np.float64)
+
+    def _intersect_y(edge_y: float, a: np.ndarray, b: np.ndarray) -> np.ndarray:
+        delta_y = b[1] - a[1]
+        t = 0.0 if delta_y == 0.0 else (edge_y - a[1]) / delta_y
+        return np.array([a[0] + t * (b[0] - a[0]), edge_y], dtype=np.float64)
+
+    points = polygon.astype(np.float64)
+    for edge_value, inside, intersect in (
+        (0.0, lambda p: p[0] >= 0.0, lambda a, b: _intersect_x(0.0, a, b)),
+        (float(width), lambda p: p[0] <= float(width), lambda a, b: _intersect_x(float(width), a, b)),
+        (0.0, lambda p: p[1] >= 0.0, lambda a, b: _intersect_y(0.0, a, b)),
+        (float(height), lambda p: p[1] <= float(height), lambda a, b: _intersect_y(float(height), a, b)),
+    ):
+        del edge_value
+        points = _clip(points, inside, intersect)
+        if len(points) < 3:
+            return None
+    return points
+
+
 def project_layout_bounds_hull(
     paddle_rotation: np.ndarray,
     paddle_origin: np.ndarray,
@@ -51,15 +101,14 @@ def project_layout_bounds_hull(
         projected = project_camera_point(camera_point, camera_matrix, dist_coeffs)
         if not (np.isfinite(projected[0]) and np.isfinite(projected[1])):
             continue
-        if not (0.0 <= projected[0] < image_width and 0.0 <= projected[1] < image_height):
-            continue
         image_points.append(projected)
 
     if len(image_points) < 3:
         return None
 
     points = np.asarray(image_points, dtype=np.float32).reshape(-1, 1, 2)
-    return cv2.convexHull(points).reshape(-1, 2)
+    hull = cv2.convexHull(points).reshape(-1, 2)
+    return clip_polygon_to_rect(hull, image_width, image_height)
 
 
 def erase_with_hull(

@@ -41,6 +41,10 @@ CORNER_LABELS = {
     "bottom_left": "bl",
 }
 
+# Maps layout-frame axes (OpenCV-style when marker 0 faces the camera) to the public
+# paddle pose frame used by PaddlePose and paddle_model.json.
+PADDLE_AXIS_FLIP = np.diag([-1.0, 1.0, -1.0])
+
 
 from paddle_apriltag.calibration import DEFAULT_MARKER_LAYOUT_PATH
 
@@ -304,7 +308,7 @@ def paddle_reference_orientation(layout: MarkerLayout) -> np.ndarray:
 def layout_point_to_paddle_frame(point_layout: np.ndarray, layout: MarkerLayout) -> np.ndarray:
     origin = paddle_reference_origin(layout)
     orientation = paddle_reference_orientation(layout)
-    return orientation.T @ (point_layout - origin)
+    return PADDLE_AXIS_FLIP @ orientation.T @ (point_layout - origin)
 
 
 def layout_point_to_camera(

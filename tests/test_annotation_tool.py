@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 
 from paddle_apriltag.cli.annotation_tool import (
+    clip_polygon_to_rect,
     erase_with_hull,
     layout_bounds_corners,
     project_layout_bounds_hull,
@@ -56,6 +57,22 @@ class EraseWithHullTests(unittest.TestCase):
             erase_with_hull(frame, plate, hull)
 
 
+class ClipPolygonToRectTests(unittest.TestCase):
+    def test_clips_polygon_at_left_image_edge(self) -> None:
+        polygon = np.array([[-20.0, 40.0], [60.0, 40.0], [60.0, 80.0], [-20.0, 80.0]], dtype=np.float32)
+        clipped = clip_polygon_to_rect(polygon, width=100, height=100)
+        self.assertIsNotNone(clipped)
+        assert clipped is not None
+        self.assertGreaterEqual(clipped[:, 0].min(), 0.0)
+        self.assertAlmostEqual(clipped[:, 0].min(), 0.0, places=6)
+        self.assertAlmostEqual(clipped[:, 1].min(), 40.0, places=6)
+        self.assertAlmostEqual(clipped[:, 1].max(), 80.0, places=6)
+
+    def test_returns_none_when_polygon_is_fully_outside(self) -> None:
+        polygon = np.array([[-50.0, -50.0], [-40.0, -50.0], [-40.0, -40.0]], dtype=np.float32)
+        self.assertIsNone(clip_polygon_to_rect(polygon, width=100, height=100))
+
+
 class ProjectLayoutBoundsHullTests(unittest.TestCase):
     def setUp(self) -> None:
         self.layout = load_marker_layout(DEFAULT_MARKER_LAYOUT_PATH)
@@ -100,6 +117,29 @@ class ProjectLayoutBoundsHullTests(unittest.TestCase):
         )
 
         self.assertIsNone(hull)
+
+    def test_off_screen_corners_are_clipped_to_image_edge(self) -> None:
+        rotation = np.eye(3, dtype=np.float64)
+        origin = np.array([-0.15, 0.0, 0.5], dtype=np.float64)
+
+        hull = project_layout_bounds_hull(
+            rotation,
+            origin,
+            self.layout,
+            self.camera_matrix,
+            self.dist_coeffs,
+            bounds_padding_m=0.02,
+            image_width=640,
+            image_height=480,
+        )
+
+        self.assertIsNotNone(hull)
+        assert hull is not None
+        self.assertGreaterEqual(hull[:, 0].min(), 0.0)
+        self.assertGreaterEqual(hull[:, 1].min(), 0.0)
+        self.assertLessEqual(hull[:, 0].max(), 640.0)
+        self.assertLessEqual(hull[:, 1].max(), 480.0)
+        self.assertAlmostEqual(hull[:, 0].min(), 0.0, places=0)
 
 
 if __name__ == "__main__":
