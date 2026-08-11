@@ -22,22 +22,22 @@ def project_camera_point(
     return projected.reshape(2)
 
 
-def paddle_axis_image_points(
-    paddle_rotation: np.ndarray,
-    paddle_origin: np.ndarray,
+def object_axis_image_points(
+    object_rotation: np.ndarray,
+    object_origin: np.ndarray,
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
     axis_length_m: float,
 ) -> tuple[tuple[int, int], tuple[int, int], tuple[int, int], tuple[int, int]]:
     axis_points = np.array(
         [
-            paddle_origin + paddle_rotation @ np.array([axis_length_m, 0.0, 0.0]),
-            paddle_origin + paddle_rotation @ np.array([0.0, axis_length_m, 0.0]),
-            paddle_origin + paddle_rotation @ np.array([0.0, 0.0, axis_length_m]),
+            object_origin + object_rotation @ np.array([axis_length_m, 0.0, 0.0]),
+            object_origin + object_rotation @ np.array([0.0, axis_length_m, 0.0]),
+            object_origin + object_rotation @ np.array([0.0, 0.0, axis_length_m]),
         ],
         dtype=np.float64,
     )
-    origin_xy = project_camera_point(paddle_origin, camera_matrix, dist_coeffs)
+    origin_xy = project_camera_point(object_origin, camera_matrix, dist_coeffs)
     x_xy = project_camera_point(axis_points[0], camera_matrix, dist_coeffs)
     y_xy = project_camera_point(axis_points[1], camera_matrix, dist_coeffs)
     z_xy = project_camera_point(axis_points[2], camera_matrix, dist_coeffs)
@@ -56,7 +56,7 @@ def marker_axis_image_points(
     dist_coeffs: np.ndarray,
     axis_length_m: float | None = None,
 ) -> tuple[tuple[int, int], tuple[int, int], tuple[int, int]]:
-    from paddle_apriltag.pose import estimate_marker_pose
+    from object_apriltag.pose import estimate_marker_pose
 
     if axis_length_m is None:
         axis_length_m = marker_size_m * 0.35
@@ -73,7 +73,7 @@ def marker_axis_image_points(
     return origin_xy, y_end, x_end
 
 
-def paddle_origin_image_coords(
+def object_origin_image_coords(
     corners: np.ndarray,
     marker_id: int,
     marker_size_m: float,
@@ -81,11 +81,11 @@ def paddle_origin_image_coords(
     dist_coeffs: np.ndarray,
     layout,
 ) -> tuple[int, int]:
-    from paddle_apriltag.pose import paddle_pose_from_marker
+    from object_apriltag.pose import object_pose_from_marker
 
-    paddle_rotation, paddle_origin = paddle_pose_from_marker(
+    object_rotation, object_origin = object_pose_from_marker(
         corners, marker_id, marker_size_m, camera_matrix, dist_coeffs, layout
     )
-    del paddle_rotation
-    point = project_camera_point(paddle_origin, camera_matrix, dist_coeffs)
+    del object_rotation
+    point = project_camera_point(object_origin, camera_matrix, dist_coeffs)
     return int(round(point[0])), int(round(point[1]))

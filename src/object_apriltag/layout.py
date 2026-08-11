@@ -1,4 +1,4 @@
-"""Load marker sticker layout on the paddle and derive marker-to-paddle transforms.
+"""Load marker sticker layout on the object and derive marker-to-object transforms.
 
 Layout coordinate frame (matches OpenCV camera axes when marker 0 faces the camera):
   +X: right in the image
@@ -42,11 +42,11 @@ CORNER_LABELS = {
 }
 
 # Maps layout-frame axes (OpenCV-style when marker 0 faces the camera) to the public
-# paddle pose frame used by PaddlePose and paddle_model.json.
-PADDLE_AXIS_FLIP = np.diag([-1.0, 1.0, -1.0])
+# object pose frame used by ObjectPose and object_model.json.
+OBJECT_AXIS_FLIP = np.diag([-1.0, 1.0, -1.0])
 
 
-from paddle_apriltag.calibration import DEFAULT_MARKER_LAYOUT_PATH
+from object_apriltag.calibration import DEFAULT_MARKER_MODEL_PATH
 
 
 @dataclass(frozen=True)
@@ -71,7 +71,7 @@ class MarkerFootprint:
 
 
 @dataclass(frozen=True)
-class MarkerToPaddle:
+class MarkerToObject:
     offset: np.ndarray
     rotation: np.ndarray
 
@@ -82,7 +82,7 @@ class MarkerLayout:
     units: str
     marker_size_m: float
     footprints: dict[int, MarkerFootprint]
-    transforms: dict[int, MarkerToPaddle]
+    transforms: dict[int, MarkerToObject]
 
     @property
     def marker_ids(self) -> set[int]:
@@ -121,7 +121,7 @@ def rectangle_center(
     return (top_left + top_right + bottom_right + bottom_left) / 4.0
 
 
-def marker_origin_on_paddle(bottom_left: np.ndarray, bottom_right: np.ndarray) -> np.ndarray:
+def marker_origin_on_object(bottom_left: np.ndarray, bottom_right: np.ndarray) -> np.ndarray:
     return (bottom_left + bottom_right) / 2.0
 
 
@@ -181,64 +181,64 @@ def footprint_from_dict(marker_id: int, payload: dict[str, Any]) -> MarkerFootpr
     )
 
 
-def derive_marker_to_paddle_transform(
+def derive_marker_to_object_transform(
     footprint: MarkerFootprint,
     reference_orientation: np.ndarray,
-    paddle_origin: np.ndarray,
-) -> MarkerToPaddle:
-    marker_origin = marker_origin_on_paddle(footprint.bottom_left, footprint.bottom_right)
-    delta_layout = paddle_origin - marker_origin
+    object_origin: np.ndarray,
+) -> MarkerToObject:
+    marker_origin = marker_origin_on_object(footprint.bottom_left, footprint.bottom_right)
+    delta_layout = object_origin - marker_origin
     rotation = footprint.orientation.T @ reference_orientation
     offset = footprint.orientation.T @ delta_layout
     if np.linalg.det(rotation) < 0.0:
-        raise ValueError(f"Marker {footprint.marker_id}: improper marker-to-paddle rotation.")
-    return MarkerToPaddle(offset=offset, rotation=rotation)
+        raise ValueError(f"Marker {footprint.marker_id}: improper marker-to-object rotation.")
+    return MarkerToObject(offset=offset, rotation=rotation)
 
 
-def derive_marker_to_paddle_transforms(
+def derive_marker_to_object_transforms(
     footprints: dict[int, MarkerFootprint],
     reference_marker_id: int,
-) -> dict[int, MarkerToPaddle]:
+) -> dict[int, MarkerToObject]:
     if reference_marker_id not in footprints:
         raise KeyError(f"reference_marker_id {reference_marker_id} is not present in markers.")
 
     reference = footprints[reference_marker_id]
     reference_orientation = reference.orientation
-    paddle_origin = rectangle_center(*reference.corners())
+    object_origin = rectangle_center(*reference.corners())
     return {
-        marker_id: derive_marker_to_paddle_transform(
+        marker_id: derive_marker_to_object_transform(
             footprint,
             reference_orientation,
-            paddle_origin,
+            object_origin,
         )
         for marker_id, footprint in footprints.items()
     }
 
 
-def load_marker_layout(path: str | Path) -> MarkerLayout:
+def load_marker_model(path: str | Path) -> MarkerLayout:
     path = Path(path)
     if not path.exists():
-        raise FileNotFoundError(f"Marker layout file not found: {path}")
+        raise FileNotFoundError(f"Marker model file not found: {path}")
 
     data = json.loads(path.read_text(encoding="utf-8"))
     reference_marker_id = int(data.get("reference_marker_id", 0))
     units = str(data.get("units", "meters"))
     if "marker_size_m" not in data:
-        raise ValueError("Marker layout must include 'marker_size_m'.")
+        raise ValueError("Marker model must include 'marker_size_m'.")
     marker_size_m = float(data["marker_size_m"])
     if marker_size_m <= 0.0:
         raise ValueError(f"marker_size_m must be positive, got {marker_size_m}.")
 
     markers_raw = data.get("markers")
     if not isinstance(markers_raw, dict) or not markers_raw:
-        raise ValueError("Marker layout must contain a non-empty 'markers' object.")
+        raise ValueError("Marker model must contain a non-empty 'markers' object.")
 
     footprints = {
         int(marker_id): footprint_from_dict(int(marker_id), payload)
         for marker_id, payload in markers_raw.items()
     }
     validate_all_footprint_sizes(footprints, marker_size_m)
-    transforms = derive_marker_to_paddle_transforms(footprints, reference_marker_id)
+    transforms = derive_marker_to_object_transforms(footprints, reference_marker_id)
     return MarkerLayout(
         reference_marker_id=reference_marker_id,
         units=units,
@@ -293,32 +293,32 @@ def layout_axis_limits(
     )
 
 
-def paddle_reference_footprint(layout: MarkerLayout) -> MarkerFootprint:
+def object_reference_footprint(layout: MarkerLayout) -> MarkerFootprint:
     return layout.footprints[layout.reference_marker_id]
 
 
-def paddle_reference_origin(layout: MarkerLayout) -> np.ndarray:
-    return rectangle_center(*paddle_reference_footprint(layout).corners())
+def object_reference_origin(layout: MarkerLayout) -> np.ndarray:
+    return rectangle_center(*object_reference_footprint(layout).corners())
 
 
-def paddle_reference_orientation(layout: MarkerLayout) -> np.ndarray:
-    return paddle_reference_footprint(layout).orientation
+def object_reference_orientation(layout: MarkerLayout) -> np.ndarray:
+    return object_reference_footprint(layout).orientation
 
 
-def layout_point_to_paddle_frame(point_layout: np.ndarray, layout: MarkerLayout) -> np.ndarray:
-    origin = paddle_reference_origin(layout)
-    orientation = paddle_reference_orientation(layout)
-    return PADDLE_AXIS_FLIP @ orientation.T @ (point_layout - origin)
+def layout_point_to_object_frame(point_layout: np.ndarray, layout: MarkerLayout) -> np.ndarray:
+    origin = object_reference_origin(layout)
+    orientation = object_reference_orientation(layout)
+    return OBJECT_AXIS_FLIP @ orientation.T @ (point_layout - origin)
 
 
 def layout_point_to_camera(
     point_layout: np.ndarray,
-    paddle_rotation: np.ndarray,
-    paddle_origin: np.ndarray,
+    object_rotation: np.ndarray,
+    object_origin: np.ndarray,
     layout: MarkerLayout,
 ) -> np.ndarray:
-    point_paddle = layout_point_to_paddle_frame(point_layout, layout)
-    return paddle_rotation @ point_paddle + paddle_origin
+    point_object = layout_point_to_object_frame(point_layout, layout)
+    return object_rotation @ point_object + object_origin
 
 
 def marker_color(marker_id: int) -> str:
@@ -327,3 +327,6 @@ def marker_color(marker_id: int) -> str:
 
 def marker_color_bgr(marker_id: int) -> tuple[int, int, int]:
     return MARKER_LAYOUT_COLORS_BGR.get(marker_id, (136, 136, 136))
+
+
+MarkerModel = MarkerLayout

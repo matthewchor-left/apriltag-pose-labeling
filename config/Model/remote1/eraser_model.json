@@ -1,0 +1,49 @@
+{
+  "units": "meters",
+  "coordinate_frame": "marker_model",
+  "origin": "reference_marker_center",
+  "planes": [
+      {
+        "plane_id": "0",
+        "bottom_right": [0.05, 0.05, 0.0],
+        "bottom_left": [-0.05, 0.05, 0.0],
+        "top_left": [-0.05, -0.05, 0.0],
+        "top_right": [0.05, -0.05, 0.0]
+      },
+      {
+        "plane_id": "1",
+        "bottom_right": [0.05, 0.05, -0.1],
+        "bottom_left": [-0.05, 0.05, -0.1],
+        "top_left": [-0.05, 0.05, 0.0],
+        "top_right": [0.05, 0.05, 0.0]
+      },
+      {
+        "plane_id": "2",
+        "bottom_right": [0.05, 0.05, -0.1],
+        "bottom_left": [0.05, 0.05, 0.0],
+        "top_left": [0.05, -0.05, 0.0],
+        "top_right": [0.05, -0.05, -0.1]
+      },
+      {
+        "plane_id": "3",
+        "bottom_left": [-0.05, 0.05, -0.1],
+        "bottom_right": [-0.05, 0.05, 0.0],
+        "top_right": [-0.05, -0.05, 0.0],
+        "top_left": [-0.05, -0.05, -0.1]
+      },
+      {
+        "plane_id": "stick1",
+        "bottom_right": [0.015, -0.04, 0.0],
+        "bottom_left": [-0.015, -0.04, 0.0],
+        "top_left": [-0.015, -0.1, 0.0],
+        "top_right": [0.015, -0.1, 0.0]
+      },
+      {
+        "plane_id": "stick2",
+        "bottom_right": [0.015, -0.04, -0.01],
+        "bottom_left": [-0.015, -0.04, -0.01],
+        "top_left": [-0.015, -0.1, -0.01],
+        "top_right": [0.015, -0.1, -0.01]
+      }
+  ]
+}

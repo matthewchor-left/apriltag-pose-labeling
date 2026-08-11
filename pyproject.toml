@@ -3,25 +3,26 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "paddle-aruco"
+name = "object-aruco"
 version = "0.1.0"
-description = "AprilTag-based table tennis paddle pose estimation"
+description = "AprilTag-based table tennis object pose estimation"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "opencv-python>=4.8",
     "numpy>=1.24",
+    "pillow>=10",
 ]
 
 [project.optional-dependencies]
 viz = ["matplotlib>=3.7"]
 
 [project.scripts]
-annotation-tool = "paddle_apriltag.cli.annotation_tool:main"
-paddle-detect = "paddle_apriltag.cli.detect:main"
-paddle-calibrate-layout = "paddle_apriltag.cli.calibrate_layout:main"
-paddle-charuco = "paddle_apriltag.cli.charuco:main"
-paddle-projection = "paddle_apriltag.cli.projection:main"
+annotation-tool = "object_apriltag.cli.annotation_tool:main"
+object-detect = "object_apriltag.cli.detect:main"
+object-calibrate-marker-model = "object_apriltag.cli.calibrate_marker_model:main"
+object-charuco = "object_apriltag.cli.charuco:main"
+object-projection = "object_apriltag.cli.projection:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

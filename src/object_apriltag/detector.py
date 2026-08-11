@@ -1,4 +1,4 @@
-"""Frame-in / pose-out paddle detector."""
+"""Frame-in / pose-out object detector."""
 
 from __future__ import annotations
 
@@ -8,24 +8,24 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from paddle_apriltag.apriltag import DEFAULT_APRILTAG_DICTIONARY, build_apriltag_detector
-from paddle_apriltag.layout import MarkerLayout, load_marker_layout
-from paddle_apriltag.pose import Detection, estimate_fused_pose
+from object_apriltag.apriltag import DEFAULT_APRILTAG_DICTIONARY, build_apriltag_detector
+from object_apriltag.layout import MarkerModel, load_marker_model
+from object_apriltag.pose import Detection, estimate_fused_pose
 
 
 @dataclass(frozen=True)
-class PaddlePose:
+class ObjectPose:
     origin: np.ndarray
     rotation: np.ndarray
 
 
-class PaddleDetector:
+class ObjectDetector:
     def __init__(
         self,
         camera_matrix: np.ndarray,
         dist_coeffs: np.ndarray,
         *,
-        marker_layout: Path | str | MarkerLayout,
+        marker_model: Path | str | MarkerModel,
         marker_size_m: float | None = None,
         dictionary: str = DEFAULT_APRILTAG_DICTIONARY,
         sensitivity: str = "relaxed",
@@ -33,20 +33,20 @@ class PaddleDetector:
     ) -> None:
         self._camera_matrix = camera_matrix
         self._dist_coeffs = dist_coeffs
-        self._layout = (
-            marker_layout
-            if isinstance(marker_layout, MarkerLayout)
-            else load_marker_layout(marker_layout)
+        self._marker_model = (
+            marker_model
+            if isinstance(marker_model, MarkerModel)
+            else load_marker_model(marker_model)
         )
         self._marker_size_m = (
-            self._layout.marker_size_m if marker_size_m is None else marker_size_m
+            self._marker_model.marker_size_m if marker_size_m is None else marker_size_m
         )
-        self._known_ids = self._layout.marker_ids if marker_ids is None else marker_ids
+        self._known_ids = self._marker_model.marker_ids if marker_ids is None else marker_ids
         self._detector = build_apriltag_detector(dictionary, sensitivity)
 
     @property
-    def layout(self) -> MarkerLayout:
-        return self._layout
+    def marker_model(self) -> MarkerModel:
+        return self._marker_model
 
     @property
     def marker_size_m(self) -> float:
@@ -65,17 +65,17 @@ class PaddleDetector:
                 detections.append((marker_corners, marker_id))
         return detections
 
-    def fuse(self, detections: list[Detection]) -> PaddlePose | None:
+    def fuse(self, detections: list[Detection]) -> ObjectPose | None:
         origin, rotation = estimate_fused_pose(
             detections,
-            self._layout,
+            self._marker_model,
             self._marker_size_m,
             self._camera_matrix,
             self._dist_coeffs,
         )
         if origin is None or rotation is None:
             return None
-        return PaddlePose(origin=origin, rotation=rotation)
+        return ObjectPose(origin=origin, rotation=rotation)
 
-    def detect(self, frame: np.ndarray) -> PaddlePose | None:
+    def detect(self, frame: np.ndarray) -> ObjectPose | None:
         return self.fuse(self.find_markers(frame))

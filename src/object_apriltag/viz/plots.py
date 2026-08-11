@@ -1,4 +1,4 @@
-"""Matplotlib plots for paddle pose and marker layout."""
+"""Matplotlib plots for object pose and marker layout."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from collections import deque
 import cv2
 import numpy as np
 
-from paddle_apriltag.layout import CORNER_LABELS, MarkerLayout, layout_axis_limits, marker_color
-from paddle_apriltag.viz.skeleton import PaddleModel
+from object_apriltag.layout import CORNER_LABELS, MarkerLayout, layout_axis_limits, marker_color
+from object_apriltag.viz.skeleton import ObjectModel
 
 
 KEYPOINT_COLORS = {
@@ -28,7 +28,7 @@ def is_sane_world_point(point: list[float], max_abs_m: float = 10.0) -> bool:
 
 def filter_sane_world_points(
     world_points: dict[str, list[float]],
-    model: PaddleModel,
+    model: ObjectModel,
     max_abs_m: float = 10.0,
 ) -> dict[str, list[float]]:
     return {
@@ -54,7 +54,7 @@ def set_yz_axis_limits(ax, axis_limits: tuple[float, float, float, float, float,
     ax.set_ylabel("Z (m)")
 
 
-def _draw_skeleton_2d(ax, sane_points: dict[str, list[float]], model: PaddleModel, horiz_index: int, vert_index: int) -> None:
+def _draw_skeleton_2d(ax, sane_points: dict[str, list[float]], model: ObjectModel, horiz_index: int, vert_index: int) -> None:
     for start_name, end_name in model.skeleton_edges:
         if start_name not in sane_points or end_name not in sane_points:
             continue
@@ -87,8 +87,8 @@ def _draw_marker_layout_footprints_2d(ax, layout: MarkerLayout, horiz_index: int
             ax.text(point[horiz_index], point[vert_index], f" {marker_id}:{label}", fontsize=7, color=color)
 
 
-def render_marker_layout_plot(
-    layout: MarkerLayout,
+def render_marker_model_plot(
+    marker_model: MarkerLayout,
     figsize: tuple[float, float] = (10.0, 5.0),
     dpi: int = 100,
 ) -> np.ndarray:
@@ -96,23 +96,23 @@ def render_marker_layout_plot(
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
 
-    axis_limits = layout_axis_limits(layout)
+    axis_limits = layout_axis_limits(marker_model)
     fig = Figure(figsize=figsize, dpi=dpi)
     FigureCanvasAgg(fig)
     ax_xy = fig.add_subplot(1, 2, 1)
     ax_yz = fig.add_subplot(1, 2, 2)
 
-    _draw_marker_layout_footprints_2d(ax_xy, layout, horiz_index=0, vert_index=1)
+    _draw_marker_layout_footprints_2d(ax_xy, marker_model, horiz_index=0, vert_index=1)
     set_xy_axis_limits(ax_xy, axis_limits)
-    ax_xy.set_title("X-Y (paddle frame)")
+    ax_xy.set_title("X-Y (object frame)")
     ax_xy.set_aspect("equal", adjustable="box")
 
-    _draw_marker_layout_footprints_2d(ax_yz, layout, horiz_index=1, vert_index=2)
+    _draw_marker_layout_footprints_2d(ax_yz, marker_model, horiz_index=1, vert_index=2)
     set_yz_axis_limits(ax_yz, axis_limits)
-    ax_yz.set_title("Y-Z (paddle frame)")
+    ax_yz.set_title("Y-Z (object frame)")
     ax_yz.set_aspect("equal", adjustable="box")
 
-    fig.suptitle("Marker layout: tl/tr/br/bl corners", fontsize=10)
+    fig.suptitle("Marker model: tl/tr/br/bl corners", fontsize=10)
     fig.tight_layout()
 
     canvas = FigureCanvasAgg(fig)
@@ -124,7 +124,7 @@ def render_marker_layout_plot(
 
 def render_pose_plots(
     world_points: dict[str, list[float]],
-    model: PaddleModel,
+    model: ObjectModel,
     axis_limits: tuple[float, float, float, float, float, float],
     max_abs_m: float = 10.0,
     figsize: tuple[float, float] = (10.0, 5.0),
@@ -150,7 +150,7 @@ def render_pose_plots(
     ax_yz.set_title("Y-Z")
     ax_yz.set_aspect("equal", adjustable="box")
 
-    fig.suptitle("Paddle landmarks (camera frame)", fontsize=10)
+    fig.suptitle("Object landmarks (camera frame)", fontsize=10)
     fig.tight_layout()
 
     canvas = FigureCanvasAgg(fig)

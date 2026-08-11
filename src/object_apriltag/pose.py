@@ -5,11 +5,11 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from paddle_apriltag.layout import MarkerLayout, PADDLE_AXIS_FLIP
+from object_apriltag.layout import MarkerLayout, OBJECT_AXIS_FLIP
 
 Detection = tuple[np.ndarray, int]
 
-# paddle_model.json uses +X left→right and +Z out of the rubber surface.
+# object_model.json uses +X left→right and +Z out of the rubber surface.
 
 
 def marker_corner_object_points(marker_size_m: float) -> np.ndarray:
@@ -133,7 +133,7 @@ def fuse_rotations(rotations: list[np.ndarray]) -> np.ndarray | None:
     return _quaternion_to_rotation_matrix(mean_quaternion / norm)
 
 
-def paddle_pose_from_marker_pose(
+def object_pose_from_marker_pose(
     rvec: np.ndarray,
     tvec: np.ndarray,
     marker_id: int,
@@ -142,14 +142,14 @@ def paddle_pose_from_marker_pose(
     marker_rotation, _ = cv2.Rodrigues(rvec)
     marker_rotation = marker_rotation.astype(np.float64)
     transform = layout.transforms[marker_id]
-    paddle_rotation = marker_rotation @ transform.rotation @ PADDLE_AXIS_FLIP
-    if np.linalg.det(paddle_rotation) < 0.0:
-        raise RuntimeError(f"Paddle rotation for marker {marker_id} is improper.")
-    paddle_origin = marker_rotation @ transform.offset + tvec.reshape(3)
-    return paddle_rotation, paddle_origin.astype(np.float64)
+    object_rotation = marker_rotation @ transform.rotation @ OBJECT_AXIS_FLIP
+    if np.linalg.det(object_rotation) < 0.0:
+        raise RuntimeError(f"Object rotation for marker {marker_id} is improper.")
+    object_origin = marker_rotation @ transform.offset + tvec.reshape(3)
+    return object_rotation, object_origin.astype(np.float64)
 
 
-def paddle_pose_from_marker(
+def object_pose_from_marker(
     corners: np.ndarray,
     marker_id: int,
     marker_size_m: float,
@@ -158,7 +158,7 @@ def paddle_pose_from_marker(
     layout: MarkerLayout,
 ) -> tuple[np.ndarray, np.ndarray]:
     rvec, tvec = estimate_marker_pose(corners, marker_size_m, camera_matrix, dist_coeffs)
-    return paddle_pose_from_marker_pose(rvec, tvec, marker_id, layout)
+    return object_pose_from_marker_pose(rvec, tvec, marker_id, layout)
 
 
 def estimate_fused_pose(
@@ -173,11 +173,11 @@ def estimate_fused_pose(
 
     for corners, marker_id in detections:
         try:
-            paddle_rotation, paddle_origin = paddle_pose_from_marker(
+            object_rotation, object_origin = object_pose_from_marker(
                 corners, marker_id, marker_size_m, camera_matrix, dist_coeffs, layout
             )
-            origins.append(paddle_origin)
-            rotations.append(paddle_rotation)
+            origins.append(object_origin)
+            rotations.append(object_rotation)
         except (RuntimeError, KeyError):
             continue
 

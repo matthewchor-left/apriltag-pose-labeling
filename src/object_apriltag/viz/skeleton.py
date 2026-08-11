@@ -1,4 +1,4 @@
-"""Paddle skeleton model for visualization."""
+"""Object skeleton model for visualization."""
 
 from __future__ import annotations
 
@@ -9,12 +9,12 @@ from typing import Any
 
 import numpy as np
 
-from paddle_apriltag.calibration import DEFAULT_PADDLE_MODEL_PATH
+from object_apriltag.calibration import DEFAULT_OBJECT_MODEL_PATH
 DEFAULT_AXIS_LIMITS = (-0.5, 0.5, -0.5, 0.5, 0.0, 2.0)
 
 
 @dataclass(frozen=True)
-class PaddleModel:
+class ObjectModel:
     units: str
     keypoint_names: tuple[str, ...]
     keypoints: dict[str, np.ndarray]
@@ -31,15 +31,15 @@ def _as_point3(value: Any, field_name: str) -> np.ndarray:
     raise ValueError(f"{field_name} must be [x, y] or [x, y, z] coordinates.")
 
 
-def load_paddle_model(path: str | Path) -> PaddleModel:
+def load_object_model(path: str | Path) -> ObjectModel:
     path = Path(path)
     if not path.exists():
-        raise FileNotFoundError(f"Paddle model file not found: {path}")
+        raise FileNotFoundError(f"Object model file not found: {path}")
     data = json.loads(path.read_text(encoding="utf-8"))
     units = str(data.get("units", "meters"))
     keypoints_raw = data.get("keypoints")
     if not isinstance(keypoints_raw, dict) or not keypoints_raw:
-        raise ValueError("Paddle model must contain a non-empty 'keypoints' object.")
+        raise ValueError("Object model must contain a non-empty 'keypoints' object.")
 
     keypoint_names = tuple(str(name) for name in keypoints_raw)
     keypoints = {
@@ -49,7 +49,7 @@ def load_paddle_model(path: str | Path) -> PaddleModel:
 
     skeleton_raw = data.get("skeleton")
     if not isinstance(skeleton_raw, list) or not skeleton_raw:
-        raise ValueError("Paddle model must contain a non-empty 'skeleton' list.")
+        raise ValueError("Object model must contain a non-empty 'skeleton' list.")
 
     skeleton_edges: list[tuple[str, str]] = []
     for index, edge in enumerate(skeleton_raw):
@@ -62,7 +62,7 @@ def load_paddle_model(path: str | Path) -> PaddleModel:
         skeleton_edges.append((start_name, end_name))
 
     object_points = np.asarray([keypoints[name] for name in keypoint_names], dtype=np.float32)
-    return PaddleModel(
+    return ObjectModel(
         units=units,
         keypoint_names=keypoint_names,
         keypoints=keypoints,
@@ -71,12 +71,12 @@ def load_paddle_model(path: str | Path) -> PaddleModel:
     )
 
 
-def paddle_world_points_from_pose(
-    paddle_rotation: np.ndarray,
-    paddle_origin: np.ndarray,
-    model: PaddleModel,
+def object_world_points_from_pose(
+    object_rotation: np.ndarray,
+    object_origin: np.ndarray,
+    model: ObjectModel,
 ) -> dict[str, list[float]]:
-    world_points = (paddle_rotation @ model.object_points.T + paddle_origin.reshape(3, 1)).T
+    world_points = (object_rotation @ model.object_points.T + object_origin.reshape(3, 1)).T
     return {
         name: point.tolist()
         for name, point in zip(model.keypoint_names, world_points, strict=True)

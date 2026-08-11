@@ -7,24 +7,25 @@ import unittest
 import cv2
 import numpy as np
 
-from paddle_apriltag.cli.annotation_tool import (
+from object_apriltag.eraser import (
     clip_polygon_to_rect,
-    erase_with_mask,
-    erase_with_planes,
-    eraser_offset_to_layout_point,
+    eraser_offset_to_model_point,
+    EraserPlane,
+    load_eraser_model,
     project_eraser_plane,
     project_eraser_planes,
 )
-from paddle_apriltag.eraser import EraserPlane, load_eraser_model
-from paddle_apriltag.layout import DEFAULT_MARKER_LAYOUT_PATH, load_marker_layout
+from object_apriltag.cli.annotation_tool import erase_with_mask, erase_with_planes
+from object_apriltag.calibration import DEFAULT_MARKER_MODEL_PATH
+from object_apriltag.layout import load_marker_model
 
 
 class EraserOffsetTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.layout = load_marker_layout(DEFAULT_MARKER_LAYOUT_PATH)
+        self.marker_model = load_marker_model(DEFAULT_MARKER_MODEL_PATH)
 
     def test_offset_maps_to_reference_marker_center(self) -> None:
-        point = eraser_offset_to_layout_point(np.array([0.01, -0.02, 0.0]), self.layout)
+        point = eraser_offset_to_model_point(np.array([0.01, -0.02, 0.0]), self.marker_model)
         np.testing.assert_allclose(point, [0.01, -0.02, 0.0])
 
 
@@ -87,7 +88,7 @@ class ClipPolygonToRectTests(unittest.TestCase):
 
 class ProjectEraserPlaneTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.layout = load_marker_layout(DEFAULT_MARKER_LAYOUT_PATH)
+        self.marker_model = load_marker_model(DEFAULT_MARKER_MODEL_PATH)
         self.camera_matrix = np.array(
             [[900.0, 0.0, 320.0], [0.0, 900.0, 240.0], [0.0, 0.0, 1.0]],
             dtype=np.float64,
@@ -109,7 +110,7 @@ class ProjectEraserPlaneTests(unittest.TestCase):
             plane.corners(),
             rotation,
             origin,
-            self.layout,
+            self.marker_model,
             self.camera_matrix,
             self.dist_coeffs,
             image_width=640,
@@ -135,7 +136,7 @@ class ProjectEraserPlaneTests(unittest.TestCase):
             plane.corners(),
             rotation,
             origin,
-            self.layout,
+            self.marker_model,
             self.camera_matrix,
             self.dist_coeffs,
             image_width=640,
@@ -159,7 +160,7 @@ class ProjectEraserPlaneTests(unittest.TestCase):
             plane.corners(),
             rotation,
             origin,
-            self.layout,
+            self.marker_model,
             self.camera_matrix,
             self.dist_coeffs,
             image_width=640,
@@ -176,13 +177,13 @@ class ProjectEraserPlaneTests(unittest.TestCase):
 
 class LoadEraserModelTests(unittest.TestCase):
     def test_loads_default_eraser_model(self) -> None:
-        model = load_eraser_model("calibration/eraser_model.json")
+        model = load_eraser_model("config/Model/object_01/eraser_model.json")
         self.assertEqual(model.origin, "reference_marker_center")
         self.assertGreater(len(model.planes), 0)
 
     def test_projects_all_planes_from_model(self) -> None:
-        layout = load_marker_layout(DEFAULT_MARKER_LAYOUT_PATH)
-        model = load_eraser_model("calibration/eraser_model.json")
+        marker_model = load_marker_model(DEFAULT_MARKER_MODEL_PATH)
+        model = load_eraser_model("config/Model/object_01/eraser_model.json")
         camera_matrix = np.array(
             [[900.0, 0.0, 320.0], [0.0, 900.0, 240.0], [0.0, 0.0, 1.0]],
             dtype=np.float64,
@@ -195,7 +196,7 @@ class LoadEraserModelTests(unittest.TestCase):
             model,
             rotation,
             origin,
-            layout,
+            marker_model,
             camera_matrix,
             dist_coeffs,
             image_width=640,

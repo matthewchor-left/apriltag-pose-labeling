@@ -1,4 +1,4 @@
-"""ARCHIVED: legacy ArUco paddle detector. Use apriltag_detector.py instead."""
+"""ARCHIVED: legacy ArUco object detector. Use apriltag_detector.py instead."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import numpy as np
 
 from calibration_io import load_intrinsics
 from marker_origins import marker_origin_image_coords, marker_origin_image_point
-from paddle_marker import KEYPOINT_NAMES, OBJECT_POINTS, estimate_extrinsics
+from object_marker import KEYPOINT_NAMES, OBJECT_POINTS, estimate_extrinsics
 from plot_utils import LiveHud, draw_live_hud, make_side_by_side, render_pose_plots
 
 ARUCO_DICTS = {
@@ -38,7 +38,7 @@ KEYPOINT_COLORS_BGR = {
     "right": (165, 42, 42),
 }
 
-# Paddle frame (+Y toward handle) -> marker frame (+Y up on the sticker).
+# Object frame (+Y toward handle) -> marker frame (+Y up on the sticker).
 RACKET_TO_MARKER = np.array(
     [
         [1.0, 0.0, 0.0],
@@ -291,7 +291,7 @@ def draw_marker_annotations(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Detect ArUco marker on a paddle, estimate 3D pose, and show live plots.",
+        description="Detect ArUco marker on an object, estimate 3D pose, and show live plots.",
     )
     parser.add_argument("--camera", type=int, default=0)
     parser.add_argument("--width", type=int, default=1280)
@@ -324,7 +324,7 @@ def main() -> None:
         "--back-marker-id",
         type=int,
         default=BACK_MARKER_ID,
-        help=f"ArUco id on the paddle back (default: {BACK_MARKER_ID}).",
+        help=f"ArUco id on the object back (default: {BACK_MARKER_ID}).",
     )
     parser.add_argument(
         "--marker-id",
@@ -424,7 +424,7 @@ def main() -> None:
 
         plot_bgr = render_pose_plots(world_points, DEFAULT_AXIS_LIMITS, figsize=plot_figsize)
         display_frame = make_side_by_side(frame, plot_bgr, frame_height)
-        cv2.imshow("Paddle ArUco Detector", display_frame)
+        cv2.imshow("Object ArUco Detector", display_frame)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
 

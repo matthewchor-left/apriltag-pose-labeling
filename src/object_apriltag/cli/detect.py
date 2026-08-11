@@ -1,0 +1,324 @@
+"""Live AprilTag object detection CLI."""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+import cv2
+
+from object_apriltag.calibration import load_intrinsics, require_calibration_image_size
+from object_apriltag.detector import ObjectDetector
+from object_apriltag.eraser import load_eraser_model, project_eraser_planes
+from object_apriltag.pose import mean_reprojection_error
+from object_apriltag.viz import (
+    DEFAULT_AXIS_LIMITS,
+    LiveHud,
+    draw_eraser_planes,
+    draw_live_hud,
+    draw_marker_annotations,
+    draw_marker_model_footprints,
+    draw_object_orientation,
+    draw_object_pose,
+    load_object_model,
+    make_side_by_side,
+    object_world_points_from_pose,
+    render_pose_plots,
+)
+
+
+def open_camera(camera_index: int, width: int, height: int) -> cv2.VideoCapture:
+    capture = cv2.VideoCapture(camera_index)
+    if not capture.isOpened():
+        raise RuntimeError(f"Cannot open camera {camera_index}.")
+    capture.set(cv2.CAP_PROP_FRAME_WIDTH, float(width))
+    capture.set(cv2.CAP_PROP_FRAME_HEIGHT, float(height))
+    return capture
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Detect AprilTag markers and estimate fused object pose.",
+        epilog=(
+            "Terms:\n"
+            "  detection outline  AprilTag corner box and ID drawn on the camera frame.\n"
+            "  pose projection    3D object geometry drawn on the camera frame from fused pose.\n"
+            "  skeleton chart     Separate matplotlib 3D plot (--plot-graph).\n"
+            "\n"
+            "Display:\n"
+            "  --preview          Open the live OpenCV window.\n"
+            "  --visualize        Draw detection outlines, HUD, and pose projection on the camera frame.\n"
+            "  --plot-graph       Add the skeleton chart (--object-model required).\n"
+            "\n"
+            "Pose projection (--visualize on; enable one style, or neither for axis arrows):\n"
+            "  --overlay-marker-model   Marker sticker footprint quads (--marker-model).\n"
+            "  --overlay-object-model   Object skeleton keypoints and edges (--object-model).\n"
+            "  --overlay-eraser-model   Eraser plane quads (--eraser-model).\n"
+            "  (neither)                RGB object axis arrows (--axis-length)."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--camera", type=int, required=True, help="Camera device index (0 = first camera).")
+    parser.add_argument(
+        "--calibration",
+        type=Path,
+        required=True,
+        help="Camera intrinsics JSON. Image width and height are read from this file.",
+    )
+    parser.add_argument(
+        "--detection-sensitivity",
+        choices=("default", "relaxed", "aggressive"),
+        required=True,
+        help="AprilTag detector preset: default (OpenCV defaults), relaxed, or aggressive.",
+    )
+    parser.add_argument(
+        "--dictionary",
+        required=True,
+        help="AprilTag dictionary name (e.g. 36h11, 25h9).",
+    )
+    parser.add_argument(
+        "--plot-width",
+        type=int,
+        default=540,
+        help="Width in pixels of the matplotlib skeleton plot when --plot-graph is enabled.",
+    )
+    parser.add_argument(
+        "--marker-id",
+        type=int,
+        help="Track only this marker ID. Omit to fuse all markers listed in --marker-model.",
+    )
+    parser.add_argument(
+        "--marker-model",
+        type=Path,
+        required=True,
+        help="Marker model JSON (sticker footprint positions and marker_size_m).",
+    )
+    parser.add_argument(
+        "--object-model",
+        type=Path,
+        help="Object skeleton JSON. Required for --overlay-object-model or --plot-graph.",
+    )
+    parser.add_argument(
+        "--eraser-model",
+        type=Path,
+        help="Eraser planes JSON. Required for --overlay-eraser-model.",
+    )
+    parser.add_argument(
+        "--preview",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Open the live OpenCV display window. --no-preview: skeleton chart only (--plot-graph).",
+    )
+    parser.add_argument(
+        "--visualize",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Draw on the camera frame: detection outlines (box and ID per AprilTag), "
+            "FPS/reprojection HUD, and pose projection when tracking succeeds. "
+            "--no-visualize: raw camera frame (HUD still drawn if --preview)."
+        ),
+    )
+    parser.add_argument(
+        "--plot-graph",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Show a skeleton chart: matplotlib 3D plot of --object-model keypoints. "
+            "With --preview: side-by-side with the camera frame. Without: chart-only window."
+        ),
+    )
+    parser.add_argument(
+        "--overlay-marker-model",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Pose projection: marker sticker footprint quads from --marker-model. "
+            "Mutually exclusive with other overlay styles."
+        ),
+    )
+    parser.add_argument(
+        "--overlay-object-model",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Pose projection: object skeleton keypoints and bone lines from --object-model. "
+            "Mutually exclusive with other overlay styles."
+        ),
+    )
+    parser.add_argument(
+        "--overlay-eraser-model",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Pose projection: eraser plane quads from --eraser-model. "
+            "Mutually exclusive with other overlay styles."
+        ),
+    )
+    parser.add_argument(
+        "--axis-length",
+        type=float,
+        default=0.08,
+        help=(
+            "Pose projection: length (meters) of RGB object axis arrows when no overlay style is enabled."
+        ),
+    )
+    args = parser.parse_args()
+
+    overlay_styles = (
+        args.overlay_marker_model,
+        args.overlay_object_model,
+        args.overlay_eraser_model,
+    )
+    if sum(overlay_styles) > 1:
+        raise RuntimeError(
+            "Only one pose projection overlay: --overlay-marker-model, --overlay-object-model, "
+            "or --overlay-eraser-model."
+        )
+    if not args.preview and not args.plot_graph:
+        raise RuntimeError("Enable at least one of --preview or --plot-graph.")
+    if (args.overlay_object_model or args.plot_graph) and args.object_model is None:
+        raise RuntimeError("--object-model is required when --overlay-object-model or --plot-graph is enabled.")
+    if args.overlay_eraser_model and args.eraser_model is None:
+        raise RuntimeError("--eraser-model is required when --overlay-eraser-model is enabled.")
+    if not args.calibration.exists():
+        raise RuntimeError(
+            f"Calibration file not found: {args.calibration}\n"
+            "Run `uv run object-charuco` first "
+            "(use --output config/Camera/<profile>/intrinsics.json)."
+        )
+    if not args.marker_model.exists():
+        raise RuntimeError(f"Marker model file not found: {args.marker_model}")
+    if args.eraser_model is not None and not args.eraser_model.exists():
+        raise RuntimeError(f"Eraser model file not found: {args.eraser_model}")
+
+    marker_ids = {args.marker_id} if args.marker_id is not None else None
+    camera_matrix, dist_coeffs, image_width, image_height, calibration_source = load_intrinsics(
+        args.calibration
+    )
+    width, height = require_calibration_image_size(image_width, image_height, args.calibration)
+    detector = ObjectDetector(
+        camera_matrix,
+        dist_coeffs,
+        marker_model=args.marker_model,
+        dictionary=args.dictionary,
+        sensitivity=args.detection_sensitivity,
+        marker_ids=marker_ids,
+    )
+    marker_model = detector.marker_model
+    marker_size_m = detector.marker_size_m
+
+    object_model = (
+        load_object_model(args.object_model)
+        if args.overlay_object_model or args.plot_graph
+        else None
+    )
+    eraser_model = (
+        load_eraser_model(args.eraser_model)
+        if args.overlay_eraser_model
+        else None
+    )
+
+    print(f"Using marker model: {args.marker_model} ({len(marker_model.marker_ids)} markers)")
+    print(f"Marker size: {marker_size_m:.4f} m")
+    if eraser_model is not None:
+        print(f"Using eraser model: {args.eraser_model} ({len(eraser_model.planes)} planes)")
+    print(f"Using camera calibration: {args.calibration}")
+    if calibration_source:
+        print(f"Calibration source: {calibration_source}")
+
+    cap = open_camera(args.camera, width, height)
+    print(f"Camera {args.camera}: {width}x{height}")
+    print("Press q to quit.")
+
+    hud = LiveHud()
+    plot_figsize = (args.plot_width / 50.0, args.plot_width / 100.0)
+
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            raise RuntimeError(f"Failed to read a frame from camera {args.camera}.")
+
+        detections = detector.find_markers(frame)
+        pose = detector.fuse(detections)
+        preview_frame = frame.copy() if args.visualize else frame
+
+        if args.visualize:
+            for corners, marker_id in detections:
+                draw_marker_annotations(
+                    preview_frame,
+                    corners,
+                    marker_id,
+                    marker_size_m,
+                    camera_matrix,
+                    dist_coeffs,
+                    marker_model,
+                    draw=True,
+                )
+            if pose is not None:
+                if args.overlay_object_model:
+                    draw_object_pose(
+                        preview_frame,
+                        pose,
+                        camera_matrix,
+                        dist_coeffs,
+                        marker_size_m,
+                        object_model,
+                    )
+                elif args.overlay_marker_model:
+                    draw_marker_model_footprints(
+                        preview_frame,
+                        pose,
+                        camera_matrix,
+                        dist_coeffs,
+                        marker_model,
+                    )
+                elif args.overlay_eraser_model and eraser_model is not None:
+                    polygons = project_eraser_planes(
+                        eraser_model,
+                        pose.rotation,
+                        pose.origin,
+                        marker_model,
+                        camera_matrix,
+                        dist_coeffs,
+                        image_width=width,
+                        image_height=height,
+                    )
+                    draw_eraser_planes(preview_frame, polygons)
+                else:
+                    draw_object_orientation(
+                        preview_frame,
+                        pose,
+                        camera_matrix,
+                        dist_coeffs,
+                        args.axis_length,
+                    )
+
+        reproj_error = mean_reprojection_error(detections, marker_size_m, camera_matrix, dist_coeffs)
+        fps, avg_reproj_error = hud.tick(reproj_error)
+        if args.visualize:
+            draw_live_hud(preview_frame, fps, avg_reproj_error)
+
+        world_points = (
+            object_world_points_from_pose(pose.rotation, pose.origin, object_model)
+            if pose is not None and object_model is not None
+            else {}
+        )
+        if args.preview and args.plot_graph:
+            plot_bgr = render_pose_plots(world_points, object_model, DEFAULT_AXIS_LIMITS, figsize=plot_figsize)
+            display_frame = make_side_by_side(preview_frame, plot_bgr, preview_frame.shape[0])
+        elif args.preview:
+            display_frame = preview_frame
+        else:
+            display_frame = render_pose_plots(world_points, object_model, DEFAULT_AXIS_LIMITS, figsize=plot_figsize)
+
+        cv2.imshow("Object AprilTag Detector", display_frame)
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,6 +1,6 @@
-# Paddle ArUco Tracker
+# Object ArUco Tracker
 
-AprilTag-based table tennis paddle pose estimation.
+AprilTag-based table tennis object pose estimation.
 
 ## Setup
 
@@ -18,19 +18,52 @@ Core only (no matplotlib):
 uv sync
 ```
 
-## 1. Calibrate camera (ChArUco board)
+## 1. Calibrate camera (ChArUco or checkerboard)
 
 ```bash
-uv run paddle-charuco --save-board calibration/charuco_board.png
+uv run object-charuco \
+  --camera 0 \
+  --layout 7 10 \
+  --marker-size 0.018 \
+  --output config/Camera/nexplaygroundcam/intrinsics.json
 ```
 
-- **Space** — capture a frame when enough corners are detected
-- **q** — finish and save `calibration/camera_calibration.json`
-
-## 2. Detect paddle pose
+ChArUco is the default board type (`--board-type charuco_board`). For a plain checkerboard:
 
 ```bash
-uv run paddle-detect --camera 2 --calibration calibration/camera_calibration.json --visualize
+uv run object-charuco \
+  --board-type checkerboard \
+  --camera 0 \
+  --layout 6 9 \
+  --output config/Camera/nexplaygroundcam/intrinsics.json
+```
+
+Save a printable ChArUco pattern (true scale on A4, 300 DPI):
+
+```bash
+uv run object-charuco \
+  --layout 6 9 \
+  --marker-size 0.02 \
+  --square-size 0.025 \
+  --save-board config/charuco_6x9_25mm.png
+```
+
+Print the PNG at **100% scale** (not “fit to page”) so each square matches `--square-size`.
+
+- **Space** — capture a frame when the board is fully detected
+- **q** — finish and save to `--output`
+
+`--layout` is height × width (rows × columns). For ChArUco that is chess **square** count; for checkerboard it is **inner corner** count.
+
+## 2. Detect object pose
+
+```bash
+uv run object-detect \
+  --camera 0 \
+  --calibration config/Camera/nexplaygroundcam/intrinsics.json \
+  --marker-model config/Model/object_01/marker_model.json \
+  --dictionary 36h11 \
+  --detection-sensitivity relaxed
 ```
 
 Press **q** to quit.
@@ -39,24 +72,24 @@ Press **q** to quit.
 
 ```python
 import cv2
-from paddle_apriltag import PaddleDetector
-from paddle_apriltag.calibration import load_intrinsics
+from object_apriltag import ObjectDetector
+from object_apriltag.calibration import load_intrinsics
 
-camera_matrix, dist_coeffs, _, _, _ = load_intrinsics("calibration/camera_calibration.json")
-detector = PaddleDetector(
+camera_matrix, dist_coeffs, _, _, _ = load_intrinsics("config/Camera/nexplaygroundcam/intrinsics.json")
+detector = ObjectDetector(
     camera_matrix,
     dist_coeffs,
-    marker_layout="calibration/marker_layout.json",
+    marker_model="config/Model/object_01/marker_model.json",
 )
 
 cap = cv2.VideoCapture(2)
 ok, frame = cap.read()
-pose = detector.detect(frame)  # PaddlePose(origin, rotation) or None
+pose = detector.detect(frame)  # ObjectPose(origin, rotation) or None
 ```
 
-`PaddlePose.origin` and `PaddlePose.rotation` are in the **camera frame**.
+`ObjectPose.origin` and `ObjectPose.rotation` are in the **camera frame**.
 
-`PaddlePose.rotation` maps paddle-frame vectors to the camera frame using:
+`ObjectPose.rotation` maps object-frame vectors to the camera frame using:
 
 - **+X** `[1, 0, 0]` — left → right  
 - **+Y** `[0, -1, 0]` — handle → tip (the matrix’s second column points tip → handle)  
@@ -64,32 +97,32 @@ pose = detector.detect(frame)  # PaddlePose(origin, rotation) or None
 
 Example: `pose.rotation @ np.array([0.0, -1.0, 0.0])` is the handle→tip direction in the camera frame.
 
-## Marker layout coordinates
+## Marker model coordinates
 
-`calibration/marker_layout.json` stores sticker corner positions in a **paddle-fixed layout frame**, not in camera coordinates. The frame stays attached to the paddle regardless of where the camera is.
+`config/Model/<object>/marker_model.json` stores sticker corner positions in a **object-fixed model frame**, not in camera coordinates. The frame stays attached to the object regardless of where the camera is.
 
 | Axis | Direction |
 |------|-----------|
-| **+X** | Left → right across the paddle |
+| **+X** | Left → right across the object |
 | **+Y** | Handle → blade tip |
 | **+Z** | Out of the rubber (normal to the striking surface) |
 
-Marker 0 (front rubber) sits at **z = 0** on that reference plane. The back marker (id 1) is at **z ≈ −0.073** because it lies on the opposite side of the rubber: you move **into** the paddle, opposite **+Z**. Side and edge markers use negative **z** where they wrap around the blade.
+Marker 0 (front rubber) sits at **z = 0** on that reference plane. The back marker (id 1) is at **z ≈ −0.073** because it lies on the opposite side of the rubber: you move **into** the object, opposite **+Z**. Side and edge markers use negative **z** where they wrap around the blade.
 
-When the **rubber faces the camera**, **+Z** points toward the camera and **−Z** points through the blade toward the back — so negative **z** in the layout file corresponds to points that are farther from the camera. That is expected; it does not mean layout **z** is defined as camera depth.
+When the **rubber faces the camera**, **+Z** points toward the camera and **−Z** points through the blade toward the back — so negative **z** in the model file corresponds to points that are farther from the camera. That is expected; it does not mean model **z** is defined as camera depth.
 
 ```
         camera
           │
           ▼
     ═════════════  z = 0   (marker 0, rubber)
-    │   paddle    │
+    │   object    │
     ═════════════  z ≈ −0.073   (marker 1, back)
 ```
 
-If the paddle is viewed from the back or from the side, the mapping between layout **±Z** and closer/farther relative to the camera changes because the paddle rotated — the layout frame itself does not change.
+If the object is viewed from the back or from the side, the mapping between model **±Z** and closer/farther relative to the camera changes because the object rotated — the model frame itself does not change.
 
-`PaddleDetector` fuses marker poses into **camera-frame** `origin` and `rotation`. Layout coordinates are converted to the camera only through the detected pose and per-marker transforms in `layout.py`.
+`ObjectDetector` fuses marker poses into **camera-frame** `origin` and `rotation`. Model coordinates are converted to the camera only through the detected pose and per-marker transforms in `layout.py`.
 
 ## Optional visualization
 
@@ -97,8 +130,15 @@ The `viz` extra adds overlays, skeleton keypoints, and matplotlib plots:
 
 ```bash
 uv sync --extra viz
-uv run paddle-detect --visualize --plot-graph
-uv run paddle-calibrate-layout --visualize
+uv run object-detect \
+  --camera 0 \
+  --calibration config/Camera/nexplaygroundcam/intrinsics.json \
+  --marker-model config/Model/object_01/marker_model.json \
+  --dictionary 36h11 \
+  --detection-sensitivity relaxed \
+  --plot-graph \
+  --object-model config/Model/object_01/object_model.json
+uv run object-calibrate-marker-model --marker-model config/Model/object_01/marker_model.json --visualize
 ```
 
 ## Development
@@ -113,17 +153,20 @@ After changing dependencies in `pyproject.toml`, run `uv lock` to refresh `uv.lo
 ## Project layout
 
 ```
-src/paddle_apriltag/
-  detector.py          # PaddleDetector — frame in, pose out
+src/object_apriltag/
+  detector.py          # ObjectDetector — frame in, pose out
   pose.py              # marker PnP + multi-marker fusion
-  layout.py            # marker layout JSON + transforms
-  calibration.py       # camera intrinsics loader
+  layout.py            # marker model JSON + transforms
+  calibration.py       # intrinsics loader + config profile paths
   viz/                 # optional overlays and plots
-  cli/                 # paddle-detect, paddle-charuco, paddle-calibrate-layout
-calibration/           # single source of truth for all JSON config
-  camera_calibration.json
-  marker_layout.json
-  paddle_model.json
+  cli/                 # object-detect, object-charuco, object-calibrate-marker-model
+config/
+  Camera/
+    nexplaygroundcam/  # intrinsics.json, uvcc.json, device.json
+    cam1/ cam2/ webcam/  # empty profiles (.gitkeep)
+  Model/
+    object_01/         # marker_model.json, eraser_model.json, object_model.json
+    object_02/         # annotation object marker + eraser
 pyproject.toml         # project metadata and dependencies
 uv.lock                # locked dependency versions (commit this)
 ```
@@ -132,9 +175,12 @@ uv.lock                # locked dependency versions (commit this)
 
 | Command | Flag | Description |
 |---------|------|-------------|
-| `paddle-charuco` | `--square-size` | Chess square size in meters (default 0.024) |
-| `paddle-charuco` | `--output` | Calibration JSON path |
-| `paddle-detect` | `--calibration` | Path to camera calibration JSON |
-| `paddle-detect` | `--marker-layout` | Marker layout JSON path |
-| `paddle-detect` | `--marker-id` | Use a specific marker id only |
-| `paddle-detect` | `--no-visualize` | Camera preview without overlays |
+| `object-charuco` | `--board-type` | `charuco_board` or `checkerboard` |
+| `object-charuco` | `--layout` | Board height × width (rows × columns) |
+| `object-charuco` | `--marker-size` | ArUco marker size in meters (ChArUco only) |
+| `object-charuco` | `--camera` | Camera device index |
+| `object-charuco` | `--output` | Intrinsics JSON path |
+| `object-detect` | `--calibration` | Path to camera intrinsics JSON |
+| `object-detect` | `--marker-model` | Marker model JSON path |
+| `object-detect` | `--marker-id` | Use a specific marker id only |
+| `object-detect` | `--no-visualize` | Camera preview without overlays |

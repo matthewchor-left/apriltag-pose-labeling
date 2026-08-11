@@ -1,17 +1,17 @@
-"""OpenCV overlays for paddle detection."""
+"""OpenCV overlays for object detection."""
 
 from __future__ import annotations
 
 import cv2
 import numpy as np
 
-from paddle_apriltag.detector import PaddlePose
-from paddle_apriltag.layout import CORNER_LABELS, MarkerLayout, layout_point_to_camera, marker_color_bgr
-from paddle_apriltag.viz.projection import (
-    paddle_axis_image_points,
+from object_apriltag.detector import ObjectPose
+from object_apriltag.layout import CORNER_LABELS, MarkerLayout, layout_point_to_camera, marker_color_bgr
+from object_apriltag.viz.projection import (
+    object_axis_image_points,
     project_camera_point,
 )
-from paddle_apriltag.viz.skeleton import PaddleModel
+from object_apriltag.viz.skeleton import ObjectModel
 
 KEYPOINT_COLORS_BGR = {
     "top": (128, 0, 128),
@@ -25,7 +25,7 @@ KEYPOINT_COLORS_BGR = {
 def draw_racket_keypoints(
     frame: np.ndarray,
     image_points: np.ndarray,
-    model: PaddleModel,
+    model: ObjectModel,
 ) -> None:
     points_by_name = {name: image_points[index] for index, name in enumerate(model.keypoint_names)}
 
@@ -55,17 +55,17 @@ def draw_racket_keypoints(
         cv2.putText(frame, name, (point[0] + 8, point[1] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 1, cv2.LINE_AA)
 
 
-def draw_paddle_origin(
+def draw_object_origin(
     frame: np.ndarray,
-    paddle_origin_camera: np.ndarray,
+    object_origin_camera: np.ndarray,
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
     *,
     radius: int = 9,
     color: tuple[int, int, int] = (0, 255, 0),
-    label: str = "paddle origin",
+    label: str = "object origin",
 ) -> tuple[int, int] | None:
-    point = project_camera_point(paddle_origin_camera, camera_matrix, dist_coeffs)
+    point = project_camera_point(object_origin_camera, camera_matrix, dist_coeffs)
     if not np.all(np.isfinite(point)):
         return None
 
@@ -80,16 +80,16 @@ def draw_paddle_origin(
     return x, y
 
 
-def draw_paddle_orientation(
+def draw_object_orientation(
     frame: np.ndarray,
-    pose: PaddlePose,
+    pose: ObjectPose,
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
     axis_length_m: float,
 ) -> None:
-    """Draw fused paddle X/Y/Z axes in the camera image (OpenCV camera frame)."""
+    """Draw fused object X/Y/Z axes in the camera image (OpenCV camera frame)."""
     try:
-        origin_xy, x_end, y_end, z_end = paddle_axis_image_points(
+        origin_xy, x_end, y_end, z_end = object_axis_image_points(
             pose.rotation,
             pose.origin,
             camera_matrix,
@@ -121,17 +121,17 @@ def draw_paddle_orientation(
         )
 
 
-def draw_paddle_pose(
+def draw_object_pose(
     frame: np.ndarray,
-    pose: PaddlePose,
+    pose: ObjectPose,
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
     marker_size_m: float,
-    model: PaddleModel,
+    model: ObjectModel,
 ) -> None:
-    draw_paddle_origin(frame, pose.origin, camera_matrix, dist_coeffs, label="paddle origin")
+    draw_object_origin(frame, pose.origin, camera_matrix, dist_coeffs, label="object origin")
     try:
-        origin_xy, x_end, y_end, z_end = paddle_axis_image_points(
+        origin_xy, x_end, y_end, z_end = object_axis_image_points(
             pose.rotation, pose.origin, camera_matrix, dist_coeffs, marker_size_m * 0.5
         )
         cv2.arrowedLine(frame, origin_xy, x_end, (0, 0, 255), 2, tipLength=0.25)
@@ -150,21 +150,21 @@ def draw_paddle_pose(
         draw_racket_keypoints(frame, np.asarray(image_points, dtype=np.float32), model)
 
 
-def draw_marker_layout_footprints(
+def draw_marker_model_footprints(
     frame: np.ndarray,
-    pose: PaddlePose,
+    pose: ObjectPose,
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
-    layout: MarkerLayout,
+    marker_model: MarkerLayout,
 ) -> None:
     height, width = frame.shape[:2]
-    for marker_id in sorted(layout.footprints):
-        footprint = layout.footprints[marker_id]
+    for marker_id in sorted(marker_model.footprints):
+        footprint = marker_model.footprints[marker_id]
         color = marker_color_bgr(marker_id)
-        corners_paddle = footprint.corners()
+        corners_layout = footprint.corners()
         image_corners: list[tuple[int, int]] = []
-        for point_layout in corners_paddle:
-            camera_point = layout_point_to_camera(point_layout, pose.rotation, pose.origin, layout)
+        for point_layout in corners_layout:
+            camera_point = layout_point_to_camera(point_layout, pose.rotation, pose.origin, marker_model)
             projected = project_camera_point(camera_point, camera_matrix, dist_coeffs)
             if not np.all(np.isfinite(projected)):
                 continue
@@ -185,7 +185,7 @@ def draw_marker_layout_footprints(
         for corner_name, point_layout in footprint.corners_by_name().items():
             label = CORNER_LABELS[corner_name]
             radius = 6 if label in {"tl", "br"} else 5
-            camera_point = layout_point_to_camera(point_layout, pose.rotation, pose.origin, layout)
+            camera_point = layout_point_to_camera(point_layout, pose.rotation, pose.origin, marker_model)
             projected = project_camera_point(camera_point, camera_matrix, dist_coeffs)
             if not np.all(np.isfinite(projected)):
                 continue
@@ -229,6 +229,19 @@ def draw_marker_annotations(
         cv2.LINE_AA,
     )
     return True
+
+
+def draw_eraser_planes(frame: np.ndarray, polygons: list[np.ndarray]) -> None:
+    for polygon in polygons:
+        points = np.round(polygon).astype(np.int32)
+        cv2.polylines(
+            frame,
+            [points],
+            isClosed=True,
+            color=(0, 255, 255),
+            thickness=2,
+            lineType=cv2.LINE_AA,
+        )
 
 
 def draw_live_hud(

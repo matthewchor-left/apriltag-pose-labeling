@@ -1,12 +1,12 @@
 import cv2
-from paddle_apriltag import PaddleDetector
-from paddle_apriltag.calibration import load_intrinsics
+from object_apriltag import ObjectDetector
+from object_apriltag.calibration import load_intrinsics
 
-camera_matrix, dist_coeffs, _, _, _ = load_intrinsics("calibration/camera_calibration.json")
-detector = PaddleDetector(
+camera_matrix, dist_coeffs, _, _, _ = load_intrinsics("config/Camera/nexplaygroundcam/intrinsics.json")
+detector = ObjectDetector(
     camera_matrix,
     dist_coeffs,
-    marker_layout="calibration/marker_layout.json",
+    marker_model="config/Model/object_01/marker_model.json",
 )
 
 cap = cv2.VideoCapture(0)
@@ -15,7 +15,7 @@ while True:
     ok, frame = cap.read()
     if not ok:
         break
-    pose = detector.detect(frame)  # PaddlePose(origin, rotation) or None
+    pose = detector.detect(frame)  # ObjectPose(origin, rotation) or None
     if pose is not None:
         print(pose)
     cv2.imshow("Frame", frame)
