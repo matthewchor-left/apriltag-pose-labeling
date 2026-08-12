@@ -12,6 +12,14 @@ _Avoid_: marker layout, layout file
 JSON file describing object skeleton keypoints and bone edges (`object_model.json`). Keypoint positions use the Model Frame (`coordinate_frame: "marker_model"`), the same frame as Marker/Eraser geometry.
 _Avoid_: skeleton file, object skeleton JSON (when meaning the file)
 
+**Object Model Keypoint**:
+A named 3D point in an Object Model, expressed in the Model Frame relative to the Reference Marker Center.
+_Avoid_: skeleton node, landmark entry
+
+**Interactive Object Model Capture**:
+Live `object-detect` session that records Object Model keypoints from Board Coordinate terminal input while `--preview`, `--board-frame`, and `--overlay-object-model` are all enabled. Requires a current Fused Object Pose and applicable Board Pose Estimate; edits update the in-memory overlay immediately and persist only on explicit save.
+_Avoid_: live annotation, skeleton editor
+
 **Eraser Model**:
 JSON file listing eraser planes for masking tags from the camera image (`eraser_model.json`).
 _Avoid_: mask config, annotation layout

@@ -389,6 +389,19 @@ def layout_point_to_camera(
     return object_rotation @ point_object + object_origin
 
 
+def camera_point_to_layout_point(
+    point_camera: np.ndarray,
+    object_rotation: np.ndarray,
+    object_origin: np.ndarray,
+    layout: MarkerLayout,
+) -> np.ndarray:
+    point = np.asarray(point_camera, dtype=np.float64).reshape(3)
+    point_object = object_rotation.T @ (point - object_origin)
+    orientation = object_reference_orientation(layout)
+    origin = object_reference_origin(layout)
+    return origin + orientation @ (OBJECT_AXIS_FLIP @ point_object)
+
+
 def marker_color(marker_id: int) -> str:
     return MARKER_LAYOUT_COLORS.get(marker_id, "#888888")
 

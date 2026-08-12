@@ -34,11 +34,7 @@ def _as_point3(value: Any, field_name: str) -> np.ndarray:
     raise ValueError(f"{field_name} must be [x, y] or [x, y, z] coordinates.")
 
 
-def load_object_model(path: str | Path) -> ObjectModel:
-    path = Path(path)
-    if not path.exists():
-        raise FileNotFoundError(f"Object model file not found: {path}")
-    data = json.loads(path.read_text(encoding="utf-8"))
+def object_model_from_data(data: dict[str, Any]) -> ObjectModel:
     units = str(data.get("units", "meters"))
     coordinate_frame = data.get("coordinate_frame", MODEL_FRAME_NAME)
     if coordinate_frame != MODEL_FRAME_NAME:
@@ -77,6 +73,13 @@ def load_object_model(path: str | Path) -> ObjectModel:
         skeleton_edges=tuple(skeleton_edges),
         object_points=object_points,
     )
+
+
+def load_object_model(path: str | Path) -> ObjectModel:
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Object model file not found: {path}")
+    return object_model_from_data(json.loads(path.read_text(encoding="utf-8")))
 
 
 def object_world_points_from_pose(

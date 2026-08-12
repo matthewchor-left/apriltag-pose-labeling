@@ -148,7 +148,9 @@ uv run annotation-tool \
 
 Board overlays use the same XZ grid and XYZ axes as `object-visualize-board-frame` (two-square margin and axis length by default). **Board Coordinate** labels appear only when both `--board-frame` and a pose-projection overlay are active (`--overlay-object-model`, `--overlay-marker-model`, or `--overlay-eraser-model` on `object-detect`; `--overlay-object-model` on `annotation-tool`). Labels use millimeters with one decimal place, e.g. `(12.3, 45.6, 78.9) mm`.
 
-On `object-detect`, `--no-visualize` disables all overlays including board grid and labels; board pose is still solved each frame but nothing is drawn.
+With `--preview`, `--board-frame`, and `--overlay-object-model` together, `object-detect` also enables **Interactive Object Model Capture**: press **e** to enter a Board Coordinate keypoint in the terminal (`keypoint-id x_mm y_mm z_mm`) and preview it as a magenta target, **s** to save to `--object-model`, **q** to quit when saved, and **x** to discard unsaved edits and quit.
+
+On `object-detect`, `--no-visualize` disables detection and pose-projection overlays, including the board grid and labels; board pose is still solved each frame. During Interactive Object Model Capture, only the editing controls and status remain visible.
 
 ## Core API (no visualization)
 
@@ -225,7 +227,7 @@ uv run object-calibrate-marker-model \
 - **S** — solve from captured samples; writes `--output` only when quality gates pass
 - **Q** — quit without writing
 
-A frame is recorded only when **at least two** expected marker IDs are visible at a sample tick. During solve, frames that cannot be assigned a consistent marker interpretation are rejected automatically; each marker pair used in the layout still needs at least **20** accepted co-visible frames (`--min-pair-inliers`) after rejection. Keep moving the object for diverse views — you do not need to capture pairs in isolated batches. The HUD shows expected/visible IDs, captured sample count, per-pair counts, connectivity readiness, and last-solve frame acceptance when you press **S**.
+A frame is recorded only when **at least two** expected marker IDs are visible at a sample tick. During solve, frames that cannot be assigned a consistent marker interpretation are rejected automatically; each marker pair used in the layout still needs at least **20** accepted co-visible frames (`--min-pair-inliers`) after rejection. Keep moving the object for diverse views — you do not need to capture pairs in isolated batches. The HUD shows expected/visible IDs, captured sample count, live pair readiness (raw co-visibility, robust inlier support, translation/rotation RMS, pass/weak/fail), graph connectivity from the reference marker, and last-solve frame acceptance when you press **S**.
 
 **Scale caveat:** metric layout depends on the physical `--marker-size` and calibrated intrinsics. Wrong marker size or scaled intrinsics will bias the solved geometry.
 
@@ -318,7 +320,7 @@ uv.lock                # locked dependency versions (commit this)
 | `object-calibrate-marker-model` | `--camera` / `--calibration` | Live camera index and intrinsics JSON |
 | `object-calibrate-marker-model` | `--marker-ids` / `--reference-marker-id` | Expected unique IDs and layout reference |
 | `object-calibrate-marker-model` | `--marker-size` | Physical tag edge length in meters |
-| `object-calibrate-marker-model` | `--sample-rate-hz` | Co-visibility sample rate (default 2 Hz) |
+| `object-calibrate-marker-model` | `--sample-rate-hz` | Co-visibility sample rate (default 10 Hz) |
 | `object-calibrate-marker-model` | `--min-pair-inliers` | Minimum co-visible frames per pair (default 20) |
 | `object-calibrate-marker-model` | `--output` / `--force` | Marker model JSON; refuse overwrite unless `--force` |
 | `object-inspect-marker-model` | `--marker-model` / `--visualize` | Print or diagram an existing marker model |

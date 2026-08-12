@@ -7,6 +7,7 @@ import numpy as np
 
 from object_apriltag.board_model import BoardModel
 from object_apriltag.board_pose import BoardPoseEstimate, board_point_to_camera
+from object_apriltag.viz.projection import opencv_image_point
 
 COLOR_X = (0, 0, 255)
 COLOR_Y = (0, 255, 0)
@@ -98,7 +99,13 @@ def draw_projected_polyline(
     color: tuple[int, int, int],
     thickness: int = 1,
 ) -> None:
-    pixels = np.round(image_points).astype(np.int32).reshape(-1, 1, 2)
+    safe_points: list[tuple[int, int]] = []
+    for point in image_points.reshape(-1, 2):
+        pixel = opencv_image_point(point)
+        if pixel is None:
+            return
+        safe_points.append(pixel)
+    pixels = np.asarray(safe_points, dtype=np.int32).reshape(-1, 1, 2)
     cv2.polylines(frame, [pixels], False, color, thickness, cv2.LINE_AA)
 
 
@@ -127,35 +134,39 @@ def draw_board_axes(
     for axis_name, segment in segments.items():
         projected = project_board_polyline(segment, pose, camera_matrix, dist_coeffs)
         draw_projected_polyline(frame, projected, colors[axis_name], thickness=2)
-        end = tuple(int(round(v)) for v in projected[-1])
-        cv2.putText(
-            frame,
-            labels[axis_name],
-            end,
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            colors[axis_name],
-            1,
-            cv2.LINE_AA,
-        )
+        end = opencv_image_point(projected[-1])
+        if end is not None:
+            cv2.putText(
+                frame,
+                labels[axis_name],
+                end,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                colors[axis_name],
+                1,
+                cv2.LINE_AA,
+            )
 
     y_segment = segments["y"]
     y_projected = project_board_polyline(y_segment, pose, camera_matrix, dist_coeffs)
     origin = y_projected[0]
     y_end = y_projected[-1]
     if float(np.linalg.norm(y_end - origin)) < Y_AXIS_MIN_SCREEN_PX:
-        origin_px = (int(round(origin[0])), int(round(origin[1])))
-        cv2.circle(frame, origin_px, 10, COLOR_Y, 1, cv2.LINE_AA)
-        cv2.putText(
-            frame,
-            "Y",
-            (origin_px[0] + 12, origin_px[1] + 4),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            COLOR_Y,
-            1,
-            cv2.LINE_AA,
-        )
+        origin_px = opencv_image_point(origin)
+        if origin_px is not None:
+            cv2.circle(frame, origin_px, 10, COLOR_Y, 1, cv2.LINE_AA)
+            label_origin = opencv_image_point((origin_px[0] + 12, origin_px[1] + 4))
+            if label_origin is not None:
+                cv2.putText(
+                    frame,
+                    "Y",
+                    label_origin,
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    COLOR_Y,
+                    1,
+                    cv2.LINE_AA,
+                )
 
 
 def draw_board_grid(

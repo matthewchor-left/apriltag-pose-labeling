@@ -5,6 +5,28 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
+INT32_MIN = -(2**31)
+INT32_MAX = 2**31 - 1
+
+
+def opencv_image_point(point_xy: np.ndarray | tuple[float, float]) -> tuple[int, int] | None:
+    """Return an OpenCV-safe integer pixel, or None if projection is unusable."""
+    xy = np.asarray(point_xy, dtype=np.float64).reshape(2)
+    if not (np.isfinite(xy[0]) and np.isfinite(xy[1])):
+        return None
+    x = int(round(xy[0]))
+    y = int(round(xy[1]))
+    if x < INT32_MIN or x > INT32_MAX or y < INT32_MIN or y > INT32_MAX:
+        return None
+    return x, y
+
+
+def _require_opencv_image_point(point_xy: np.ndarray | tuple[float, float]) -> tuple[int, int]:
+    point = opencv_image_point(point_xy)
+    if point is None:
+        raise ValueError("projected image point is not OpenCV-safe")
+    return point
+
 
 def project_camera_point(
     point_camera: np.ndarray,
@@ -42,10 +64,10 @@ def object_axis_image_points(
     y_xy = project_camera_point(axis_points[1], camera_matrix, dist_coeffs)
     z_xy = project_camera_point(axis_points[2], camera_matrix, dist_coeffs)
     return (
-        (int(round(origin_xy[0])), int(round(origin_xy[1]))),
-        (int(round(x_xy[0])), int(round(x_xy[1]))),
-        (int(round(y_xy[0])), int(round(y_xy[1]))),
-        (int(round(z_xy[0])), int(round(z_xy[1]))),
+        _require_opencv_image_point(origin_xy),
+        _require_opencv_image_point(x_xy),
+        _require_opencv_image_point(y_xy),
+        _require_opencv_image_point(z_xy),
     )
 
 
@@ -67,9 +89,9 @@ def marker_axis_image_points(
     projected = projected.reshape(2, 2)
 
     origin = project_camera_point(tvec.reshape(3), camera_matrix, dist_coeffs)
-    origin_xy = (int(round(origin[0])), int(round(origin[1])))
-    y_end = (int(round(projected[0, 0])), int(round(projected[0, 1])))
-    x_end = (int(round(projected[1, 0])), int(round(projected[1, 1])))
+    origin_xy = _require_opencv_image_point(origin)
+    y_end = _require_opencv_image_point(projected[0])
+    x_end = _require_opencv_image_point(projected[1])
     return origin_xy, y_end, x_end
 
 
@@ -88,4 +110,4 @@ def object_origin_image_coords(
     )
     del object_rotation
     point = project_camera_point(object_origin, camera_matrix, dist_coeffs)
-    return int(round(point[0])), int(round(point[1]))
+    return _require_opencv_image_point(point)

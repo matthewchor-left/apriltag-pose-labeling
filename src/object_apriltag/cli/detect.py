@@ -11,6 +11,7 @@ from object_apriltag.board_model import load_board_model
 from object_apriltag.board_pose import make_charuco_detector, select_board_pose, solve_board_pose
 from object_apriltag.calibration import load_intrinsics, require_calibration_image_size
 from object_apriltag.detector import ObjectDetector
+from object_apriltag.object_model_edit import ObjectModelEditSession, object_model_for_render
 from object_apriltag.eraser import load_eraser_model, project_eraser_planes
 from object_apriltag.pose import mean_reprojection_error
 from object_apriltag.viz import (
@@ -29,9 +30,11 @@ from object_apriltag.viz import (
 )
 from object_apriltag.viz.board_frame import render_board_frame_grid_axes
 from object_apriltag.viz.overlay import (
+    draw_board_coordinate_preview,
     draw_eraser_model_board_coordinate_labels,
     draw_marker_model_board_coordinate_labels,
     draw_object_model_board_coordinate_labels,
+    draw_object_model_edit_hud,
 )
 
 
@@ -62,7 +65,14 @@ def main() -> None:
             "  --overlay-marker-model   Marker sticker footprint quads (--marker-model).\n"
             "  --overlay-object-model   Object skeleton keypoints and edges (--object-model).\n"
             "  --overlay-eraser-model   Eraser plane quads (--eraser-model).\n"
-            "  (neither)                RGB object axis arrows (--axis-length)."
+            "  (neither)                RGB object axis arrows (--axis-length).\n"
+            "\n"
+            "Object Model keypoint editing (requires --preview, --board-frame, "
+            "--overlay-object-model):\n"
+            "  e    Terminal prompt: keypoint-id x_mm y_mm z_mm (Board Coordinates).\n"
+            "  s    Save keypoints to --object-model.\n"
+            "  q    Quit when saved; refuses while modified.\n"
+            "  x    Discard unsaved edits and quit."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -240,9 +250,16 @@ def main() -> None:
     marker_model = detector.marker_model
     marker_size_m = detector.marker_size_m
 
+    needs_object_model = args.overlay_object_model or args.plot_graph
+    edit_enabled = bool(
+        args.preview and args.board_frame and args.overlay_object_model and args.object_model is not None
+    )
+    edit_session = ObjectModelEditSession.from_path(args.object_model) if edit_enabled else None
     object_model = (
-        load_object_model(args.object_model)
-        if args.overlay_object_model or args.plot_graph
+        None
+        if edit_session is not None
+        else load_object_model(args.object_model)
+        if needs_object_model
         else None
     )
     eraser_model = (
@@ -267,7 +284,11 @@ def main() -> None:
 
     cap = open_camera(args.camera, width, height)
     print(f"Camera {args.camera}: {width}x{height}")
-    print("Press q to quit.")
+    if edit_enabled:
+        print(f"Object model editing enabled: {args.object_model}")
+        print("Keys: e edit, s save, q quit (when saved), x discard+quit.")
+    else:
+        print("Press q to quit.")
 
     hud = LiveHud()
     plot_figsize = (args.plot_width / 50.0, args.plot_width / 100.0)
@@ -279,7 +300,8 @@ def main() -> None:
 
         detections = detector.find_markers(frame)
         pose = detector.fuse(detections)
-        preview_frame = frame.copy() if args.visualize else frame
+        current_object_model = object_model_for_render(object_model, edit_session)
+        preview_frame = frame.copy() if args.visualize or edit_session is not None else frame
 
         board_pose = None
         if args.board_frame and board_model is not None and board_charuco is not None:
@@ -327,7 +349,7 @@ def main() -> None:
                         camera_matrix,
                         dist_coeffs,
                         marker_size_m,
-                        object_model,
+                        current_object_model,
                         marker_model,
                     )
                 elif args.overlay_marker_model:
@@ -359,13 +381,13 @@ def main() -> None:
                         args.axis_length,
                     )
                 if board_pose is not None:
-                    if args.overlay_object_model and object_model is not None:
+                    if args.overlay_object_model and current_object_model is not None:
                         draw_object_model_board_coordinate_labels(
                             preview_frame,
                             pose,
                             board_pose,
                             marker_model,
-                            object_model,
+                            current_object_model,
                             camera_matrix,
                             dist_coeffs,
                         )
@@ -389,27 +411,69 @@ def main() -> None:
                             dist_coeffs,
                         )
 
+        if (
+            edit_session is not None
+            and edit_session.preview_board_point_m is not None
+            and board_pose is not None
+        ):
+            draw_board_coordinate_preview(
+                preview_frame,
+                edit_session.preview_board_point_m,
+                board_pose,
+                camera_matrix,
+                dist_coeffs,
+                label=f"{edit_session.preview_keypoint_id} target",
+            )
+
         reproj_error = mean_reprojection_error(detections, marker_size_m, camera_matrix, dist_coeffs)
         fps, avg_reproj_error = hud.tick(reproj_error)
         if args.visualize:
             draw_live_hud(preview_frame, fps, avg_reproj_error)
+        if edit_session is not None:
+            draw_object_model_edit_hud(
+                preview_frame,
+                dirty=edit_session.dirty,
+                status_message=edit_session.status_message,
+            )
 
         world_points = (
-            object_world_points_from_pose(pose.rotation, pose.origin, object_model, marker_model)
-            if pose is not None and object_model is not None
+            object_world_points_from_pose(pose.rotation, pose.origin, current_object_model, marker_model)
+            if pose is not None and current_object_model is not None
             else {}
         )
         if args.preview and args.plot_graph:
-            plot_bgr = render_pose_plots(world_points, object_model, DEFAULT_AXIS_LIMITS, figsize=plot_figsize)
+            plot_bgr = render_pose_plots(world_points, current_object_model, DEFAULT_AXIS_LIMITS, figsize=plot_figsize)
             display_frame = make_side_by_side(preview_frame, plot_bgr, preview_frame.shape[0])
         elif args.preview:
             display_frame = preview_frame
         else:
-            display_frame = render_pose_plots(world_points, object_model, DEFAULT_AXIS_LIMITS, figsize=plot_figsize)
+            display_frame = render_pose_plots(world_points, current_object_model, DEFAULT_AXIS_LIMITS, figsize=plot_figsize)
 
         cv2.imshow("Object AprilTag Detector", display_frame)
-        if cv2.waitKey(1) & 0xFF == ord("q"):
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord("q"):
+            if edit_session is not None and edit_session.dirty:
+                print("Unsaved object model edits; press s to save or x to discard and quit.")
+                edit_session.status_message = "unsaved: s save or x discard+quit"
+            else:
+                break
+        elif key == ord("x") and edit_session is not None:
+            edit_session.discard()
             break
+        elif key == ord("s") and edit_session is not None:
+            if edit_session.save():
+                print(f"Saved object model: {args.object_model}")
+            else:
+                print(edit_session.status_message)
+        elif key == ord("e") and edit_session is not None:
+            try:
+                line = input("keypoint-id x_mm y_mm z_mm: ")
+            except EOFError:
+                line = ""
+            if edit_session.apply_keypoint_edit(line, pose, board_pose, marker_model):
+                print(edit_session.status_message)
+            else:
+                print(edit_session.status_message)
 
     cap.release()
     cv2.destroyAllWindows()

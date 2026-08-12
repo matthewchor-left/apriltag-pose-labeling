@@ -5,12 +5,13 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from object_apriltag.board_pose import BoardPoseEstimate, camera_point_to_board
+from object_apriltag.board_pose import BoardPoseEstimate, board_point_to_camera, camera_point_to_board
 from object_apriltag.detector import ObjectPose
 from object_apriltag.eraser import EraserModel, eraser_offset_to_model_point
 from object_apriltag.layout import CORNER_NAMES, CORNER_LABELS, MarkerLayout, layout_point_to_camera, marker_color_bgr
 from object_apriltag.viz.projection import (
     object_axis_image_points,
+    opencv_image_point,
     project_camera_point,
 )
 from object_apriltag.viz.skeleton import ObjectModel
@@ -25,6 +26,38 @@ def format_board_coordinate_mm(point_board: np.ndarray) -> str:
 
 def format_board_coordinate_hud_row(identity: str, point_board: np.ndarray) -> str:
     return f"{identity}: {format_board_coordinate_mm(point_board)}"
+
+
+def draw_board_coordinate_preview(
+    frame: np.ndarray,
+    point_board: np.ndarray,
+    board_pose: BoardPoseEstimate,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+    *,
+    label: str = "preview",
+) -> None:
+    point_camera = board_point_to_camera(point_board, board_pose)
+    if point_camera[2] <= 0.0:
+        return
+    point = opencv_image_point(project_camera_point(point_camera, camera_matrix, dist_coeffs))
+    if point is None:
+        return
+
+    color = (255, 0, 255)
+    cv2.drawMarker(frame, point, color, cv2.MARKER_CROSS, 18, 2, cv2.LINE_AA)
+    label_origin = opencv_image_point((point[0] + 10, point[1] - 10))
+    if label_origin is not None:
+        cv2.putText(
+            frame,
+            label,
+            label_origin,
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            color,
+            2,
+            cv2.LINE_AA,
+        )
 
 
 def draw_board_coordinates_hud(
@@ -210,30 +243,31 @@ def draw_racket_keypoints(
     points_by_name = {name: image_points[index] for index, name in enumerate(model.keypoint_names)}
 
     for start_name, end_name in model.skeleton_edges:
-        start = points_by_name[start_name]
-        end = points_by_name[end_name]
-        if not (np.all(np.isfinite(start)) and np.all(np.isfinite(end))):
+        start_pt = opencv_image_point(points_by_name[start_name])
+        end_pt = opencv_image_point(points_by_name[end_name])
+        if start_pt is None or end_pt is None:
             continue
         cv2.line(
             frame,
-            (int(round(start[0])), int(round(start[1]))),
-            (int(round(end[0])), int(round(end[1]))),
+            start_pt,
+            end_pt,
             (220, 220, 220),
             2,
             cv2.LINE_AA,
         )
 
     for index, name in enumerate(model.keypoint_names):
-        x, y = image_points[index]
-        if not np.isfinite(x) or not np.isfinite(y):
+        point = opencv_image_point(image_points[index])
+        if point is None:
             continue
-        point = (int(round(x)), int(round(y)))
         color = KEYPOINT_COLORS_BGR.get(name, (200, 200, 200))
         cv2.circle(frame, point, 7, color, -1, lineType=cv2.LINE_AA)
         cv2.circle(frame, point, 7, (0, 0, 0), 1, lineType=cv2.LINE_AA)
         if draw_point_labels:
-            cv2.putText(frame, name, (point[0] + 8, point[1] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 3, cv2.LINE_AA)
-            cv2.putText(frame, name, (point[0] + 8, point[1] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 1, cv2.LINE_AA)
+            label_origin = opencv_image_point((point[0] + 8, point[1] - 8))
+            if label_origin is not None:
+                cv2.putText(frame, name, label_origin, cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 3, cv2.LINE_AA)
+                cv2.putText(frame, name, label_origin, cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 1, cv2.LINE_AA)
 
 
 def draw_object_origin(
@@ -290,16 +324,18 @@ def draw_object_orientation(
     )
     for tip, color, label in axes:
         cv2.arrowedLine(frame, origin_xy, tip, color, 2, tipLength=0.2, line_type=cv2.LINE_AA)
-        cv2.putText(
-            frame,
-            label,
-            (tip[0] + 4, tip[1] - 4),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
-            color,
-            2,
-            cv2.LINE_AA,
-        )
+        label_origin = opencv_image_point((tip[0] + 4, tip[1] - 4))
+        if label_origin is not None:
+            cv2.putText(
+                frame,
+                label,
+                label_origin,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                color,
+                2,
+                cv2.LINE_AA,
+            )
 
 
 def draw_object_pose(
@@ -324,21 +360,19 @@ def draw_object_pose(
     except (RuntimeError, ValueError):
         return
 
-    image_points = []
-    for name in model.keypoint_names:
+    image_points = np.full((len(model.keypoint_names), 2), np.nan, dtype=np.float64)
+    for index, name in enumerate(model.keypoint_names):
         camera_point = layout_point_to_camera(
             model.keypoints[name],
             pose.rotation,
             pose.origin,
             marker_model,
         )
-        projected = project_camera_point(camera_point, camera_matrix, dist_coeffs)
-        if np.all(np.isfinite(projected)):
-            image_points.append(projected)
-    if image_points:
+        image_points[index] = project_camera_point(camera_point, camera_matrix, dist_coeffs)
+    if np.any(np.isfinite(image_points)):
         draw_racket_keypoints(
             frame,
-            np.asarray(image_points, dtype=np.float32),
+            image_points,
             model,
             draw_point_labels=draw_point_labels,
         )
@@ -439,6 +473,29 @@ def draw_eraser_planes(frame: np.ndarray, polygons: list[np.ndarray]) -> None:
             thickness=2,
             lineType=cv2.LINE_AA,
         )
+
+
+def draw_object_model_edit_hud(
+    frame: np.ndarray,
+    *,
+    dirty: bool,
+    status_message: str,
+    origin: tuple[int, int] = (10, 90),
+    line_spacing: int = 22,
+) -> None:
+    lines = [
+        "edit: e add/update  s save  q quit  x discard+quit",
+        "modified" if dirty else "saved",
+    ]
+    if status_message:
+        lines.append(status_message)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.55
+    thickness = 2
+    color = (0, 255, 255) if dirty else (200, 255, 200)
+    for index, line in enumerate(lines):
+        x, y = origin[0], origin[1] + index * line_spacing
+        cv2.putText(frame, line, (x, y), font, font_scale, color, thickness, cv2.LINE_AA)
 
 
 def draw_live_hud(
