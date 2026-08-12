@@ -25,7 +25,7 @@ A quadrilateral region on the object, defined by four named corners, used to mas
 _Avoid_: mask polygon, erase region
 
 **Model Frame**:
-The 3D coordinate system used in marker_model and eraser_model: +X right, +Y down, +Z into the scene, units in meters.
+The 3D coordinate system used in Marker Model, Eraser Model, and Object Model: +X right, +Y down, +Z into the scene, units in meters.
 _Avoid_: layout frame, OpenCV frame, camera frame
 
 **Eraser Plane Corner**:
@@ -69,5 +69,21 @@ JSON file describing a ChArUco board geometry and its Board Reference Frame conv
 _Avoid_: board config, charuco layout file
 
 **Marker Model Diagram**:
-Static plot of marker footprints in model coordinates (`object-calibrate-marker-model`).
+Static plot of marker footprints in model coordinates (`object-inspect-marker-model`).
 _Avoid_: layout diagram, layout visualization
+
+**Marker Model Calibration**:
+Live estimation of marker sticker layout on an object from co-visible AprilTag detections, producing `marker_model.json`.
+_Avoid_: marker layout calibration session, live layout capture
+
+**Co-visibility Observation**:
+One timed camera sample where at least two expected markers are simultaneously visible, recording their image corners for layout calibration.
+_Avoid_: calibration frame, capture sample
+
+**Relative Marker Transform**:
+The rigid transform from one marker frame to another, estimated from paired detections across co-visible observations.
+_Avoid_: marker-to-marker pose, inter-marker offset
+
+**Marker Pose Graph**:
+The graph of expected markers connected by relative transforms with sufficient co-visibility support, anchored at the reference marker.
+_Avoid_: marker graph, connectivity graph

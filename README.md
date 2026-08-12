@@ -206,6 +206,46 @@ If the object is viewed from the back or from the side, the mapping between mode
 
 `ObjectDetector` fuses marker poses into **camera-frame** `origin` and `rotation`. Model coordinates are converted to the camera only through the detected pose and per-marker transforms in `layout.py`.
 
+## Marker model calibration (live)
+
+`object-calibrate-marker-model` estimates sticker footprint positions from live camera views. No tape measure or manual corner entry — move the object so expected markers co-appear while the tool samples at **2 Hz** (override with `--sample-rate-hz`).
+
+```bash
+uv run object-calibrate-marker-model \
+  --camera 0 \
+  --calibration config/Camera/nexplaygroundcam/intrinsics.json \
+  --dictionary 36h11 \
+  --detection-sensitivity relaxed \
+  --marker-size 0.07 \
+  --marker-ids 0 1 2 3 \
+  --reference-marker-id 0 \
+  --output config/Model/remote1/marker_model.json
+```
+
+- **S** — solve from captured samples; writes `--output` only when quality gates pass
+- **Q** — quit without writing
+
+A frame is recorded only when **at least two** expected marker IDs are visible at a sample tick. During solve, frames that cannot be assigned a consistent marker interpretation are rejected automatically; each marker pair used in the layout still needs at least **20** accepted co-visible frames (`--min-pair-inliers`) after rejection. Keep moving the object for diverse views — you do not need to capture pairs in isolated batches. The HUD shows expected/visible IDs, captured sample count, per-pair counts, connectivity readiness, and last-solve frame acceptance when you press **S**.
+
+**Scale caveat:** metric layout depends on the physical `--marker-size` and calibrated intrinsics. Wrong marker size or scaled intrinsics will bias the solved geometry.
+
+**Quality gates** (defaults; override on the CLI):
+
+| Gate | Default |
+|------|---------|
+| Global reprojection RMS | 2 px (`--reprojection-rms-gate-px`) |
+| Per-marker reprojection RMS | 2 px (same gate as global) |
+| Pair translation RMS | 10% of marker size (`--pair-translation-rms-gate-ratio`) |
+| Pair rotation RMS | 5° (`--pair-rotation-rms-gate-deg`) |
+
+Refused solves print diagnostics and resume capture; nothing is written until a solve passes. Use `--force` to overwrite an existing `--output`. Frame resolution must match the calibration `image_size`; intrinsics are not scaled.
+
+Inspect an existing model (terminal or static diagram):
+
+```bash
+uv run object-inspect-marker-model --marker-model config/Model/remote1/marker_model.json --visualize
+```
+
 ## Optional visualization
 
 The `viz` extra adds overlays, skeleton keypoints, and matplotlib plots:
@@ -220,7 +260,6 @@ uv run object-detect \
   --detection-sensitivity relaxed \
   --plot-graph \
   --object-model config/Model/object_01/object_model.json
-uv run object-calibrate-marker-model --marker-model config/Model/object_01/marker_model.json --visualize
 ```
 
 ## Development
@@ -241,7 +280,7 @@ src/object_apriltag/
   layout.py            # marker model JSON + transforms
   calibration.py       # intrinsics loader + config profile paths
   viz/                 # optional overlays and plots
-  cli/                 # object-detect, object-charuco, object-calibrate-marker-model
+  cli/                 # object-detect, object-charuco, object-calibrate-marker-model, object-inspect-marker-model
 config/
   Board/
     charuco_h6_w9_25mm_4x4_50/  # board_model.json
@@ -276,3 +315,10 @@ uv.lock                # locked dependency versions (commit this)
 | `object-detect` / `annotation-tool` | `--board-frame` | Board Reference Frame grid, axes, and coordinate labels |
 | `object-detect` / `annotation-tool` | `--board-model` | ChArUco board model JSON (required with `--board-frame`) |
 | `object-detect` / `annotation-tool` | `--camera-motion` | `static` (default) or `dynamic` board pose retention |
+| `object-calibrate-marker-model` | `--camera` / `--calibration` | Live camera index and intrinsics JSON |
+| `object-calibrate-marker-model` | `--marker-ids` / `--reference-marker-id` | Expected unique IDs and layout reference |
+| `object-calibrate-marker-model` | `--marker-size` | Physical tag edge length in meters |
+| `object-calibrate-marker-model` | `--sample-rate-hz` | Co-visibility sample rate (default 2 Hz) |
+| `object-calibrate-marker-model` | `--min-pair-inliers` | Minimum co-visible frames per pair (default 20) |
+| `object-calibrate-marker-model` | `--output` / `--force` | Marker model JSON; refuse overwrite unless `--force` |
+| `object-inspect-marker-model` | `--marker-model` / `--visualize` | Print or diagram an existing marker model |

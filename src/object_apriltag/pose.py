@@ -13,14 +13,18 @@ Detection = tuple[np.ndarray, int]
 
 
 def marker_corner_object_points(marker_size_m: float) -> np.ndarray:
-    """3D corners in marker frame: origin at bottom-center, +Y toward tag top."""
+    """3D corners in marker frame: origin at bottom-center, +X marker-right, +Y toward tag top.
+
+    Row order matches OpenCV/AprilTag detection order: top-left, top-right, bottom-right,
+    bottom-left.
+    """
     half = marker_size_m / 2.0
     return np.array(
         [
-            [-half, 0, 0.0],
-            [half, 0, 0.0],
-            [half, marker_size_m, 0.0],
             [-half, marker_size_m, 0.0],
+            [half, marker_size_m, 0.0],
+            [half, 0.0, 0.0],
+            [-half, 0.0, 0.0],
         ],
         dtype=np.float32,
     )

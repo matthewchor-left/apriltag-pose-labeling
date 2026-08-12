@@ -291,7 +291,6 @@ def main() -> None:
                 dist_coeffs=dist_coeffs,
             )
         if args.overlay_object_model and pose is not None and object_model is not None:
-            show_board_labels = board_pose is not None
             draw_object_pose(
                 preview,
                 pose,
@@ -300,9 +299,8 @@ def main() -> None:
                 marker_size_m,
                 object_model,
                 marker_model,
-                draw_point_labels=not show_board_labels,
             )
-            if show_board_labels:
+            if board_pose is not None:
                 draw_object_model_board_coordinate_labels(
                     preview,
                     pose,

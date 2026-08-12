@@ -23,21 +23,69 @@ def format_board_coordinate_mm(point_board: np.ndarray) -> str:
     return f"({point[0]:.1f}, {point[1]:.1f}, {point[2]:.1f}) mm"
 
 
-def draw_board_coordinate_label(
+def format_board_coordinate_hud_row(identity: str, point_board: np.ndarray) -> str:
+    return f"{identity}: {format_board_coordinate_mm(point_board)}"
+
+
+def draw_board_coordinates_hud(
     frame: np.ndarray,
-    anchor: tuple[int, int],
-    identity: str,
-    point_board: np.ndarray,
+    entries: list[tuple[str, np.ndarray]],
     *,
+    title: str = "Board coordinates",
+    margin: int = 10,
+    padding: int = 8,
+    line_height: int = 18,
+    font_scale: float = 0.45,
     color: tuple[int, int, int] = BOARD_LABEL_COLOR_BGR,
 ) -> None:
-    x, y = anchor
+    if not entries:
+        return
+
+    height, width = frame.shape[:2]
     font = cv2.FONT_HERSHEY_SIMPLEX
-    coordinate_line = format_board_coordinate_mm(point_board)
-    cv2.putText(frame, identity, (x + 8, y - 8), font, 0.45, (0, 0, 0), 3, cv2.LINE_AA)
-    cv2.putText(frame, identity, (x + 8, y - 8), font, 0.45, color, 1, cv2.LINE_AA)
-    cv2.putText(frame, coordinate_line, (x + 8, y + 10), font, 0.45, (0, 0, 0), 3, cv2.LINE_AA)
-    cv2.putText(frame, coordinate_line, (x + 8, y + 10), font, 0.45, color, 1, cv2.LINE_AA)
+    thickness = 1
+    entry_lines = [format_board_coordinate_hud_row(identity, point_board) for identity, point_board in entries]
+    lines = [title, *entry_lines]
+    text_sizes = [cv2.getTextSize(line, font, font_scale, thickness)[0] for line in lines]
+    panel_width = max(size[0] for size in text_sizes) + 2 * padding
+    available_height = height - 2 * margin
+    max_content_lines = max(1, (available_height - 2 * padding) // line_height)
+    truncated = len(lines) > max_content_lines
+    if truncated:
+        omitted = len(lines) - max_content_lines + 1
+        lines = lines[: max_content_lines - 1] + [f"... +{omitted} more"]
+
+    panel_height = len(lines) * line_height + 2 * padding
+    x0 = max(margin, width - panel_width - margin)
+    y0 = margin
+    x1 = min(width - margin, x0 + panel_width)
+    y1 = min(height - margin, y0 + panel_height)
+
+    cv2.rectangle(frame, (x0, y0), (x1, y1), (0, 0, 0), -1)
+    cv2.rectangle(frame, (x0, y0), (x1, y1), color, 1)
+
+    for index, line in enumerate(lines):
+        text_y = y0 + padding + (index + 1) * line_height - 4
+        cv2.putText(
+            frame,
+            line,
+            (x0 + padding, text_y),
+            font,
+            font_scale,
+            (0, 0, 0),
+            3,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            frame,
+            line,
+            (x0 + padding, text_y),
+            font,
+            font_scale,
+            color,
+            thickness,
+            cv2.LINE_AA,
+        )
 
 
 def _draw_board_coordinate_labels_for_points(
@@ -49,17 +97,12 @@ def _draw_board_coordinate_labels_for_points(
     *,
     colors: list[tuple[int, int, int]] | None = None,
 ) -> None:
-    height, width = frame.shape[:2]
-    for index, (identity, camera_point) in enumerate(labeled_camera_points):
-        projected = project_camera_point(camera_point, camera_matrix, dist_coeffs)
-        if not np.all(np.isfinite(projected)):
-            continue
-        x, y = int(round(projected[0])), int(round(projected[1]))
-        if not (0 <= x < width and 0 <= y < height):
-            continue
-        color = BOARD_LABEL_COLOR_BGR if colors is None else colors[index]
-        board_point = camera_point_to_board(camera_point, board_pose)
-        draw_board_coordinate_label(frame, (x, y), identity, board_point, color=color)
+    del camera_matrix, dist_coeffs, colors
+    entries = [
+        (identity, camera_point_to_board(camera_point, board_pose))
+        for identity, camera_point in labeled_camera_points
+    ]
+    draw_board_coordinates_hud(frame, entries)
 
 
 def draw_object_model_board_coordinate_labels(

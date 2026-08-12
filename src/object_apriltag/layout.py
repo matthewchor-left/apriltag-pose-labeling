@@ -12,6 +12,8 @@ use positive Z because they are farther into the scene.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -213,6 +215,72 @@ def derive_marker_to_object_transforms(
         )
         for marker_id, footprint in footprints.items()
     }
+
+
+def _point_to_json(point: np.ndarray) -> list[float]:
+    array = np.asarray(point, dtype=np.float64).reshape(-1)
+    if array.shape == (2,):
+        return [float(array[0]), float(array[1])]
+    return [float(array[0]), float(array[1]), float(array[2])]
+
+
+def footprint_to_dict(footprint: MarkerFootprint) -> dict[str, list[float]]:
+    return {
+        "top_left": _point_to_json(footprint.top_left),
+        "top_right": _point_to_json(footprint.top_right),
+        "bottom_right": _point_to_json(footprint.bottom_right),
+        "bottom_left": _point_to_json(footprint.bottom_left),
+    }
+
+
+def marker_layout_to_dict(layout: MarkerLayout) -> dict[str, Any]:
+    return {
+        "reference_marker_id": layout.reference_marker_id,
+        "units": layout.units,
+        "marker_size_m": layout.marker_size_m,
+        "markers": {
+            str(marker_id): footprint_to_dict(footprint)
+            for marker_id, footprint in sorted(layout.footprints.items())
+        },
+    }
+
+
+def build_marker_layout(
+    reference_marker_id: int,
+    marker_size_m: float,
+    footprints: dict[int, MarkerFootprint],
+    units: str = "meters",
+) -> MarkerLayout:
+    validate_all_footprint_sizes(footprints, marker_size_m)
+    transforms = derive_marker_to_object_transforms(footprints, reference_marker_id)
+    return MarkerLayout(
+        reference_marker_id=reference_marker_id,
+        units=units,
+        marker_size_m=marker_size_m,
+        footprints=footprints,
+        transforms=transforms,
+    )
+
+
+def save_marker_model(path: str | Path, layout: MarkerLayout) -> None:
+    """Atomically write a validated marker model JSON file."""
+    path = Path(path)
+    payload = marker_layout_to_dict(layout)
+    text = json.dumps(payload, indent=2) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def load_marker_model(path: str | Path) -> MarkerLayout:

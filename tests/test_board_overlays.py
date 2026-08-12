@@ -13,13 +13,14 @@ from object_apriltag.detector import ObjectPose
 from object_apriltag.eraser import load_eraser_model
 from object_apriltag.layout import CORNER_LABELS, CORNER_NAMES, load_marker_model
 from object_apriltag.viz.overlay import (
-    draw_board_coordinate_label,
+    draw_board_coordinates_hud,
     draw_eraser_model_board_coordinate_labels,
     draw_marker_model_board_coordinate_labels,
     draw_marker_model_footprints,
     draw_object_model_board_coordinate_labels,
     draw_object_pose,
     draw_racket_keypoints,
+    format_board_coordinate_hud_row,
     format_board_coordinate_mm,
 )
 from object_apriltag.viz.skeleton import load_object_model
@@ -67,8 +68,9 @@ def unique_texts(texts: list[str]) -> list[str]:
 
 def semantic_lines(texts: list[str]) -> tuple[list[str], list[str]]:
     unique = unique_texts(texts)
-    identities = [line for line in unique if not line.endswith(" mm")]
-    coordinates = [line for line in unique if line.endswith(" mm")]
+    hud_rows = [line for line in unique if line.endswith(" mm") and ": (" in line]
+    identities = [row.rsplit(": ", 1)[0] for row in hud_rows]
+    coordinates = [row.rsplit(": ", 1)[1] for row in hud_rows]
     return identities, coordinates
 
 
@@ -83,9 +85,15 @@ class BoardCoordinateFormatTests(unittest.TestCase):
         self.assertEqual(format_board_coordinate_mm(np.zeros(3)), "(0.0, 0.0, 0.0) mm")
 
 
-class BoardCoordinateLabelDrawTests(unittest.TestCase):
-    def test_draw_board_coordinate_label_writes_identity_and_coordinate_lines(self) -> None:
-        frame = np.zeros((120, 160, 3), dtype=np.uint8)
+class BoardCoordinateHudTests(unittest.TestCase):
+    def test_format_board_coordinate_hud_row(self) -> None:
+        self.assertEqual(
+            format_board_coordinate_hud_row("center", np.array([0.01, 0.02, 0.03])),
+            "center: (10.0, 20.0, 30.0) mm",
+        )
+
+    def test_draw_board_coordinates_hud_writes_title_and_rows(self) -> None:
+        frame = np.zeros((120, 320, 3), dtype=np.uint8)
         texts: list[str] = []
 
         def capture_put_text(
@@ -98,18 +106,39 @@ class BoardCoordinateLabelDrawTests(unittest.TestCase):
             texts.append(text)
 
         with mock.patch("object_apriltag.viz.overlay.cv2.putText", side_effect=capture_put_text):
-            draw_board_coordinate_label(
+            draw_board_coordinates_hud(
                 frame,
-                (40, 60),
-                "center",
-                np.array([0.01, 0.02, 0.03]),
+                [
+                    ("center", np.array([0.01, 0.02, 0.03])),
+                    ("top", np.array([0.0, 0.0, 0.0])),
+                ],
             )
 
-        identities, coordinates = semantic_lines(texts)
-        self.assertEqual(identities, ["center"])
-        self.assertEqual(coordinates, ["(10.0, 20.0, 30.0) mm"])
-        self.assertEqual(texts.count("center"), 2)
-        self.assertEqual(texts.count("(10.0, 20.0, 30.0) mm"), 2)
+        unique = unique_texts(texts)
+        self.assertIn("Board coordinates", unique)
+        self.assertIn("center: (10.0, 20.0, 30.0) mm", unique)
+        self.assertIn("top: (0.0, 0.0, 0.0) mm", unique)
+
+    def test_draw_board_coordinates_hud_truncates_when_panel_overflows(self) -> None:
+        frame = np.zeros((40, 320, 3), dtype=np.uint8)
+        texts: list[str] = []
+
+        def capture_put_text(
+            _image: np.ndarray,
+            text: str,
+            _org: tuple[int, int],
+            *_args: object,
+            **_kwargs: object,
+        ) -> None:
+            texts.append(text)
+
+        entries = [(f"p{i}", np.zeros(3, dtype=np.float64)) for i in range(8)]
+        with mock.patch("object_apriltag.viz.overlay.cv2.putText", side_effect=capture_put_text):
+            draw_board_coordinates_hud(frame, entries)
+
+        unique = unique_texts(texts)
+        self.assertTrue(any(text.startswith("... +") for text in unique))
+        self.assertNotIn("p7: (0.0, 0.0, 0.0) mm", unique)
 
 
 class BoardCoordinateOverlayFamilyTests(unittest.TestCase):
@@ -122,7 +151,7 @@ class BoardCoordinateOverlayFamilyTests(unittest.TestCase):
         self.eraser_model = load_eraser_model(REMOTE1_ERASER_MODEL_PATH)
 
     def _draw_and_collect_texts(self, draw_callable: object) -> list[str]:
-        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        frame = np.zeros((900, 640, 3), dtype=np.uint8)
         texts: list[str] = []
 
         def capture_put_text(
@@ -199,14 +228,14 @@ class BoardCoordinateOverlayFamilyTests(unittest.TestCase):
         self.assertEqual(set(identities), expected_identities)
         self.assertTrue(all(text.endswith(" mm") for text in coordinates))
         self.assertEqual(
-            sum(1 for text in texts if not text.endswith(" mm")),
-            sum(1 for text in texts if text.endswith(" mm")),
+            sum(1 for text in unique_texts(texts) if text.endswith(" mm")),
+            len(expected_identities),
         )
         self.assertIn("stick1:tl", identities)
         self.assertIn("stick2:br", identities)
 
-    def test_off_screen_points_skip_labels(self) -> None:
-        tiny_frame = np.zeros((1, 1, 3), dtype=np.uint8)
+    def test_hud_lists_all_keypoints_regardless_of_image_size(self) -> None:
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
         texts: list[str] = []
 
         def capture_put_text(
@@ -220,7 +249,7 @@ class BoardCoordinateOverlayFamilyTests(unittest.TestCase):
 
         with mock.patch("object_apriltag.viz.overlay.cv2.putText", side_effect=capture_put_text):
             draw_object_model_board_coordinate_labels(
-                tiny_frame,
+                frame,
                 self.object_pose,
                 self.board_pose,
                 self.marker_model,
@@ -228,7 +257,9 @@ class BoardCoordinateOverlayFamilyTests(unittest.TestCase):
                 self.camera_matrix,
                 self.dist_coeffs,
             )
-        self.assertFalse(any("mm" in text for text in texts))
+        identities, coordinates = semantic_lines(texts)
+        self.assertEqual(set(identities), set(self.object_model.keypoint_names))
+        self.assertEqual(len(coordinates), len(self.object_model.keypoint_names))
 
 
 class OrdinaryLabelSuppressionTests(unittest.TestCase):

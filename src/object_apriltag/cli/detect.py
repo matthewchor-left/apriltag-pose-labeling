@@ -320,7 +320,6 @@ def main() -> None:
                     draw=True,
                 )
             if pose is not None:
-                show_board_labels = board_pose is not None
                 if args.overlay_object_model:
                     draw_object_pose(
                         preview_frame,
@@ -330,7 +329,6 @@ def main() -> None:
                         marker_size_m,
                         object_model,
                         marker_model,
-                        draw_point_labels=not show_board_labels,
                     )
                 elif args.overlay_marker_model:
                     draw_marker_model_footprints(
@@ -339,7 +337,6 @@ def main() -> None:
                         camera_matrix,
                         dist_coeffs,
                         marker_model,
-                        draw_point_labels=not show_board_labels,
                     )
                 elif args.overlay_eraser_model and eraser_model is not None:
                     polygons = project_eraser_planes(
