@@ -483,6 +483,11 @@ class MarkerLayoutCalibrationRefusalTests(unittest.TestCase):
         )
         assert result.quality is not None
         self.assertEqual(result.quality.inlier_corner_count, 0)
+        assert result.quality.dropped_pair_edges is not None
+        post_pruning_drops = [
+            edge for edge in result.quality.dropped_pair_edges if edge.stage == "post_pruning"
+        ]
+        self.assertGreater(len(post_pruning_drops), 0)
 
     def test_refuses_when_per_marker_reprojection_gate_fails(self) -> None:
         observations = synthesize_observations(
@@ -512,16 +517,48 @@ class MarkerLayoutCalibrationRefusalTests(unittest.TestCase):
 
     @mock.patch("object_apriltag.marker_layout_calibration.least_squares")
     def test_bundle_adjustment_failures_are_structured(self, least_squares_mock: mock.Mock) -> None:
-        observations = synthesize_observations(
-            _two_marker_poses(self.marker_size_m),
-            frame_count=25,
-            marker_size_m=self.marker_size_m,
-        )
+        observations = _synth_pair_with_corrupt_frames(25, frozenset({2, 7}))
         least_squares_mock.side_effect = ValueError("singular matrix")
         result = self._calibrate(observations, [0, 1])
         self.assertIsNone(result.layout)
-        self.assertIsNone(result.quality)
+        assert result.quality is not None
         self.assertIn("Bundle adjustment failed", result.failure_reason or "")
+        self.assertEqual(result.quality.reprojection_rms_px, float("inf"))
+        self.assertEqual(result.quality.inlier_corner_count, 0)
+        self.assertEqual(result.quality.rejected_frame_count, 2)
+        assert result.quality.assignment_rejection_records is not None
+        self.assertEqual(len(result.quality.assignment_rejection_records), 2)
+        assert result.quality.dropped_pair_edges is not None
+
+    @mock.patch("object_apriltag.marker_layout_calibration.least_squares")
+    def test_bundle_adjustment_failure_preserves_assignment_and_edge_diagnostics(
+        self,
+        least_squares_mock: mock.Mock,
+    ) -> None:
+        observations = [
+            FrameObservation(frame_id=f"capture-{index}", markers=obs.markers)
+            for index, obs in enumerate(_synth_pair_with_corrupt_frames(25, frozenset({2, 7, 11})))
+        ]
+        least_squares_mock.side_effect = ValueError("singular matrix")
+        result = calibrate_marker_layout(
+            observations,
+            self.camera_matrix,
+            self.dist_coeffs,
+            expected_marker_ids=[0, 1],
+            reference_marker_id=0,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+        )
+        self.assertIsNone(result.layout)
+        assert result.quality is not None
+        assert result.quality.assignment_rejections is not None
+        self.assertEqual(result.quality.assignment_rejections.total_rejected, 3)
+        assert result.quality.assignment_rejection_records is not None
+        self.assertEqual(
+            {record.frame_id for record in result.quality.assignment_rejection_records},
+            {"capture-2", "capture-7", "capture-11"},
+        )
+        assert result.quality.dropped_pair_edges is not None
 
     @mock.patch("object_apriltag.marker_layout_calibration.least_squares")
     def test_positive_depth_failure_is_structured(self, least_squares_mock: mock.Mock) -> None:
@@ -541,7 +578,8 @@ class MarkerLayoutCalibrationRefusalTests(unittest.TestCase):
         least_squares_mock.side_effect = _return_behind_camera_pose
         result = self._calibrate(observations, [0, 1])
         self.assertIsNone(result.layout)
-        self.assertIsNone(result.quality)
+        assert result.quality is not None
+        self.assertEqual(result.quality.reprojection_rms_px, float("inf"))
         self.assertIn("non-positive depth", result.failure_reason or "")
 
     def test_refuses_when_expected_ids_are_disconnected(self) -> None:
@@ -865,16 +903,21 @@ class PairGraphFilteringTests(unittest.TestCase):
         }
         allowed_frames = frozenset(range(20))
 
-        filtered, failure = _restrict_pair_consensus_to_frames(
+        filtered, failure, dropped = _restrict_pair_consensus_to_frames(
             pair_consensus,
             allowed_frames,
             self.expected_ids,
             self.reference_marker_id,
             self.settings,
+            marker_size_m=0.07,
         )
 
         self.assertIsNone(failure)
         self.assertEqual(set(filtered), {(0, 1), (1, 2)})
+        self.assertEqual(len(dropped), 1)
+        self.assertEqual(dropped[0].marker_pair, (0, 2))
+        self.assertEqual(dropped[0].stage, "assignment_support")
+        self.assertEqual(dropped[0].reason, "insufficient_support")
 
     def test_restrict_fails_when_required_bridge_edge_is_dropped(self) -> None:
         pair_consensus = {
@@ -883,17 +926,21 @@ class PairGraphFilteringTests(unittest.TestCase):
         }
         allowed_frames = frozenset(range(20))
 
-        filtered, failure = _restrict_pair_consensus_to_frames(
+        filtered, failure, dropped = _restrict_pair_consensus_to_frames(
             pair_consensus,
             allowed_frames,
             self.expected_ids,
             self.reference_marker_id,
             self.settings,
+            marker_size_m=0.07,
         )
 
         self.assertIsNotNone(failure)
         self.assertIn("not connected", failure or "")
         self.assertEqual(set(filtered), {(1, 2)})
+        self.assertEqual(len(dropped), 1)
+        self.assertEqual(dropped[0].marker_pair, (0, 1))
+        self.assertEqual(dropped[0].stage, "assignment_support")
 
     def test_estimate_drops_bad_redundant_edge_when_chain_remains(self) -> None:
         marker_size_m = 0.07
@@ -922,7 +969,7 @@ class PairGraphFilteringTests(unittest.TestCase):
             (0, 2): _hypotheses((0, 2), bad=True),
         }
 
-        filtered, failure = _estimate_pair_consensus(
+        filtered, failure, dropped = _estimate_pair_consensus(
             pair_hypotheses,
             self.expected_ids,
             self.reference_marker_id,
@@ -932,6 +979,9 @@ class PairGraphFilteringTests(unittest.TestCase):
 
         self.assertIsNone(failure)
         self.assertEqual(set(filtered), {(0, 1), (1, 2)})
+        self.assertEqual(len(dropped), 1)
+        self.assertEqual(dropped[0].marker_pair, (0, 2))
+        self.assertEqual(dropped[0].stage, "initial_consensus")
 
     def test_recheck_drops_weak_redundant_edge_when_chain_remains(self) -> None:
         pair_consensus = {
@@ -952,7 +1002,7 @@ class PairGraphFilteringTests(unittest.TestCase):
         ]
         inlier_mask = np.ones(len(corner_observations), dtype=bool)
 
-        filtered, failure = _recheck_pair_support(
+        filtered, failure, dropped = _recheck_pair_support(
             pair_consensus,
             corner_observations,
             inlier_mask,
@@ -960,10 +1010,14 @@ class PairGraphFilteringTests(unittest.TestCase):
             self.reference_marker_id,
             self.settings,
             allowed_frames=frozenset(range(20)),
+            marker_size_m=0.07,
         )
 
         self.assertIsNone(failure)
         self.assertEqual(set(filtered), {(0, 1), (1, 2)})
+        self.assertEqual(len(dropped), 1)
+        self.assertEqual(dropped[0].marker_pair, (0, 2))
+        self.assertEqual(dropped[0].stage, "post_pruning")
 
     def test_calibration_survives_redundant_weak_triangle_edge(self) -> None:
         marker_size_m = 0.07
@@ -1011,6 +1065,14 @@ class PairGraphFilteringTests(unittest.TestCase):
         self.assertIn((0, 1), edge_pairs)
         self.assertIn((1, 2), edge_pairs)
         self.assertNotIn((0, 2), edge_pairs)
+        assert result.quality.dropped_pair_edges is not None
+        dropped_pairs = {edge.marker_pair for edge in result.quality.dropped_pair_edges}
+        self.assertIn((0, 2), dropped_pairs)
+        self.assertTrue(
+            any(edge.stage == "initial_consensus" for edge in result.quality.dropped_pair_edges)
+            or any(edge.stage == "assignment_support" for edge in result.quality.dropped_pair_edges)
+            or any(edge.stage == "post_pruning" for edge in result.quality.dropped_pair_edges)
+        )
 
 
 class SaveMarkerModelTests(unittest.TestCase):

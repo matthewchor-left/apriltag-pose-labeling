@@ -10,6 +10,7 @@ import numpy as np
 from object_apriltag.marker_layout_calibration import (
     CalibrationSettings,
     FrameAssignmentRejection,
+    FrameAssignmentRejectionRecord,
     FrameObservation,
     _MarkerCandidate,
     _PairConsensus,
@@ -17,8 +18,10 @@ from object_apriltag.marker_layout_calibration import (
     _estimate_frame_candidates,
     _estimate_pair_consensus,
     _normalize_observations,
+    build_assignment_rejection_records,
     calibrate_marker_layout,
     resolve_frame_ippe_assignment,
+    summarize_assignment_rejection_records,
     summarize_assignment_rejections,
 )
 from object_apriltag.pose import marker_corner_object_points
@@ -93,7 +96,7 @@ class FrameAssignmentRejectionTests(unittest.TestCase):
             self.dist_coeffs,
         )
         pair_hypotheses = _collect_pair_hypotheses(frame_candidates, self.expected_ids)
-        pair_consensus, pair_failure = _estimate_pair_consensus(
+        pair_consensus, pair_failure, _ = _estimate_pair_consensus(
             pair_hypotheses,
             self.expected_ids,
             reference_marker_id=0,
@@ -214,6 +217,7 @@ class FrameAssignmentRejectionTests(unittest.TestCase):
         self.assertEqual(result.quality.rejected_frame_count, 0)
         assert result.quality.assignment_rejections is not None
         self.assertEqual(result.quality.assignment_rejections.total_rejected, 0)
+        self.assertEqual(result.quality.assignment_rejection_records, ())
 
     def test_chooses_worst_pair_deterministically_when_multiple_pairs_conflict(self) -> None:
         translation_01 = np.array([0.12, 0.0, -0.05], dtype=np.float64)
@@ -291,6 +295,7 @@ class AssignmentRejectionAggregationTests(unittest.TestCase):
         self.assertIsNone(result.layout)
         assert result.quality is not None
         self.assertIsNone(result.quality.assignment_rejections)
+        self.assertIsNone(result.quality.assignment_rejection_records)
 
     def test_primary_reason_prefers_larger_normalized_gate_exceedance(self) -> None:
         translation_01 = np.array([0.12, 0.0, -0.05], dtype=np.float64)
@@ -375,7 +380,7 @@ class AssignmentSearchTraversalTests(unittest.TestCase):
             dist_coeffs,
         )
         pair_hypotheses = _collect_pair_hypotheses(frame_candidates, [0, 1])
-        pair_consensus, pair_failure = _estimate_pair_consensus(
+        pair_consensus, pair_failure, _ = _estimate_pair_consensus(
             pair_hypotheses,
             [0, 1],
             reference_marker_id=0,
@@ -395,10 +400,118 @@ class AssignmentSearchTraversalTests(unittest.TestCase):
         self.assertEqual(len(rejected_frames), 5)
 
 
-class AssignmentRejectionCliSummaryTests(unittest.TestCase):
-    def test_format_assignment_rejection_summary_is_compact(self) -> None:
-        from object_apriltag.cli.calibrate_marker_model import format_assignment_rejection_summary
+class AssignmentRejectionRecordTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.marker_size_m = 0.07
+        self.camera_matrix, self.dist_coeffs = _default_camera()
+        self.settings = CalibrationSettings(min_inliers_per_edge=20)
 
+    def test_rejected_frames_preserve_identity_and_measurements_in_quality_report(self) -> None:
+        observations = [
+            FrameObservation(frame_id=f"capture-{index}", markers=obs.markers)
+            for index, obs in enumerate(
+                _synth_pair_with_corrupt_frames(25, frozenset({2, 7, 11}))
+            )
+        ]
+        result = calibrate_marker_layout(
+            observations,
+            self.camera_matrix,
+            self.dist_coeffs,
+            expected_marker_ids=[0, 1],
+            reference_marker_id=0,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+        )
+
+        self.assertIsNone(result.failure_reason)
+        assert result.quality is not None
+        records = result.quality.assignment_rejection_records
+        self.assertIsNotNone(records)
+        assert records is not None
+        self.assertEqual(len(records), 3)
+        corrupt_records = [record for record in records if record.frame_index in {2, 7, 11}]
+        self.assertEqual(len(corrupt_records), 3)
+        for record in corrupt_records:
+            self.assertEqual(record.frame_id, f"capture-{record.frame_index}")
+            self.assertEqual(record.visible_marker_ids, (0, 1))
+            self.assertEqual(record.reason, "translation_gate")
+            self.assertEqual(record.marker_pair, (0, 1))
+            self.assertIsNotNone(record.translation_error_m)
+            self.assertIsNotNone(record.translation_gate_m)
+            self.assertGreater(record.translation_error_m, record.translation_gate_m)
+
+
+class AssignmentRejectionDistributionTests(unittest.TestCase):
+    def test_summarize_reports_deterministic_error_distributions(self) -> None:
+        records = (
+            FrameAssignmentRejectionRecord(
+                frame_index=0,
+                frame_id="a",
+                visible_marker_ids=(0, 1),
+                reason="translation_gate",
+                marker_pair=(0, 1),
+                translation_error_m=0.02,
+                rotation_error_deg=1.0,
+                translation_gate_m=0.007,
+                rotation_gate_deg=5.0,
+            ),
+            FrameAssignmentRejectionRecord(
+                frame_index=1,
+                frame_id="b",
+                visible_marker_ids=(0, 1),
+                reason="translation_gate",
+                marker_pair=(0, 1),
+                translation_error_m=0.03,
+                rotation_error_deg=2.0,
+                translation_gate_m=0.007,
+                rotation_gate_deg=5.0,
+            ),
+            FrameAssignmentRejectionRecord(
+                frame_index=2,
+                frame_id="c",
+                visible_marker_ids=(0, 1),
+                reason="translation_gate",
+                marker_pair=(0, 1),
+                translation_error_m=0.04,
+                rotation_error_deg=3.0,
+                translation_gate_m=0.007,
+                rotation_gate_deg=5.0,
+            ),
+        )
+        summary = summarize_assignment_rejection_records(records)
+        self.assertEqual(summary.total_rejected, 3)
+        self.assertEqual(len(summary.by_cause), 1)
+        cause = summary.by_cause[0]
+        self.assertEqual(cause.count, 3)
+        self.assertEqual(cause.sample_frame_ids, ("a", "b", "c"))
+        assert cause.translation_error_m is not None
+        self.assertAlmostEqual(cause.translation_error_m.min, 0.02)
+        self.assertAlmostEqual(cause.translation_error_m.median, 0.03)
+        self.assertAlmostEqual(cause.translation_error_m.max, 0.04)
+        assert cause.translation_error_ratio is not None
+        self.assertAlmostEqual(cause.translation_error_ratio.min, 0.02 / 0.007, places=5)
+        self.assertAlmostEqual(cause.translation_error_ratio.median, 0.03 / 0.007, places=5)
+
+    def test_build_records_from_assignment_results(self) -> None:
+        observations = _synth_pair_with_corrupt_frames(5, frozenset({1}))
+        normalized = _normalize_observations(observations, [0, 1])
+        rejections = (
+            FrameAssignmentRejection(
+                reason="translation_gate",
+                marker_pair=(0, 1),
+                translation_error_m=0.02,
+                rotation_error_deg=1.0,
+                translation_gate_m=0.007,
+                rotation_gate_deg=5.0,
+            ),
+        )
+        records = build_assignment_rejection_records(normalized, (1,), rejections)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].frame_index, 1)
+        self.assertEqual(records[0].frame_id, 1)
+        self.assertEqual(records[0].visible_marker_ids, (0, 1))
+
+    def test_summarize_assignment_rejections_accepts_legacy_rejection_inputs(self) -> None:
         summary = summarize_assignment_rejections(
             [
                 FrameAssignmentRejection(
@@ -408,18 +521,76 @@ class AssignmentRejectionCliSummaryTests(unittest.TestCase):
                     translation_gate_m=0.007,
                 ),
                 FrameAssignmentRejection(
-                    reason="translation_gate",
-                    marker_pair=(0, 1),
-                    translation_error_m=0.03,
-                    translation_gate_m=0.007,
-                ),
-                FrameAssignmentRejection(
                     reason="rotation_gate",
                     marker_pair=(1, 2),
                     rotation_error_deg=12.0,
                     rotation_gate_deg=5.0,
                 ),
-                FrameAssignmentRejection(reason="no_constrained_pair"),
+            ]
+        )
+        self.assertEqual(summary.total_rejected, 2)
+        self.assertEqual(dict(summary.by_reason), {"rotation_gate": 1, "translation_gate": 1})
+        self.assertEqual(summary.by_cause, ())
+
+    def test_summarize_assignment_rejections_rejects_record_inputs(self) -> None:
+        with self.assertRaises(TypeError):
+            summarize_assignment_rejections(
+                [
+                    FrameAssignmentRejectionRecord(
+                        frame_index=0,
+                        frame_id=0,
+                        visible_marker_ids=(0, 1),
+                        reason="translation_gate",
+                    )
+                ]
+            )
+
+    def test_summarize_assignment_rejection_records_rejects_legacy_inputs(self) -> None:
+        with self.assertRaises(TypeError):
+            summarize_assignment_rejection_records(
+                [FrameAssignmentRejection(reason="translation_gate")]
+            )
+
+
+class AssignmentRejectionCliSummaryTests(unittest.TestCase):
+    def test_format_assignment_rejection_summary_is_compact(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import format_assignment_rejection_summary
+
+        summary = summarize_assignment_rejection_records(
+            [
+                FrameAssignmentRejectionRecord(
+                    frame_index=0,
+                    frame_id=0,
+                    visible_marker_ids=(0, 1),
+                    reason="translation_gate",
+                    marker_pair=(0, 1),
+                    translation_error_m=0.02,
+                    translation_gate_m=0.007,
+                ),
+                FrameAssignmentRejectionRecord(
+                    frame_index=1,
+                    frame_id=1,
+                    visible_marker_ids=(0, 1),
+                    reason="translation_gate",
+                    marker_pair=(0, 1),
+                    translation_error_m=0.03,
+                    translation_gate_m=0.007,
+                ),
+                FrameAssignmentRejectionRecord(
+                    frame_index=2,
+                    frame_id=2,
+                    visible_marker_ids=(1, 2),
+                    reason="rotation_gate",
+                    marker_pair=(1, 2),
+                    rotation_error_deg=12.0,
+                    rotation_gate_deg=5.0,
+                ),
+                FrameAssignmentRejectionRecord(
+                    frame_index=3,
+                    frame_id=3,
+                    visible_marker_ids=(0,),
+                    reason="no_constrained_pair",
+                ),
             ]
         )
         lines = format_assignment_rejection_summary(summary, max_lines=2)
@@ -436,9 +607,12 @@ class AssignmentRejectionCliSummaryTests(unittest.TestCase):
         from object_apriltag.cli.calibrate_marker_model import print_refusal
         from object_apriltag.marker_layout_calibration import CalibrationQualityReport, CalibrationResult
 
-        summary = summarize_assignment_rejections(
+        summary = summarize_assignment_rejection_records(
             [
-                FrameAssignmentRejection(
+                FrameAssignmentRejectionRecord(
+                    frame_index=0,
+                    frame_id=0,
+                    visible_marker_ids=(0, 1),
                     reason="translation_gate",
                     marker_pair=(0, 1),
                     translation_error_m=0.02,
@@ -462,6 +636,20 @@ class AssignmentRejectionCliSummaryTests(unittest.TestCase):
             missing_expected_ids=frozenset(),
             unused_expected_ids=frozenset(),
             assignment_rejections=summary,
+            assignment_rejection_records=summary.total_rejected
+            and (
+                FrameAssignmentRejectionRecord(
+                    frame_index=0,
+                    frame_id=0,
+                    visible_marker_ids=(0, 1),
+                    reason="translation_gate",
+                    marker_pair=(0, 1),
+                    translation_error_m=0.02,
+                    translation_gate_m=0.007,
+                ),
+            )
+            or (),
+            dropped_pair_edges=(),
         )
         buffer = StringIO()
         with mock.patch("builtins.print", side_effect=lambda *args, **kwargs: buffer.write(" ".join(str(a) for a in args) + "\n")):
@@ -476,3 +664,4 @@ class AssignmentRejectionCliSummaryTests(unittest.TestCase):
         self.assertIn("assignment rejections:", output)
         self.assertIn("translation_gate", output)
         self.assertIn("(0,1)", output)
+        self.assertIn("reprojection RMS: N/A", output)

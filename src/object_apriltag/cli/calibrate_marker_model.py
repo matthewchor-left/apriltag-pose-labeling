@@ -13,6 +13,10 @@ import numpy as np
 from object_apriltag.apriltag import build_apriltag_detector
 from object_apriltag.calibration import load_intrinsics, require_calibration_image_size
 from object_apriltag.layout import marker_color_bgr, save_marker_model
+from object_apriltag.cli.calibration_diagnostics import (
+    format_quality_diagnostics_lines,
+    save_calibration_diagnostics,
+)
 from object_apriltag.cli.live_pair_readiness_worker import (
     LivePairReadinessView,
     LivePairReadinessWorker,
@@ -138,6 +142,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=DEFAULT_PAIR_ROTATION_RMS_GATE_DEG,
         help=f"Accepted pair rotation RMS gate in degrees (default: {DEFAULT_PAIR_ROTATION_RMS_GATE_DEG:g}).",
+    )
+    parser.add_argument(
+        "--diagnostics-output",
+        type=Path,
+        default=None,
+        help="Optional JSON path for full post-solve calibration diagnostics.",
     )
     return parser.parse_args()
 
@@ -424,25 +434,8 @@ def print_refusal(result: CalibrationResult) -> None:
     if quality is None:
         return
     print(f"  {format_solve_frame_counts(quality)}")
-    if quality.assignment_rejections is not None and quality.assignment_rejections.total_rejected > 0:
-        print(f"  assignment rejections: {quality.assignment_rejections.total_rejected} total")
-        for line in format_assignment_rejection_summary(quality.assignment_rejections):
-            print(f"  {line}")
-    print(f"  inlier corners: {quality.inlier_corner_count}")
-    print(f"  reprojection RMS: {quality.reprojection_rms_px:.3f} px")
-    print(
-        "  connected markers:",
-        sorted(quality.connected_marker_ids),
-        "missing:",
-        sorted(quality.missing_expected_ids),
-    )
-    for edge in quality.edges:
-        print(
-            f"  pair ({edge.marker_a}, {edge.marker_b}): "
-            f"inliers={edge.inlier_count} "
-            f"trans_rms={edge.translation_rms_m:.4f} m "
-            f"rot_rms={edge.rotation_rms_deg:.2f} deg"
-        )
+    for line in format_quality_diagnostics_lines(quality):
+        print(f"  {line}")
 
 
 def print_success(result: CalibrationResult, output: Path) -> None:
@@ -451,11 +444,18 @@ def print_success(result: CalibrationResult, output: Path) -> None:
     if quality is None:
         return
     print(f"  {format_solve_frame_counts(quality)}")
-    if quality.assignment_rejections is not None and quality.assignment_rejections.total_rejected > 0:
-        print(f"  assignment rejections: {quality.assignment_rejections.total_rejected} total")
-        for line in format_assignment_rejection_summary(quality.assignment_rejections):
-            print(f"  {line}")
-    print(f"  reprojection RMS: {quality.reprojection_rms_px:.3f} px")
+    for line in format_quality_diagnostics_lines(quality):
+        print(f"  {line}")
+
+
+def write_calibration_diagnostics_if_requested(
+    diagnostics_output: Path | None,
+    result: CalibrationResult,
+) -> None:
+    if diagnostics_output is None or result.quality is None:
+        return
+    path = save_calibration_diagnostics(diagnostics_output, result)
+    print(f"Wrote calibration diagnostics: {path}")
 
 
 def run_capture(args: argparse.Namespace) -> bool:
@@ -553,12 +553,20 @@ def run_capture(args: argparse.Namespace) -> bool:
                 )
                 if result.failure_reason is not None or result.layout is None:
                     print_refusal(result)
+                    try:
+                        write_calibration_diagnostics_if_requested(args.diagnostics_output, result)
+                    except RuntimeError as error:
+                        print(error, file=sys.stderr)
                     last_solve_quality = result.quality
                     status_line = f"refused: {result.failure_reason}"
                     continue
 
                 save_marker_model(args.output, result.layout)
                 print_success(result, args.output)
+                try:
+                    write_calibration_diagnostics_if_requested(args.diagnostics_output, result)
+                except RuntimeError as error:
+                    print(error, file=sys.stderr)
                 return True
     finally:
         readiness_worker.shutdown(join_timeout=0.0)

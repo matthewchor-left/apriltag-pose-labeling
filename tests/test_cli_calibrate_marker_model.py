@@ -63,6 +63,7 @@ def _quality_report_mock(**overrides: object) -> mock.Mock:
         "accepted_frame_count": 20,
         "rejected_frame_count": 5,
         "assignment_rejections": None,
+        "dropped_pair_edges": None,
     }
     values.update(overrides)
     return mock.Mock(**values)
@@ -74,6 +75,7 @@ class CliHelpTests(unittest.TestCase):
         self.assertIn("--marker-ids", help_text)
         self.assertIn("--reference-marker-id", help_text)
         self.assertIn("--sample-rate-hz", help_text)
+        self.assertIn("--diagnostics-output", help_text)
         self.assertIn("S  solve", help_text)
         self.assertIn("Q  quit", help_text)
         self.assertIn("2 Hz", help_text) if "2 Hz" in help_text else self.assertIn("sample-rate-hz", help_text)
@@ -107,6 +109,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 reprojection_rms_gate_px=2.0,
                 pair_translation_rms_gate_ratio=0.10,
                 pair_rotation_rms_gate_deg=5.0,
+                diagnostics_output=None,
             )
             with self.assertRaises(RuntimeError) as ctx:
                 validate_args(args)
@@ -130,6 +133,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 reprojection_rms_gate_px=2.0,
                 pair_translation_rms_gate_ratio=0.10,
                 pair_rotation_rms_gate_deg=5.0,
+                diagnostics_output=None,
             )
             with self.assertRaises(RuntimeError) as ctx:
                 validate_args(args)
@@ -146,6 +150,7 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
         calibration_size: tuple[int, int] = (640, 480),
         calibrate_result: object | None = None,
         calibrate_side_effect: object | None = None,
+        diagnostics_output: Path | None = None,
     ) -> tuple[list, Path, mock.Mock, mock.MagicMock, mock.Mock, bool]:
         from object_apriltag.cli.calibrate_marker_model import run_capture
 
@@ -171,6 +176,7 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
                 reprojection_rms_gate_px=2.0,
                 pair_translation_rms_gate_ratio=0.10,
                 pair_rotation_rms_gate_deg=5.0,
+                diagnostics_output=diagnostics_output,
             )
 
             frame = np.zeros((height, width, 3), dtype=np.uint8)
@@ -406,6 +412,251 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
         self.assertFalse(saved)
         capture.release.assert_called_once()
         destroy_mock.assert_called_once()
+
+    def test_diagnostics_output_writes_json_on_refusal_and_success(self) -> None:
+        from object_apriltag.marker_layout_calibration import (
+            CalibrationQualityReport,
+            CalibrationResult,
+            EdgeDiagnostics,
+        )
+
+        refused_quality = CalibrationQualityReport(
+            reprojection_rms_px=float("inf"),
+            per_marker_reprojection_rms_px={},
+            edges=(),
+            pair_translation_rms_max_m=0.0,
+            pair_rotation_rms_max_deg=0.0,
+            frame_count=0,
+            observation_count=0,
+            inlier_corner_count=0,
+            input_frame_count=25,
+            rejected_frame_count=5,
+            accepted_frame_count=0,
+            connected_marker_ids=frozenset({0, 1}),
+            missing_expected_ids=frozenset(),
+            unused_expected_ids=frozenset(),
+            assignment_rejections=None,
+            assignment_rejection_records=(),
+            dropped_pair_edges=(),
+        )
+        accepted_layout = mock.Mock()
+        accepted_layout.marker_ids = {0, 1}
+        accepted_quality = CalibrationQualityReport(
+            reprojection_rms_px=0.1,
+            per_marker_reprojection_rms_px={0: 0.1, 1: 0.1},
+            edges=(
+                EdgeDiagnostics(
+                    marker_a=0,
+                    marker_b=1,
+                    inlier_count=20,
+                    translation_rms_m=0.01,
+                    rotation_rms_deg=1.0,
+                ),
+            ),
+            pair_translation_rms_max_m=0.01,
+            pair_rotation_rms_max_deg=1.0,
+            frame_count=20,
+            observation_count=160,
+            inlier_corner_count=160,
+            input_frame_count=25,
+            rejected_frame_count=5,
+            accepted_frame_count=20,
+            connected_marker_ids=frozenset({0, 1}),
+            missing_expected_ids=frozenset(),
+            unused_expected_ids=frozenset(),
+            assignment_rejections=None,
+            assignment_rejection_records=(),
+            dropped_pair_edges=(),
+        )
+        refused = CalibrationResult(
+            layout=None,
+            quality=refused_quality,
+            failure_reason="refused",
+        )
+        accepted = CalibrationResult(
+            layout=accepted_layout,
+            quality=accepted_quality,
+            failure_reason=None,
+        )
+        visible = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 2
+        monotonic = [0.0, 0.0, 0.6, 0.6, 1.2]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            diagnostics_path = Path(tmp_dir) / "diagnostics.json"
+            with mock.patch("builtins.print"):
+                self._run_capture(
+                    wait_keys=[ord("s"), ord("q")],
+                    monotonic_values=monotonic[:3],
+                    visible_by_frame=visible,
+                    calibrate_result=refused,
+                    diagnostics_output=diagnostics_path,
+                )
+            payload = json.loads(diagnostics_path.read_text(encoding="utf-8"))
+            self.assertFalse(payload["succeeded"])
+            self.assertEqual(payload["failure_reason"], "refused")
+            self.assertIsNone(payload["quality"]["reprojection_rms_px"])
+
+            with mock.patch("builtins.print"):
+                self._run_capture(
+                    wait_keys=[ord("s")],
+                    monotonic_values=monotonic[:3],
+                    visible_by_frame=visible,
+                    calibrate_result=accepted,
+                    diagnostics_output=diagnostics_path,
+                )
+            payload = json.loads(diagnostics_path.read_text(encoding="utf-8"))
+            self.assertTrue(payload["succeeded"])
+            self.assertIsNone(payload["failure_reason"])
+            self.assertAlmostEqual(payload["quality"]["reprojection_rms_px"], 0.1)
+
+    def test_diagnostics_output_writes_on_refusal_and_success_only_when_requested(self) -> None:
+        refused = mock.Mock(
+            layout=None,
+            failure_reason="refused",
+            quality=_quality_report_mock(
+                reprojection_rms_px=float("inf"),
+            ),
+        )
+        accepted_layout = mock.Mock()
+        accepted_layout.marker_ids = {0, 1}
+        accepted = mock.Mock(
+            layout=accepted_layout,
+            failure_reason=None,
+            quality=_quality_report_mock(),
+        )
+        visible = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 2
+        monotonic = [0.0, 0.0, 0.6, 0.6, 1.2]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            diagnostics_path = Path(tmp_dir) / "diagnostics.json"
+
+            with mock.patch("builtins.print"), mock.patch(
+                "object_apriltag.cli.calibrate_marker_model.save_calibration_diagnostics",
+            ) as save_mock:
+                self._run_capture(
+                    wait_keys=[ord("s"), ord("s"), ord("q")],
+                    monotonic_values=monotonic,
+                    visible_by_frame=visible,
+                    calibrate_side_effect=[refused, accepted],
+                    diagnostics_output=diagnostics_path,
+                )
+            self.assertEqual(save_mock.call_count, 2)
+            self.assertEqual(save_mock.call_args_list[0].args[0], diagnostics_path)
+            self.assertIs(save_mock.call_args_list[0].args[1], refused)
+            self.assertIs(save_mock.call_args_list[1].args[1], accepted)
+
+        with mock.patch("builtins.print"), mock.patch(
+            "object_apriltag.cli.calibrate_marker_model.save_calibration_diagnostics",
+        ) as save_mock:
+            self._run_capture(
+                wait_keys=[ord("s"), ord("q")],
+                monotonic_values=monotonic[:3],
+                visible_by_frame=visible,
+                calibrate_result=accepted,
+            )
+        save_mock.assert_not_called()
+
+    def test_diagnostics_output_writes_bundle_adjustment_failure_with_preserved_diagnostics(self) -> None:
+        from object_apriltag.marker_layout_calibration import (
+            AssignmentRejectionSummary,
+            CalibrationQualityReport,
+            CalibrationResult,
+            DroppedPairEdge,
+            EdgeDiagnostics,
+            FrameAssignmentRejectionRecord,
+        )
+
+        ba_failure_quality = CalibrationQualityReport(
+            reprojection_rms_px=float("inf"),
+            per_marker_reprojection_rms_px={},
+            edges=(
+                EdgeDiagnostics(
+                    marker_a=0,
+                    marker_b=1,
+                    inlier_count=20,
+                    translation_rms_m=0.01,
+                    rotation_rms_deg=1.0,
+                ),
+            ),
+            pair_translation_rms_max_m=0.01,
+            pair_rotation_rms_max_deg=1.0,
+            frame_count=20,
+            observation_count=160,
+            inlier_corner_count=0,
+            input_frame_count=25,
+            rejected_frame_count=2,
+            accepted_frame_count=20,
+            connected_marker_ids=frozenset({0, 1}),
+            missing_expected_ids=frozenset(),
+            unused_expected_ids=frozenset(),
+            assignment_rejections=AssignmentRejectionSummary(
+                total_rejected=2,
+                by_reason=(("translation_gate", 2),),
+                by_pair=(((0, 1), 2),),
+                top_causes=(),
+                by_cause=(),
+            ),
+            assignment_rejection_records=(
+                FrameAssignmentRejectionRecord(
+                    frame_index=2,
+                    frame_id="capture-2",
+                    visible_marker_ids=(0, 1),
+                    reason="translation_gate",
+                    marker_pair=(0, 1),
+                    translation_error_m=0.02,
+                    translation_gate_m=0.007,
+                ),
+                FrameAssignmentRejectionRecord(
+                    frame_index=7,
+                    frame_id="capture-7",
+                    visible_marker_ids=(0, 1),
+                    reason="translation_gate",
+                    marker_pair=(0, 1),
+                    translation_error_m=0.03,
+                    translation_gate_m=0.007,
+                ),
+            ),
+            dropped_pair_edges=(
+                DroppedPairEdge(
+                    marker_a=0,
+                    marker_b=2,
+                    stage="assignment_support",
+                    reason="insufficient_support",
+                    observed_count=10,
+                    supported_count=4,
+                    required_count=20,
+                ),
+            ),
+        )
+        ba_failure = CalibrationResult(
+            layout=None,
+            quality=ba_failure_quality,
+            failure_reason="Bundle adjustment failed: singular matrix",
+        )
+        visible = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 2
+        monotonic = [0.0, 0.0, 0.6]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            diagnostics_path = Path(tmp_dir) / "diagnostics.json"
+            with mock.patch("builtins.print"):
+                self._run_capture(
+                    wait_keys=[ord("s"), ord("q")],
+                    monotonic_values=monotonic,
+                    visible_by_frame=visible,
+                    calibrate_result=ba_failure,
+                    diagnostics_output=diagnostics_path,
+                )
+            payload = json.loads(diagnostics_path.read_text(encoding="utf-8"))
+            self.assertFalse(payload["succeeded"])
+            self.assertEqual(payload["failure_reason"], "Bundle adjustment failed: singular matrix")
+            self.assertIsNone(payload["quality"]["reprojection_rms_px"])
+            self.assertEqual(len(payload["assignment_rejection_records"]), 2)
+            self.assertEqual(
+                {record["frame_id"] for record in payload["assignment_rejection_records"]},
+                {"capture-2", "capture-7"},
+            )
+            self.assertEqual(len(payload["dropped_pair_edges"]), 1)
+            self.assertEqual(payload["dropped_pair_edges"][0]["stage"], "assignment_support")
 
     def test_resolution_mismatch_releases_capture_and_exits(self) -> None:
         from object_apriltag.cli.calibrate_marker_model import main
