@@ -11,16 +11,17 @@ import cv2
 import numpy as np
 from PIL import Image
 
-ARUCO_DICTIONARIES: dict[str, int] = {
-    "4x4_50": cv2.aruco.DICT_4X4_50,
-    "4x4_100": cv2.aruco.DICT_4X4_100,
-    "4x4_250": cv2.aruco.DICT_4X4_250,
-    "4x4_1000": cv2.aruco.DICT_4X4_1000,
-    "5x5_50": cv2.aruco.DICT_5X5_50,
-    "5x5_100": cv2.aruco.DICT_5X5_100,
-    "6x6_50": cv2.aruco.DICT_6X6_50,
-    "7x7_50": cv2.aruco.DICT_7X7_50,
-}
+from object_apriltag.board_model import (
+    ARUCO_DICTIONARIES,
+    build_charuco_board_from_geometry,
+    load_board_model,
+    reject_mixed_board_model_args,
+)
+from object_apriltag.board_pose import (
+    charuco_corners_consistent,
+    charuco_draw_arrays,
+    parse_charuco_detection,
+)
 
 
 METERS_PER_INCH = 0.0254
@@ -68,7 +69,6 @@ def parse_args() -> argparse.Namespace:
         "--layout",
         nargs=2,
         type=int,
-        required=True,
         metavar=("HEIGHT", "WIDTH"),
         help="Board layout as height × width (rows × columns).",
     )
@@ -98,6 +98,11 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_PRINT_DPI,
         help="Print resolution for --save-board (default: 300). Used for pixel size and PNG DPI metadata.",
     )
+    parser.add_argument(
+        "--board-model",
+        type=Path,
+        help="ChArUco board model JSON path (mutually exclusive with individual geometry flags).",
+    )
     return parser.parse_args()
 
 
@@ -109,22 +114,8 @@ def checkerboard_object_points(layout_width: int, layout_height: int, square_siz
     return points
 
 
-def build_charuco_board(
-    layout_width: int,
-    layout_height: int,
-    square_size: float,
-    marker_size: float,
-    dictionary_name: str,
-) -> cv2.aruco.CharucoBoard:
-    if marker_size >= square_size:
-        raise ValueError("--marker-size must be smaller than --square-size for charuco_board.")
-    dictionary = cv2.aruco.getPredefinedDictionary(ARUCO_DICTIONARIES[dictionary_name])
-    return cv2.aruco.CharucoBoard(
-        (layout_width, layout_height),
-        float(square_size),
-        float(marker_size),
-        dictionary,
-    )
+# Backward-compatible alias for tests and callers using geometry parameters.
+build_charuco_board = build_charuco_board_from_geometry
 
 
 def save_png_with_dpi(image: np.ndarray, path: Path, dpi: float) -> None:
@@ -201,9 +192,14 @@ def detect_charuco(
     detector: cv2.aruco.CharucoDetector,
 ) -> tuple[np.ndarray, np.ndarray] | None:
     charuco_corners, charuco_ids, _, _ = detector.detectBoard(gray)
-    if charuco_ids is None or len(charuco_ids) < 4:
+    if not charuco_corners_consistent(charuco_corners, charuco_ids):
         return None
-    object_points, image_points = board.matchImagePoints(charuco_corners, charuco_ids)
+    corners_flat, ids_flat = parse_charuco_detection(charuco_corners, charuco_ids)
+    assert corners_flat is not None and ids_flat is not None
+    object_points, image_points = board.matchImagePoints(
+        corners_flat.reshape(-1, 1, 2),
+        ids_flat.reshape(-1, 1),
+    )
     if object_points is None or len(object_points) < 4:
         return None
     return object_points.reshape(-1, 3), image_points.reshape(-1, 2)
@@ -299,9 +295,11 @@ def draw_charuco_overlay(
     charuco_corners, charuco_ids, marker_corners, marker_ids = detector.detectBoard(gray)
     if marker_ids is not None and len(marker_ids) > 0:
         cv2.aruco.drawDetectedMarkers(frame, marker_corners, marker_ids)
-    if charuco_ids is not None and len(charuco_ids) > 0:
-        cv2.aruco.drawDetectedCornersCharuco(frame, charuco_corners, charuco_ids)
-    return charuco_ids is not None and len(charuco_ids) >= 4
+    draw_arrays = charuco_draw_arrays(charuco_corners, charuco_ids)
+    if draw_arrays is not None:
+        corners_draw, ids_draw = draw_arrays
+        cv2.aruco.drawDetectedCornersCharuco(frame, corners_draw, ids_draw)
+    return draw_arrays is not None and draw_arrays[1].shape[0] >= 4
 
 
 def draw_checkerboard_overlay(
@@ -319,7 +317,25 @@ def draw_checkerboard_overlay(
 
 def main() -> None:
     args = parse_args()
-    layout_height, layout_width = args.layout
+    reject_mixed_board_model_args(args)
+
+    board_model = None
+    if args.board_model is not None:
+        board_model = load_board_model(args.board_model)
+        layout_height = board_model.layout_height
+        layout_width = board_model.layout_width
+        square_size = board_model.square_size
+        marker_size = board_model.marker_size
+        dictionary = board_model.dictionary
+        board_type = board_model.board_type
+    else:
+        if args.layout is None:
+            raise RuntimeError("--layout is required when --board-model is not provided.")
+        layout_height, layout_width = args.layout
+        square_size = args.square_size
+        marker_size = args.marker_size
+        dictionary = args.dictionary
+        board_type = args.board_type
 
     if args.save_board is None:
         if args.camera is None:
@@ -327,18 +343,18 @@ def main() -> None:
         if args.output is None:
             raise RuntimeError("--output is required for live calibration.")
 
-    if args.board_type == "charuco_board" and args.marker_size is None:
+    if board_type == "charuco_board" and marker_size is None:
         raise RuntimeError("--marker-size is required when --board-type is charuco_board.")
 
     charuco_board: cv2.aruco.CharucoBoard | None = None
     charuco_detector: cv2.aruco.CharucoDetector | None = None
-    if args.board_type == "charuco_board":
-        charuco_board = build_charuco_board(
+    if board_type == "charuco_board":
+        charuco_board = build_charuco_board_from_geometry(
             layout_width,
             layout_height,
-            args.square_size,
-            args.marker_size,
-            args.dictionary,
+            square_size,
+            marker_size,
+            dictionary,
         )
         charuco_detector = cv2.aruco.CharucoDetector(charuco_board)
         if args.save_board is not None:
@@ -347,7 +363,7 @@ def main() -> None:
                 args.save_board,
                 layout_width=layout_width,
                 layout_height=layout_height,
-                square_size=args.square_size,
+                square_size=square_size,
                 dpi=args.print_dpi,
             )
             return
@@ -356,12 +372,12 @@ def main() -> None:
     if not capture.isOpened():
         raise RuntimeError(f"Cannot open camera {args.camera}.")
 
-    print(f"Board type: {args.board_type}")
+    print(f"Board type: {board_type}")
     print(f"Layout: {layout_height} rows × {layout_width} columns")
-    print(f"Square size: {args.square_size:.4f} m")
-    if args.board_type == "charuco_board":
-        print(f"Marker size: {args.marker_size:.4f} m")
-        print(f"Dictionary: {args.dictionary}")
+    print(f"Square size: {square_size:.4f} m")
+    if board_type == "charuco_board":
+        print(f"Marker size: {marker_size:.4f} m")
+        print(f"Dictionary: {dictionary}")
     print(f"Camera {args.camera}")
     print("Space = capture frame, q = calibrate and save")
 
@@ -379,7 +395,7 @@ def main() -> None:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         preview = frame.copy()
 
-        if args.board_type == "charuco_board":
+        if board_type == "charuco_board":
             detected = draw_charuco_overlay(
                 preview, gray, charuco_board, charuco_detector
             )
@@ -403,10 +419,10 @@ def main() -> None:
         if key == ord("q"):
             break
         if key == ord(" ") and detected:
-            if args.board_type == "charuco_board":
+            if board_type == "charuco_board":
                 detection = detect_charuco(gray, charuco_board, charuco_detector)
             else:
-                detection = detect_checkerboard(gray, layout_width, layout_height, args.square_size)
+                detection = detect_checkerboard(gray, layout_width, layout_height, square_size)
             if detection is None:
                 continue
             object_points, image_points = detection
@@ -436,7 +452,7 @@ def main() -> None:
         tvecs,
     )
 
-    calibration_source = "charuco" if args.board_type == "charuco_board" else "checkerboard"
+    calibration_source = "charuco" if board_type == "charuco_board" else "checkerboard"
     write_intrinsics_json(
         args.output,
         calibration_source=calibration_source,
@@ -447,10 +463,10 @@ def main() -> None:
         mean_reprojection_error_px=reproj_error,
         layout_width=layout_width,
         layout_height=layout_height,
-        square_size=args.square_size,
+        square_size=square_size,
         captured_frames=len(object_points_list),
-        marker_size=args.marker_size if args.board_type == "charuco_board" else None,
-        dictionary=args.dictionary if args.board_type == "charuco_board" else None,
+        marker_size=marker_size if board_type == "charuco_board" else None,
+        dictionary=dictionary if board_type == "charuco_board" else None,
     )
 
     print(f"Saved calibration: {args.output}")

@@ -65,9 +65,8 @@ def plane_from_dict(payload: dict[str, Any], index: int) -> EraserPlane:
             f"{list(CORNER_NAMES)}; missing {missing}."
         )
 
-    plane_id = payload.get("id")
-    if plane_id is not None:
-        plane_id = str(plane_id)
+    raw_plane_id = payload.get("plane_id", payload.get("id"))
+    plane_id = str(raw_plane_id) if raw_plane_id is not None else None
 
     prefix = f"planes[{index}]"
     return EraserPlane(

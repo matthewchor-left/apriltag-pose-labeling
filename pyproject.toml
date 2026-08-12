@@ -22,6 +22,7 @@ annotation-tool = "object_apriltag.cli.annotation_tool:main"
 object-detect = "object_apriltag.cli.detect:main"
 object-calibrate-marker-model = "object_apriltag.cli.calibrate_marker_model:main"
 object-charuco = "object_apriltag.cli.charuco:main"
+object-visualize-board-frame = "object_apriltag.cli.visualize_board_frame:main"
 object-projection = "object_apriltag.cli.projection:main"
 
 [tool.setuptools.packages.find]

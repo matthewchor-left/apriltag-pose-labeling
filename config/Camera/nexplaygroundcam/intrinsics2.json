@@ -1,0 +1,40 @@
+{
+  "calibration_source": "charuco",
+  "image_size": [
+    1920,
+    1080
+  ],
+  "camera_matrix": [
+    [
+      652.5476440076873,
+      0.0,
+      961.7704403247027
+    ],
+    [
+      0.0,
+      652.1418865745698,
+      529.1664918001811
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "dist_coeffs": [
+    0.041797185792024,
+    -0.014367172563071545,
+    -0.0055297905953480865,
+    0.000961238957541775,
+    0.0033149105939490535
+  ],
+  "mean_reprojection_error_px": 0.3540774950286974,
+  "squares_x": 8,
+  "squares_y": 11,
+  "inner_corners_x": 8,
+  "inner_corners_y": 11,
+  "square_size": 0.025,
+  "captured_frames": 41,
+  "marker_size": 0.02,
+  "dictionary": "4x4_50"
+}

@@ -5,13 +5,148 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
+from object_apriltag.board_pose import BoardPoseEstimate, camera_point_to_board
 from object_apriltag.detector import ObjectPose
-from object_apriltag.layout import CORNER_LABELS, MarkerLayout, layout_point_to_camera, marker_color_bgr
+from object_apriltag.eraser import EraserModel, eraser_offset_to_model_point
+from object_apriltag.layout import CORNER_NAMES, CORNER_LABELS, MarkerLayout, layout_point_to_camera, marker_color_bgr
 from object_apriltag.viz.projection import (
     object_axis_image_points,
     project_camera_point,
 )
 from object_apriltag.viz.skeleton import ObjectModel
+
+BOARD_LABEL_COLOR_BGR = (255, 255, 255)
+
+
+def format_board_coordinate_mm(point_board: np.ndarray) -> str:
+    point = np.asarray(point_board, dtype=np.float64).reshape(3) * 1000.0
+    return f"({point[0]:.1f}, {point[1]:.1f}, {point[2]:.1f}) mm"
+
+
+def draw_board_coordinate_label(
+    frame: np.ndarray,
+    anchor: tuple[int, int],
+    identity: str,
+    point_board: np.ndarray,
+    *,
+    color: tuple[int, int, int] = BOARD_LABEL_COLOR_BGR,
+) -> None:
+    x, y = anchor
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    coordinate_line = format_board_coordinate_mm(point_board)
+    cv2.putText(frame, identity, (x + 8, y - 8), font, 0.45, (0, 0, 0), 3, cv2.LINE_AA)
+    cv2.putText(frame, identity, (x + 8, y - 8), font, 0.45, color, 1, cv2.LINE_AA)
+    cv2.putText(frame, coordinate_line, (x + 8, y + 10), font, 0.45, (0, 0, 0), 3, cv2.LINE_AA)
+    cv2.putText(frame, coordinate_line, (x + 8, y + 10), font, 0.45, color, 1, cv2.LINE_AA)
+
+
+def _draw_board_coordinate_labels_for_points(
+    frame: np.ndarray,
+    board_pose: BoardPoseEstimate,
+    labeled_camera_points: list[tuple[str, np.ndarray]],
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+    *,
+    colors: list[tuple[int, int, int]] | None = None,
+) -> None:
+    height, width = frame.shape[:2]
+    for index, (identity, camera_point) in enumerate(labeled_camera_points):
+        projected = project_camera_point(camera_point, camera_matrix, dist_coeffs)
+        if not np.all(np.isfinite(projected)):
+            continue
+        x, y = int(round(projected[0])), int(round(projected[1]))
+        if not (0 <= x < width and 0 <= y < height):
+            continue
+        color = BOARD_LABEL_COLOR_BGR if colors is None else colors[index]
+        board_point = camera_point_to_board(camera_point, board_pose)
+        draw_board_coordinate_label(frame, (x, y), identity, board_point, color=color)
+
+
+def draw_object_model_board_coordinate_labels(
+    frame: np.ndarray,
+    pose: ObjectPose,
+    board_pose: BoardPoseEstimate,
+    marker_model: MarkerLayout,
+    object_model: ObjectModel,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+) -> None:
+    labeled_points: list[tuple[str, np.ndarray]] = []
+    colors: list[tuple[int, int, int]] = []
+    for name in object_model.keypoint_names:
+        labeled_points.append(
+            (
+                name,
+                layout_point_to_camera(
+                    object_model.keypoints[name],
+                    pose.rotation,
+                    pose.origin,
+                    marker_model,
+                ),
+            )
+        )
+        colors.append(KEYPOINT_COLORS_BGR.get(name, (200, 200, 200)))
+    _draw_board_coordinate_labels_for_points(
+        frame, board_pose, labeled_points, camera_matrix, dist_coeffs, colors=colors
+    )
+
+
+def draw_marker_model_board_coordinate_labels(
+    frame: np.ndarray,
+    pose: ObjectPose,
+    board_pose: BoardPoseEstimate,
+    marker_model: MarkerLayout,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+) -> None:
+    labeled_points: list[tuple[str, np.ndarray]] = []
+    colors: list[tuple[int, int, int]] = []
+    for marker_id in sorted(marker_model.footprints):
+        footprint = marker_model.footprints[marker_id]
+        color = marker_color_bgr(marker_id)
+        for corner_name, point_layout in footprint.corners_by_name().items():
+            labeled_points.append(
+                (
+                    f"{marker_id}:{CORNER_LABELS[corner_name]}",
+                    layout_point_to_camera(point_layout, pose.rotation, pose.origin, marker_model),
+                )
+            )
+            colors.append(color)
+    _draw_board_coordinate_labels_for_points(
+        frame, board_pose, labeled_points, camera_matrix, dist_coeffs, colors=colors
+    )
+
+
+def draw_eraser_model_board_coordinate_labels(
+    frame: np.ndarray,
+    pose: ObjectPose,
+    board_pose: BoardPoseEstimate,
+    eraser_model: EraserModel,
+    marker_model: MarkerLayout,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+) -> None:
+    labeled_points: list[tuple[str, np.ndarray]] = []
+    eraser_color = (0, 255, 255)
+    for plane_index, plane in enumerate(eraser_model.planes):
+        plane_ref = plane.plane_id if plane.plane_id is not None else str(plane_index)
+        for corner_name, offset in zip(CORNER_NAMES, plane.corners(), strict=True):
+            model_point = eraser_offset_to_model_point(offset, marker_model)
+            labeled_points.append(
+                (
+                    f"{plane_ref}:{CORNER_LABELS[corner_name]}",
+                    layout_point_to_camera(model_point, pose.rotation, pose.origin, marker_model),
+                )
+            )
+    _draw_board_coordinate_labels_for_points(
+        frame,
+        board_pose,
+        labeled_points,
+        camera_matrix,
+        dist_coeffs,
+        colors=[eraser_color] * len(labeled_points),
+    )
+
 
 KEYPOINT_COLORS_BGR = {
     "top": (128, 0, 128),
@@ -26,6 +161,8 @@ def draw_racket_keypoints(
     frame: np.ndarray,
     image_points: np.ndarray,
     model: ObjectModel,
+    *,
+    draw_point_labels: bool = True,
 ) -> None:
     points_by_name = {name: image_points[index] for index, name in enumerate(model.keypoint_names)}
 
@@ -51,8 +188,9 @@ def draw_racket_keypoints(
         color = KEYPOINT_COLORS_BGR.get(name, (200, 200, 200))
         cv2.circle(frame, point, 7, color, -1, lineType=cv2.LINE_AA)
         cv2.circle(frame, point, 7, (0, 0, 0), 1, lineType=cv2.LINE_AA)
-        cv2.putText(frame, name, (point[0] + 8, point[1] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 3, cv2.LINE_AA)
-        cv2.putText(frame, name, (point[0] + 8, point[1] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 1, cv2.LINE_AA)
+        if draw_point_labels:
+            cv2.putText(frame, name, (point[0] + 8, point[1] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 3, cv2.LINE_AA)
+            cv2.putText(frame, name, (point[0] + 8, point[1] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 1, cv2.LINE_AA)
 
 
 def draw_object_origin(
@@ -128,6 +266,9 @@ def draw_object_pose(
     dist_coeffs: np.ndarray,
     marker_size_m: float,
     model: ObjectModel,
+    marker_model: MarkerLayout,
+    *,
+    draw_point_labels: bool = True,
 ) -> None:
     draw_object_origin(frame, pose.origin, camera_matrix, dist_coeffs, label="object origin")
     try:
@@ -141,13 +282,23 @@ def draw_object_pose(
         return
 
     image_points = []
-    for point in model.object_points:
-        camera_point = pose.rotation @ point + pose.origin
+    for name in model.keypoint_names:
+        camera_point = layout_point_to_camera(
+            model.keypoints[name],
+            pose.rotation,
+            pose.origin,
+            marker_model,
+        )
         projected = project_camera_point(camera_point, camera_matrix, dist_coeffs)
         if np.all(np.isfinite(projected)):
             image_points.append(projected)
     if image_points:
-        draw_racket_keypoints(frame, np.asarray(image_points, dtype=np.float32), model)
+        draw_racket_keypoints(
+            frame,
+            np.asarray(image_points, dtype=np.float32),
+            model,
+            draw_point_labels=draw_point_labels,
+        )
 
 
 def draw_marker_model_footprints(
@@ -156,6 +307,8 @@ def draw_marker_model_footprints(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
     marker_model: MarkerLayout,
+    *,
+    draw_point_labels: bool = True,
 ) -> None:
     height, width = frame.shape[:2]
     for marker_id in sorted(marker_model.footprints):
@@ -194,10 +347,11 @@ def draw_marker_model_footprints(
                 continue
             cv2.circle(frame, (x, y), radius, color, -1, lineType=cv2.LINE_AA)
             cv2.circle(frame, (x, y), radius, (0, 0, 0), 1, lineType=cv2.LINE_AA)
-            cv2.putText(
-                frame, f"{marker_id}:{label}", (x + 6, y - 6),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA,
-            )
+            if draw_point_labels:
+                cv2.putText(
+                    frame, f"{marker_id}:{label}", (x + 6, y - 6),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA,
+                )
 
 
 def draw_marker_annotations(

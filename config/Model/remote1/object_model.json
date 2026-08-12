@@ -1,20 +1,11 @@
 {
-    "units": "meters",
-    "coordinate_frame": {
-      "origin": "bottom (blade/handle junction)",
-      "x_axis": "left -> right",
-      "y_axis": "top -> bottom (blade tip)",
-      "z_axis": "out of rubber surface"
-    },
-    "keypoints": {
-      "center": [0.0, 0.235, 0.0],
-      "home": [-0.0755, 0.077, 0.0],
-      "back": [0.0, 0.0, 0.0]
-    },
-    "skeleton": [
-      ["center", "home"],
-      ["center", "back"],
-      ["home", "back"]
-    ]
-  }
-  
+  "units": "meters",
+  "coordinate_frame": "marker_model",
+  "keypoints": {
+    "center": [0.0, -0.057, -0.26],
+    "back": [0.0, -0.057, -0.16]
+  },
+  "skeleton": [
+    ["center", "back"]
+  ]
+}

@@ -9,7 +9,7 @@ JSON file describing AprilTag sticker footprint positions on the object (`marker
 _Avoid_: marker layout, layout file
 
 **Object Model**:
-JSON file describing object skeleton keypoints and bone edges (`object_model.json`).
+JSON file describing object skeleton keypoints and bone edges (`object_model.json`). Keypoint positions use the Model Frame (`coordinate_frame: "marker_model"`), the same frame as Marker/Eraser geometry.
 _Avoid_: skeleton file, object skeleton JSON (when meaning the file)
 
 **Eraser Model**:
@@ -51,6 +51,22 @@ _Avoid_: overlay, visualize, draw pose
 **Skeleton Chart**:
 Separate matplotlib 3D plot of object_model keypoints, not drawn on the camera frame.
 _Avoid_: plot graph, 3D plot
+
+**Board Reference Frame**:
+The canonical 3D coordinate system attached to a printed ChArUco board. Origin at the outer top-left board corner; +X right when viewing the board upright; +Y out of the printed face toward a front-facing camera; +Z down on the printed board; right-handed; units in meters.
+_Avoid_: board frame, ChArUco frame, OpenCV board frame
+
+**Board Pose Estimate**:
+A camera-relative estimate of the Board Reference Frame origin and orientation from observed ChArUco intersections. This is an estimate, not the convention itself.
+_Avoid_: board pose, board transform (when meaning the estimate)
+
+**Board Coordinate**:
+A 3D point expressed in the Board Reference Frame. Live overlays annotate active model points with Board Coordinates when board tracking and a pose projection overlay are both enabled.
+_Avoid_: board position, ChArUco coordinate, board pixel location
+
+**Board Model**:
+JSON file describing a ChArUco board geometry and its Board Reference Frame convention (`board_model.json`).
+_Avoid_: board config, charuco layout file
 
 **Marker Model Diagram**:
 Static plot of marker footprints in model coordinates (`object-calibrate-marker-model`).

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -12,12 +13,17 @@ from object_apriltag.eraser import (
     eraser_offset_to_model_point,
     EraserPlane,
     load_eraser_model,
+    plane_from_dict,
     project_eraser_plane,
     project_eraser_planes,
 )
 from object_apriltag.cli.annotation_tool import erase_with_mask, erase_with_planes
 from object_apriltag.calibration import DEFAULT_MARKER_MODEL_PATH
 from object_apriltag.layout import load_marker_model
+
+REMOTE1_ERASER_MODEL_PATH = (
+    Path(__file__).resolve().parents[1] / "config/Model/remote1/eraser_model.json"
+)
 
 
 class EraserOffsetTests(unittest.TestCase):
@@ -180,6 +186,40 @@ class LoadEraserModelTests(unittest.TestCase):
         model = load_eraser_model("config/Model/object_01/eraser_model.json")
         self.assertEqual(model.origin, "reference_marker_center")
         self.assertGreater(len(model.planes), 0)
+
+    def test_remote1_loads_plane_id_names(self) -> None:
+        model = load_eraser_model(REMOTE1_ERASER_MODEL_PATH)
+        self.assertEqual(
+            [plane.plane_id for plane in model.planes],
+            ["0", "1", "2", "3", "stick1", "stick2"],
+        )
+
+    def test_plane_from_dict_prefers_plane_id_over_legacy_id(self) -> None:
+        plane = plane_from_dict(
+            {
+                "plane_id": "named",
+                "id": "legacy",
+                "top_left": [-0.01, -0.01, 0.0],
+                "top_right": [0.01, -0.01, 0.0],
+                "bottom_right": [0.01, 0.01, 0.0],
+                "bottom_left": [-0.01, 0.01, 0.0],
+            },
+            0,
+        )
+        self.assertEqual(plane.plane_id, "named")
+
+    def test_plane_from_dict_falls_back_to_legacy_id(self) -> None:
+        plane = plane_from_dict(
+            {
+                "id": "legacy",
+                "top_left": [-0.01, -0.01, 0.0],
+                "top_right": [0.01, -0.01, 0.0],
+                "bottom_right": [0.01, 0.01, 0.0],
+                "bottom_left": [-0.01, 0.01, 0.0],
+            },
+            0,
+        )
+        self.assertEqual(plane.plane_id, "legacy")
 
     def test_projects_all_planes_from_model(self) -> None:
         marker_model = load_marker_model(DEFAULT_MARKER_MODEL_PATH)

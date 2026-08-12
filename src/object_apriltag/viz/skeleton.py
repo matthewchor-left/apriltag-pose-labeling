@@ -10,7 +10,10 @@ from typing import Any
 import numpy as np
 
 from object_apriltag.calibration import DEFAULT_OBJECT_MODEL_PATH
+from object_apriltag.layout import MarkerLayout, layout_point_to_camera
+
 DEFAULT_AXIS_LIMITS = (-0.5, 0.5, -0.5, 0.5, 0.0, 2.0)
+MODEL_FRAME_NAME = "marker_model"
 
 
 @dataclass(frozen=True)
@@ -37,6 +40,11 @@ def load_object_model(path: str | Path) -> ObjectModel:
         raise FileNotFoundError(f"Object model file not found: {path}")
     data = json.loads(path.read_text(encoding="utf-8"))
     units = str(data.get("units", "meters"))
+    coordinate_frame = data.get("coordinate_frame", MODEL_FRAME_NAME)
+    if coordinate_frame != MODEL_FRAME_NAME:
+        raise ValueError(
+            f"object model coordinate_frame must be {MODEL_FRAME_NAME!r}, got {coordinate_frame!r}."
+        )
     keypoints_raw = data.get("keypoints")
     if not isinstance(keypoints_raw, dict) or not keypoints_raw:
         raise ValueError("Object model must contain a non-empty 'keypoints' object.")
@@ -75,9 +83,14 @@ def object_world_points_from_pose(
     object_rotation: np.ndarray,
     object_origin: np.ndarray,
     model: ObjectModel,
+    marker_model: MarkerLayout,
 ) -> dict[str, list[float]]:
-    world_points = (object_rotation @ model.object_points.T + object_origin.reshape(3, 1)).T
     return {
-        name: point.tolist()
-        for name, point in zip(model.keypoint_names, world_points, strict=True)
+        name: layout_point_to_camera(
+            model.keypoints[name],
+            object_rotation,
+            object_origin,
+            marker_model,
+        ).tolist()
+        for name in model.keypoint_names
     }

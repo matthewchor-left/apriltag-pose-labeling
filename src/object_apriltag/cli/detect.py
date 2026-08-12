@@ -7,6 +7,8 @@ from pathlib import Path
 
 import cv2
 
+from object_apriltag.board_model import load_board_model
+from object_apriltag.board_pose import make_charuco_detector, select_board_pose, solve_board_pose
 from object_apriltag.calibration import load_intrinsics, require_calibration_image_size
 from object_apriltag.detector import ObjectDetector
 from object_apriltag.eraser import load_eraser_model, project_eraser_planes
@@ -24,6 +26,12 @@ from object_apriltag.viz import (
     make_side_by_side,
     object_world_points_from_pose,
     render_pose_plots,
+)
+from object_apriltag.viz.board_frame import render_board_frame_grid_axes
+from object_apriltag.viz.overlay import (
+    draw_eraser_model_board_coordinate_labels,
+    draw_marker_model_board_coordinate_labels,
+    draw_object_model_board_coordinate_labels,
 )
 
 
@@ -163,6 +171,26 @@ def main() -> None:
             "Pose projection: length (meters) of RGB object axis arrows when no overlay style is enabled."
         ),
     )
+    parser.add_argument(
+        "--board-frame",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Overlay the Board Reference Frame grid and axes, and annotate model points in board coordinates.",
+    )
+    parser.add_argument(
+        "--board-model",
+        type=Path,
+        help="ChArUco board model JSON. Required when --board-frame is enabled.",
+    )
+    parser.add_argument(
+        "--camera-motion",
+        choices=("static", "dynamic"),
+        default="static",
+        help=(
+            "Board pose retention when tracking drops out: static keeps the latest valid estimate; "
+            "dynamic clears labels and grid until the board is visible again."
+        ),
+    )
     args = parser.parse_args()
 
     overlay_styles = (
@@ -181,6 +209,8 @@ def main() -> None:
         raise RuntimeError("--object-model is required when --overlay-object-model or --plot-graph is enabled.")
     if args.overlay_eraser_model and args.eraser_model is None:
         raise RuntimeError("--eraser-model is required when --overlay-eraser-model is enabled.")
+    if args.board_frame and args.board_model is None:
+        raise RuntimeError("--board-model is required when --board-frame is enabled.")
     if not args.calibration.exists():
         raise RuntimeError(
             f"Calibration file not found: {args.calibration}\n"
@@ -191,6 +221,8 @@ def main() -> None:
         raise RuntimeError(f"Marker model file not found: {args.marker_model}")
     if args.eraser_model is not None and not args.eraser_model.exists():
         raise RuntimeError(f"Eraser model file not found: {args.eraser_model}")
+    if args.board_frame and not args.board_model.exists():
+        raise RuntimeError(f"Board model file not found: {args.board_model}")
 
     marker_ids = {args.marker_id} if args.marker_id is not None else None
     camera_matrix, dist_coeffs, image_width, image_height, calibration_source = load_intrinsics(
@@ -218,11 +250,17 @@ def main() -> None:
         if args.overlay_eraser_model
         else None
     )
+    board_model = load_board_model(args.board_model) if args.board_frame else None
+    board_charuco = make_charuco_detector(board_model) if board_model is not None else None
+    board_retained_pose = None
 
     print(f"Using marker model: {args.marker_model} ({len(marker_model.marker_ids)} markers)")
     print(f"Marker size: {marker_size_m:.4f} m")
     if eraser_model is not None:
         print(f"Using eraser model: {args.eraser_model} ({len(eraser_model.planes)} planes)")
+    if board_model is not None:
+        print(f"Using board model: {args.board_model}")
+        print(f"Board camera motion: {args.camera_motion}")
     print(f"Using camera calibration: {args.calibration}")
     if calibration_source:
         print(f"Calibration source: {calibration_source}")
@@ -243,7 +281,33 @@ def main() -> None:
         pose = detector.fuse(detections)
         preview_frame = frame.copy() if args.visualize else frame
 
+        board_pose = None
+        if args.board_frame and board_model is not None and board_charuco is not None:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            board, board_detector = board_charuco
+            board_result = solve_board_pose(
+                gray,
+                board,
+                board_detector,
+                board_model,
+                camera_matrix,
+                dist_coeffs,
+            )
+            board_pose, board_retained_pose = select_board_pose(
+                board_result.pose,
+                board_retained_pose,
+                args.camera_motion,
+            )
+
         if args.visualize:
+            if board_pose is not None and board_model is not None:
+                render_board_frame_grid_axes(
+                    preview_frame,
+                    model=board_model,
+                    pose=board_pose,
+                    camera_matrix=camera_matrix,
+                    dist_coeffs=dist_coeffs,
+                )
             for corners, marker_id in detections:
                 draw_marker_annotations(
                     preview_frame,
@@ -256,6 +320,7 @@ def main() -> None:
                     draw=True,
                 )
             if pose is not None:
+                show_board_labels = board_pose is not None
                 if args.overlay_object_model:
                     draw_object_pose(
                         preview_frame,
@@ -264,6 +329,8 @@ def main() -> None:
                         dist_coeffs,
                         marker_size_m,
                         object_model,
+                        marker_model,
+                        draw_point_labels=not show_board_labels,
                     )
                 elif args.overlay_marker_model:
                     draw_marker_model_footprints(
@@ -272,6 +339,7 @@ def main() -> None:
                         camera_matrix,
                         dist_coeffs,
                         marker_model,
+                        draw_point_labels=not show_board_labels,
                     )
                 elif args.overlay_eraser_model and eraser_model is not None:
                     polygons = project_eraser_planes(
@@ -293,6 +361,36 @@ def main() -> None:
                         dist_coeffs,
                         args.axis_length,
                     )
+                if board_pose is not None:
+                    if args.overlay_object_model and object_model is not None:
+                        draw_object_model_board_coordinate_labels(
+                            preview_frame,
+                            pose,
+                            board_pose,
+                            marker_model,
+                            object_model,
+                            camera_matrix,
+                            dist_coeffs,
+                        )
+                    elif args.overlay_marker_model:
+                        draw_marker_model_board_coordinate_labels(
+                            preview_frame,
+                            pose,
+                            board_pose,
+                            marker_model,
+                            camera_matrix,
+                            dist_coeffs,
+                        )
+                    elif args.overlay_eraser_model and eraser_model is not None:
+                        draw_eraser_model_board_coordinate_labels(
+                            preview_frame,
+                            pose,
+                            board_pose,
+                            eraser_model,
+                            marker_model,
+                            camera_matrix,
+                            dist_coeffs,
+                        )
 
         reproj_error = mean_reprojection_error(detections, marker_size_m, camera_matrix, dist_coeffs)
         fps, avg_reproj_error = hud.tick(reproj_error)
@@ -300,7 +398,7 @@ def main() -> None:
             draw_live_hud(preview_frame, fps, avg_reproj_error)
 
         world_points = (
-            object_world_points_from_pose(pose.rotation, pose.origin, object_model)
+            object_world_points_from_pose(pose.rotation, pose.origin, object_model, marker_model)
             if pose is not None and object_model is not None
             else {}
         )

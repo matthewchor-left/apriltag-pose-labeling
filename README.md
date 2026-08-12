@@ -48,12 +48,52 @@ uv run object-charuco \
   --save-board config/charuco_6x9_25mm.png
 ```
 
+Or load geometry from a Board Model profile (`height` × `width` is **h6 × w9** — rows × columns):
+
+```bash
+uv run object-charuco \
+  --board-model config/Board/charuco_h6_w9_25mm_4x4_50/board_model.json \
+  --save-board config/charuco_6x9_25mm.png
+```
+
+`--board-model` cannot be combined with `--layout`, `--marker-size`, `--square-size`, or `--dictionary`.
+
 Print the PNG at **100% scale** (not “fit to page”) so each square matches `--square-size`.
 
 - **Space** — capture a frame when the board is fully detected
 - **q** — finish and save to `--output`
 
 `--layout` is height × width (rows × columns). For ChArUco that is chess **square** count; for checkerboard it is **inner corner** count.
+
+## Board Model and Board Reference Frame
+
+Board geometry and the canonical **Board Reference Frame** live in `config/Board/<profile>/board_model.json`. The default profile `charuco_h6_w9_25mm_4x4_50` is a 6-row × 9-column ChArUco board with 25 mm squares and 20 mm markers (`4x4_50` dictionary). Profile names use **h6/w9** so height and width are not confused.
+
+`object-visualize-board-frame` detects ChArUco intersections, estimates a **Board Pose Estimate** in the camera frame, and overlays the Board Reference Frame (axes and extended grid). It does not yet implement object detection error analysis.
+
+Still image:
+
+```bash
+uv run object-visualize-board-frame \
+  --calibration config/Camera/webcam/intrinsics.json \
+  --board-model config/Board/charuco_h6_w9_25mm_4x4_50/board_model.json \
+  --image path/to/frame.png \
+  --output path/to/overlay.png
+```
+
+Live camera:
+
+```bash
+uv run object-visualize-board-frame \
+  --calibration config/Camera/webcam/intrinsics.json \
+  --board-model config/Board/charuco_h6_w9_25mm_4x4_50/board_model.json \
+  --camera 0 \
+  --output path/to/saved_frame.png
+```
+
+- **q** — quit live mode
+- **S** — save current rendered frame when `--output` is set (live mode only)
+- Frame resolution must match the calibration `image_size`; intrinsics are not scaled
 
 ## 2. Detect object pose
 
@@ -67,6 +107,48 @@ uv run object-detect \
 ```
 
 Press **q** to quit.
+
+### Board coordinate overlays
+
+Both `object-detect` and `annotation-tool` can track a printed ChArUco board and annotate the active pose-projection overlay with **Board Coordinates**:
+
+```bash
+uv run object-detect \
+  --camera 0 \
+  --calibration config/Camera/nexplaygroundcam/intrinsics.json \
+  --marker-model config/Model/remote1/marker_model.json \
+  --dictionary 36h11 \
+  --detection-sensitivity relaxed \
+  --overlay-object-model \
+  --object-model config/Model/remote1/object_model.json \
+  --board-frame \
+  --board-model config/Board/charuco_h11_w8_25mm_4x4_50/board_model.json \
+  --camera-motion static
+```
+
+```bash
+uv run annotation-tool \
+  --camera 0 \
+  --calibration config/Camera/nexplaygroundcam/intrinsics.json \
+  --marker-model config/Model/remote1/marker_model.json \
+  --eraser-model config/Model/remote1/eraser_model.json \
+  --dictionary 36h11 \
+  --detection-sensitivity relaxed \
+  --overlay-object-model \
+  --object-model config/Model/remote1/object_model.json \
+  --board-frame \
+  --board-model config/Board/charuco_h11_w8_25mm_4x4_50/board_model.json
+```
+
+| Flag | Description |
+|------|-------------|
+| `--board-frame` | Enable board tracking, XZ grid, XYZ axes, and Board Coordinate labels |
+| `--board-model` | ChArUco board model JSON (required with `--board-frame`) |
+| `--camera-motion` | `static` (default) keeps the last valid **Board Pose Estimate** when the board drops out; `dynamic` clears grid and labels until the board is visible again |
+
+Board overlays use the same XZ grid and XYZ axes as `object-visualize-board-frame` (two-square margin and axis length by default). **Board Coordinate** labels appear only when both `--board-frame` and a pose-projection overlay are active (`--overlay-object-model`, `--overlay-marker-model`, or `--overlay-eraser-model` on `object-detect`; `--overlay-object-model` on `annotation-tool`). Labels use millimeters with one decimal place, e.g. `(12.3, 45.6, 78.9) mm`.
+
+On `object-detect`, `--no-visualize` disables all overlays including board grid and labels; board pose is still solved each frame but nothing is drawn.
 
 ## Core API (no visualization)
 
@@ -161,6 +243,8 @@ src/object_apriltag/
   viz/                 # optional overlays and plots
   cli/                 # object-detect, object-charuco, object-calibrate-marker-model
 config/
+  Board/
+    charuco_h6_w9_25mm_4x4_50/  # board_model.json
   Camera/
     nexplaygroundcam/  # intrinsics.json, uvcc.json, device.json
     cam1/ cam2/ webcam/  # empty profiles (.gitkeep)
@@ -175,12 +259,20 @@ uv.lock                # locked dependency versions (commit this)
 
 | Command | Flag | Description |
 |---------|------|-------------|
+| `object-charuco` | `--board-model` | ChArUco board model JSON (exclusive with geometry flags) |
 | `object-charuco` | `--board-type` | `charuco_board` or `checkerboard` |
 | `object-charuco` | `--layout` | Board height × width (rows × columns) |
 | `object-charuco` | `--marker-size` | ArUco marker size in meters (ChArUco only) |
 | `object-charuco` | `--camera` | Camera device index |
 | `object-charuco` | `--output` | Intrinsics JSON path |
+| `object-visualize-board-frame` | `--calibration` | Path to camera intrinsics JSON |
+| `object-visualize-board-frame` | `--board-model` | ChArUco board model JSON path |
+| `object-visualize-board-frame` | `--camera` / `--image` | Live camera index or still image |
+| `object-visualize-board-frame` | `--grid-margin` | Grid extension in square counts (default 2) |
 | `object-detect` | `--calibration` | Path to camera intrinsics JSON |
 | `object-detect` | `--marker-model` | Marker model JSON path |
 | `object-detect` | `--marker-id` | Use a specific marker id only |
 | `object-detect` | `--no-visualize` | Camera preview without overlays |
+| `object-detect` / `annotation-tool` | `--board-frame` | Board Reference Frame grid, axes, and coordinate labels |
+| `object-detect` / `annotation-tool` | `--board-model` | ChArUco board model JSON (required with `--board-frame`) |
+| `object-detect` / `annotation-tool` | `--camera-motion` | `static` (default) or `dynamic` board pose retention |

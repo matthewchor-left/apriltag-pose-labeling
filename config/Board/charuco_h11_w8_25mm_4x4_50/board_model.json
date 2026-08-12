@@ -1,0 +1,18 @@
+{
+    "board_type": "charuco_board",
+    "units": "meters",
+    "layout": {
+      "height": 11,
+      "width": 8
+    },
+    "square_size": 0.025,
+    "marker_size": 0.020,
+    "dictionary": "4x4_50",
+    "reference_frame": {
+      "origin": "outer_top_left",
+      "x_axis": "right",
+      "y_axis": "out_of_printed_face",
+      "z_axis": "down"
+    }
+  }
+  
