@@ -26,7 +26,12 @@ from object_apriltag.marker_layout_calibration import (
     CalibrationResult,
     CalibrationSettings,
     FrameObservation,
+    _CornerObservation,
+    _PairConsensus,
+    _estimate_pair_consensus,
+    _recheck_pair_support,
     _reference_gauge_pose,
+    _restrict_pair_consensus_to_frames,
     _synth_pair_observations,
     calibrate_marker_layout,
 )
@@ -471,7 +476,11 @@ class MarkerLayoutCalibrationRefusalTests(unittest.TestCase):
         _apply_constant_marker_noise(observations, marker_id=1, noise_std_px=3.0, seed=0)
         result = self._calibrate(observations, [0, 1])
         self.assertIsNone(result.layout)
-        self.assertIn("supported frames after pruning", result.failure_reason or "")
+        self.assertTrue(
+            "supported frames after pruning" in (result.failure_reason or "")
+            or "not connected after pruning" in (result.failure_reason or ""),
+            result.failure_reason,
+        )
         assert result.quality is not None
         self.assertEqual(result.quality.inlier_corner_count, 0)
 
@@ -813,6 +822,195 @@ class MarkerLayoutCalibrationInputValidationTests(unittest.TestCase):
         self.assertIsNone(result.failure_reason)
         self.assertIsNotNone(result.layout)
         self.assertIsNotNone(result.quality)
+
+
+def _make_pair_consensus(
+    marker_a: int,
+    marker_b: int,
+    frame_indices: Iterable[int],
+) -> _PairConsensus:
+    rotation = np.eye(3, dtype=np.float64)
+    translation = np.zeros(3, dtype=np.float64)
+    frames = tuple(sorted(frame_indices))
+    return _PairConsensus(
+        marker_a=marker_a,
+        marker_b=marker_b,
+        rotation_ba=rotation,
+        translation_ba=translation,
+        inlier_frames=frames,
+        inlier_hypotheses={frame_index: (rotation, translation) for frame_index in frames},
+    )
+
+
+def _triangle_marker_poses(marker_size_m: float = 0.07) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+    reference_rotation, reference_translation = _reference_gauge_pose(marker_size_m)
+    return {
+        0: (reference_rotation, reference_translation),
+        1: (reference_rotation, reference_translation + np.array([0.12, 0.0, -0.05], dtype=np.float64)),
+        2: (reference_rotation, reference_translation + np.array([0.12, 0.0, -0.12], dtype=np.float64)),
+    }
+
+
+class PairGraphFilteringTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.settings = CalibrationSettings(min_inliers_per_edge=20)
+        self.expected_ids = [0, 1, 2]
+        self.reference_marker_id = 0
+
+    def test_restrict_drops_weak_redundant_edge_when_chain_remains(self) -> None:
+        pair_consensus = {
+            (0, 1): _make_pair_consensus(0, 1, range(20)),
+            (1, 2): _make_pair_consensus(1, 2, range(20)),
+            (0, 2): _make_pair_consensus(0, 2, range(10)),
+        }
+        allowed_frames = frozenset(range(20))
+
+        filtered, failure = _restrict_pair_consensus_to_frames(
+            pair_consensus,
+            allowed_frames,
+            self.expected_ids,
+            self.reference_marker_id,
+            self.settings,
+        )
+
+        self.assertIsNone(failure)
+        self.assertEqual(set(filtered), {(0, 1), (1, 2)})
+
+    def test_restrict_fails_when_required_bridge_edge_is_dropped(self) -> None:
+        pair_consensus = {
+            (0, 1): _make_pair_consensus(0, 1, range(10)),
+            (1, 2): _make_pair_consensus(1, 2, range(20)),
+        }
+        allowed_frames = frozenset(range(20))
+
+        filtered, failure = _restrict_pair_consensus_to_frames(
+            pair_consensus,
+            allowed_frames,
+            self.expected_ids,
+            self.reference_marker_id,
+            self.settings,
+        )
+
+        self.assertIsNotNone(failure)
+        self.assertIn("not connected", failure or "")
+        self.assertEqual(set(filtered), {(1, 2)})
+
+    def test_estimate_drops_bad_redundant_edge_when_chain_remains(self) -> None:
+        marker_size_m = 0.07
+        translation_spread = 0.02
+        rotation = np.eye(3, dtype=np.float64)
+        good_translation = np.zeros(3, dtype=np.float64)
+
+        def _hypotheses(
+            pair: tuple[int, int],
+            *,
+            bad: bool = False,
+        ) -> list[tuple[np.ndarray, np.ndarray, int]]:
+            hypotheses: list[tuple[np.ndarray, np.ndarray, int]] = []
+            for frame_index in range(25):
+                if bad:
+                    offset = translation_spread * (1.0 if frame_index % 2 else -1.0)
+                    translation = good_translation + np.array([offset, 0.0, 0.0], dtype=np.float64)
+                else:
+                    translation = good_translation
+                hypotheses.append((rotation, translation, frame_index))
+            return hypotheses
+
+        pair_hypotheses = {
+            (0, 1): _hypotheses((0, 1)),
+            (1, 2): _hypotheses((1, 2)),
+            (0, 2): _hypotheses((0, 2), bad=True),
+        }
+
+        filtered, failure = _estimate_pair_consensus(
+            pair_hypotheses,
+            self.expected_ids,
+            self.reference_marker_id,
+            marker_size_m,
+            self.settings,
+        )
+
+        self.assertIsNone(failure)
+        self.assertEqual(set(filtered), {(0, 1), (1, 2)})
+
+    def test_recheck_drops_weak_redundant_edge_when_chain_remains(self) -> None:
+        pair_consensus = {
+            (0, 1): _make_pair_consensus(0, 1, range(20)),
+            (1, 2): _make_pair_consensus(1, 2, range(20)),
+            (0, 2): _make_pair_consensus(0, 2, range(10)),
+        }
+        corner_observations = [
+            _CornerObservation(
+                frame_index=frame_index,
+                marker_id=marker_id,
+                corner_index=corner_index,
+                image_point=np.zeros(2, dtype=np.float64),
+            )
+            for frame_index in range(20)
+            for marker_id in (0, 1, 2)
+            for corner_index in range(4)
+        ]
+        inlier_mask = np.ones(len(corner_observations), dtype=bool)
+
+        filtered, failure = _recheck_pair_support(
+            pair_consensus,
+            corner_observations,
+            inlier_mask,
+            self.expected_ids,
+            self.reference_marker_id,
+            self.settings,
+            allowed_frames=frozenset(range(20)),
+        )
+
+        self.assertIsNone(failure)
+        self.assertEqual(set(filtered), {(0, 1), (1, 2)})
+
+    def test_calibration_survives_redundant_weak_triangle_edge(self) -> None:
+        marker_size_m = 0.07
+        marker_poses = _triangle_marker_poses(marker_size_m)
+        observations: list[FrameObservation] = []
+        for frame_index in range(40):
+            visible = (0, 1) if frame_index < 20 else (1, 2)
+            frame_observation = synthesize_observations(
+                marker_poses,
+                frame_count=1,
+                marker_size_m=marker_size_m,
+                visible_markers=lambda _, visible=visible: visible,
+                seed=frame_index,
+            )[0]
+            observations.append(
+                FrameObservation(frame_id=frame_index, markers=frame_observation.markers)
+            )
+        for frame_index in range(10):
+            triple = synthesize_observations(
+                marker_poses,
+                frame_count=1,
+                marker_size_m=marker_size_m,
+                visible_markers=lambda _: (0, 1, 2),
+                seed=100 + frame_index,
+            )[0]
+            observations[frame_index] = FrameObservation(
+                frame_id=frame_index,
+                markers={**observations[frame_index].markers, 2: triple.markers[2]},
+            )
+
+        result = calibrate_marker_layout(
+            observations,
+            *_default_camera(),
+            expected_marker_ids=[0, 1, 2],
+            reference_marker_id=0,
+            marker_size_m=marker_size_m,
+            settings=self.settings,
+        )
+
+        self.assertIsNone(result.failure_reason, result.failure_reason)
+        self.assertIsNotNone(result.layout)
+        assert result.quality is not None
+        self.assertEqual(result.quality.connected_marker_ids, frozenset({0, 1, 2}))
+        edge_pairs = {(edge.marker_a, edge.marker_b) for edge in result.quality.edges}
+        self.assertIn((0, 1), edge_pairs)
+        self.assertIn((1, 2), edge_pairs)
+        self.assertNotIn((0, 2), edge_pairs)
 
 
 class SaveMarkerModelTests(unittest.TestCase):

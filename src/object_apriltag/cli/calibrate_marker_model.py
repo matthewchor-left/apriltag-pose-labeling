@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from itertools import combinations
 from pathlib import Path
 
 import cv2
@@ -14,19 +13,29 @@ import numpy as np
 from object_apriltag.apriltag import build_apriltag_detector
 from object_apriltag.calibration import load_intrinsics, require_calibration_image_size
 from object_apriltag.layout import marker_color_bgr, save_marker_model
+from object_apriltag.cli.live_pair_readiness_worker import (
+    LivePairReadinessView,
+    LivePairReadinessWorker,
+)
 from object_apriltag.marker_layout_calibration import (
+    AssignmentRejectionSummary,
     CalibrationQualityReport,
     CalibrationResult,
     CalibrationSettings,
     FrameObservation,
+    PairReadinessEdge,
     calibrate_marker_layout,
+    compute_live_pair_readiness,
 )
 
-DEFAULT_SAMPLE_RATE_HZ = 2.0
+DEFAULT_ASSIGNMENT_REJECTION_SUMMARY_LINES = 3
+
+DEFAULT_SAMPLE_RATE_HZ = 10.0
 DEFAULT_MIN_PAIR_INLIERS = 20
 DEFAULT_REPROJECTION_RMS_GATE_PX = 2.0
 DEFAULT_PAIR_TRANSLATION_RMS_GATE_RATIO = 0.10
 DEFAULT_PAIR_ROTATION_RMS_GATE_DEG = 5.0
+DEFAULT_PAIR_READINESS_HUD_LINES = 8
 
 
 def parse_args() -> argparse.Namespace:
@@ -215,42 +224,6 @@ def detect_expected_markers(
     return visible
 
 
-def pair_covisibility_counts(
-    observations: list[FrameObservation],
-    expected_ids: list[int],
-) -> dict[tuple[int, int], int]:
-    counts = {pair: 0 for pair in combinations(expected_ids, 2)}
-    for observation in observations:
-        present = set(observation.markers)
-        for pair in combinations(sorted(present), 2):
-            if pair in counts:
-                counts[pair] += 1
-    return counts
-
-
-def connected_marker_ids(
-    pair_counts: dict[tuple[int, int], int],
-    reference_marker_id: int,
-    min_inliers: int,
-) -> set[int]:
-    graph: dict[int, set[int]] = {}
-    for (marker_a, marker_b), count in pair_counts.items():
-        if count < min_inliers:
-            continue
-        graph.setdefault(marker_a, set()).add(marker_b)
-        graph.setdefault(marker_b, set()).add(marker_a)
-
-    connected = {reference_marker_id}
-    queue = [reference_marker_id]
-    while queue:
-        current = queue.pop()
-        for neighbor in graph.get(current, set()):
-            if neighbor not in connected:
-                connected.add(neighbor)
-                queue.append(neighbor)
-    return connected
-
-
 def draw_detection_outlines(frame: np.ndarray, visible: dict[int, np.ndarray]) -> None:
     for marker_id, corners in visible.items():
         points = corners.reshape(4, 2).astype(np.int32)
@@ -276,43 +249,148 @@ def format_solve_frame_counts(quality: CalibrationQualityReport) -> str:
     )
 
 
-def draw_calibration_hud(
-    frame: np.ndarray,
+def format_assignment_rejection_cause(cause_count) -> str:
+    pair_text = ""
+    if cause_count.marker_pair is not None:
+        pair_text = f" pair=({cause_count.marker_pair[0]},{cause_count.marker_pair[1]})"
+    return f"{cause_count.reason}{pair_text} x{cause_count.count}"
+
+
+def format_assignment_rejection_summary(
+    summary: AssignmentRejectionSummary,
+    *,
+    max_lines: int = DEFAULT_ASSIGNMENT_REJECTION_SUMMARY_LINES,
+) -> list[str]:
+    if summary.total_rejected == 0:
+        return []
+    return [
+        format_assignment_rejection_cause(cause)
+        for cause in summary.top_causes[:max_lines]
+    ]
+
+
+def format_pair_readiness_edge(edge: PairReadinessEdge) -> str:
+    translation = "-" if edge.translation_rms_m is None else f"{edge.translation_rms_m:.3f}m"
+    rotation = "-" if edge.rotation_rms_deg is None else f"{edge.rotation_rms_deg:.1f}d"
+    return (
+        f"({edge.marker_a},{edge.marker_b}) {edge.status} "
+        f"raw={edge.raw_covisible_frames} inl={edge.robust_inlier_count} "
+        f"tr={translation} rr={rotation}"
+    )
+
+
+def format_marker_connectivity_line(
+    connected_ids: set[int],
+    missing_ids: frozenset[int],
+    *,
+    max_listed: int = 12,
+) -> str:
+    def compact(marker_ids: list[int]) -> str:
+        if len(marker_ids) <= max_listed:
+            return str(marker_ids)
+        head = marker_ids[:max_listed]
+        return f"{head} +{len(marker_ids) - max_listed}"
+
+    connected = compact(sorted(connected_ids))
+    missing = compact(sorted(missing_ids))
+    return f"markers connected {connected} missing {missing}"
+
+
+def format_readiness_snapshot_line(
+    *,
+    current_sample_count: int,
+    represented_sample_count: int,
+    is_computing: bool,
+) -> str:
+    suffix = " (computing...)" if is_computing else ""
+    if represented_sample_count == current_sample_count and not is_computing:
+        return f"readiness@{current_sample_count} samples"
+    return f"readiness@{represented_sample_count}/{current_sample_count} samples{suffix}"
+
+
+def build_pair_readiness_hud_lines(
     *,
     expected_ids: list[int],
     visible_ids: list[int],
-    sample_count: int,
-    pair_counts: dict[tuple[int, int], int],
-    connected_ids: set[int],
+    current_sample_count: int,
+    readiness_view: LivePairReadinessView,
     reference_marker_id: int,
-    min_pair_inliers: int,
-    status_line: str | None,
-    last_solve_quality: CalibrationQualityReport | None,
-) -> None:
-    qualified_pairs = [
-        f"({marker_a},{marker_b})={count}"
-        for (marker_a, marker_b), count in sorted(pair_counts.items())
-        if count > 0
-    ]
-    pair_summary = ", ".join(qualified_pairs[:6])
-    if len(qualified_pairs) > 6:
-        pair_summary += ", ..."
+    max_pair_lines: int = DEFAULT_PAIR_READINESS_HUD_LINES,
+) -> list[str]:
+    diagnostics = readiness_view.diagnostics
+    status_counts = {"pass": 0, "weak": 0, "fail": 0}
+    for edge in diagnostics.pairs:
+        status_counts[edge.status] = status_counts.get(edge.status, 0) + 1
 
-    ready_pairs = sum(1 for count in pair_counts.values() if count >= min_pair_inliers)
+    connected_ids = set(diagnostics.connected_marker_ids)
     lines = [
         f"expected: {expected_ids}",
         f"visible: {visible_ids}",
-        f"samples: {sample_count}",
-        f"pairs ready: {ready_pairs}/{len(pair_counts)} (>= {min_pair_inliers})",
-        f"connected from ref {reference_marker_id}: {len(connected_ids)}/{len(expected_ids)}",
+        f"samples: {current_sample_count}",
+        format_readiness_snapshot_line(
+            current_sample_count=current_sample_count,
+            represented_sample_count=readiness_view.represented_sample_count,
+            is_computing=readiness_view.is_computing,
+        ),
+        format_marker_connectivity_line(connected_ids, diagnostics.missing_marker_ids),
+        (
+            f"graph: {len(connected_ids)}/{len(expected_ids)} connected from ref {reference_marker_id}"
+        ),
+        (
+            f"pairs: {status_counts['pass']} pass, {status_counts['weak']} weak, "
+            f"{status_counts['fail']} fail ({len(diagnostics.pairs)} observed)"
+        ),
         "S=solve  Q=quit",
     ]
-    if pair_summary:
-        lines.insert(4, f"pair counts: {pair_summary}")
+    if diagnostics.failure_reason:
+        lines.insert(7, f"readiness error: {diagnostics.failure_reason}")
+
+    pair_lines = [format_pair_readiness_edge(edge) for edge in diagnostics.pairs]
+    if len(pair_lines) > max_pair_lines:
+        pair_lines = pair_lines[:max_pair_lines]
+        pair_lines.append("...")
+    lines[7:7] = pair_lines
+    return lines
+
+
+def build_pair_readiness_hud_lines_from_diagnostics(
+    *,
+    expected_ids: list[int],
+    visible_ids: list[int],
+    current_sample_count: int,
+    readiness_view: LivePairReadinessView,
+    reference_marker_id: int,
+    max_pair_lines: int = DEFAULT_PAIR_READINESS_HUD_LINES,
+) -> list[str]:
+    return build_pair_readiness_hud_lines(
+        expected_ids=expected_ids,
+        visible_ids=visible_ids,
+        current_sample_count=current_sample_count,
+        readiness_view=readiness_view,
+        reference_marker_id=reference_marker_id,
+        max_pair_lines=max_pair_lines,
+    )
+
+
+def draw_calibration_hud(
+    frame: np.ndarray,
+    *,
+    hud_lines: list[str],
+    last_solve_quality: CalibrationQualityReport | None,
+) -> None:
+    lines = list(hud_lines)
     if last_solve_quality is not None:
-        lines.insert(4, format_solve_frame_counts(last_solve_quality))
-    if status_line:
-        lines.append(status_line)
+        lines.insert(5, format_solve_frame_counts(last_solve_quality))
+        if last_solve_quality.assignment_rejections is not None:
+            rejection_lines = format_assignment_rejection_summary(
+                last_solve_quality.assignment_rejections,
+                max_lines=2,
+            )
+            if rejection_lines:
+                lines[6:6] = [
+                    f"assignment rejections: {last_solve_quality.assignment_rejections.total_rejected} total",
+                    *rejection_lines,
+                ]
 
     font = cv2.FONT_HERSHEY_SIMPLEX
     font_scale = 0.55
@@ -346,6 +424,10 @@ def print_refusal(result: CalibrationResult) -> None:
     if quality is None:
         return
     print(f"  {format_solve_frame_counts(quality)}")
+    if quality.assignment_rejections is not None and quality.assignment_rejections.total_rejected > 0:
+        print(f"  assignment rejections: {quality.assignment_rejections.total_rejected} total")
+        for line in format_assignment_rejection_summary(quality.assignment_rejections):
+            print(f"  {line}")
     print(f"  inlier corners: {quality.inlier_corner_count}")
     print(f"  reprojection RMS: {quality.reprojection_rms_px:.3f} px")
     print(
@@ -369,6 +451,10 @@ def print_success(result: CalibrationResult, output: Path) -> None:
     if quality is None:
         return
     print(f"  {format_solve_frame_counts(quality)}")
+    if quality.assignment_rejections is not None and quality.assignment_rejections.total_rejected > 0:
+        print(f"  assignment rejections: {quality.assignment_rejections.total_rejected} total")
+        for line in format_assignment_rejection_summary(quality.assignment_rejections):
+            print(f"  {line}")
     print(f"  reprojection RMS: {quality.reprojection_rms_px:.3f} px")
 
 
@@ -392,6 +478,15 @@ def run_capture(args: argparse.Namespace) -> bool:
         print(f"Calibration source: {calibration_source}")
 
     capture = open_camera(args.camera, width, height)
+    readiness_worker = LivePairReadinessWorker(
+        compute_fn=compute_live_pair_readiness,
+        camera_matrix=camera_matrix,
+        dist_coeffs=dist_coeffs,
+        expected_marker_ids=expected_ids,
+        reference_marker_id=args.reference_marker_id,
+        marker_size_m=args.marker_size,
+        settings=settings,
+    )
     try:
         print(f"Camera {args.camera}: target {width}x{height}")
         print("Press S to solve, Q to quit.")
@@ -423,23 +518,21 @@ def run_capture(args: argparse.Namespace) -> bool:
                     )
                 )
                 next_sample_time = now + sample_interval
+                readiness_worker.submit(observations)
 
-            pair_counts = pair_covisibility_counts(observations, expected_ids)
-            connected_ids = connected_marker_ids(
-                pair_counts,
-                args.reference_marker_id,
-                args.min_pair_inliers,
-            )
-            draw_calibration_hud(
-                preview,
+            readiness_view = readiness_worker.poll(len(observations))
+            hud_lines = build_pair_readiness_hud_lines_from_diagnostics(
                 expected_ids=expected_ids,
                 visible_ids=sorted(visible),
-                sample_count=len(observations),
-                pair_counts=pair_counts,
-                connected_ids=connected_ids,
+                current_sample_count=len(observations),
+                readiness_view=readiness_view,
                 reference_marker_id=args.reference_marker_id,
-                min_pair_inliers=args.min_pair_inliers,
-                status_line=status_line,
+            )
+            if status_line:
+                hud_lines.append(status_line)
+            draw_calibration_hud(
+                preview,
+                hud_lines=hud_lines,
                 last_solve_quality=last_solve_quality,
             )
 
@@ -468,6 +561,7 @@ def run_capture(args: argparse.Namespace) -> bool:
                 print_success(result, args.output)
                 return True
     finally:
+        readiness_worker.shutdown(join_timeout=0.0)
         capture.release()
         cv2.destroyAllWindows()
 

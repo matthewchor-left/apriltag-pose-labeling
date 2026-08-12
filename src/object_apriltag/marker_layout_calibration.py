@@ -68,6 +68,7 @@ class CalibrationQualityReport:
     connected_marker_ids: frozenset[int]
     missing_expected_ids: frozenset[int]
     unused_expected_ids: frozenset[int]
+    assignment_rejections: AssignmentRejectionSummary | None = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,57 @@ class CalibrationResult:
     layout: MarkerLayout | None
     quality: CalibrationQualityReport | None
     failure_reason: str | None
+
+
+@dataclass(frozen=True)
+class PairReadinessEdge:
+    marker_a: int
+    marker_b: int
+    raw_covisible_frames: int
+    robust_inlier_count: int
+    translation_rms_m: float | None
+    rotation_rms_deg: float | None
+    status: str
+
+
+@dataclass(frozen=True)
+class LivePairReadinessDiagnostics:
+    pairs: tuple[PairReadinessEdge, ...]
+    connected_marker_ids: frozenset[int]
+    missing_marker_ids: frozenset[int]
+    sample_count: int
+    failure_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class FrameAssignmentRejection:
+    reason: str
+    marker_pair: MarkerPair | None = None
+    translation_error_m: float | None = None
+    rotation_error_deg: float | None = None
+    translation_gate_m: float | None = None
+    rotation_gate_deg: float | None = None
+
+
+@dataclass(frozen=True)
+class FrameAssignmentResult:
+    assignment: dict[int, _MarkerCandidate] | None
+    rejection: FrameAssignmentRejection | None
+
+
+@dataclass(frozen=True)
+class AssignmentRejectionCauseCount:
+    reason: str
+    marker_pair: MarkerPair | None
+    count: int
+
+
+@dataclass(frozen=True)
+class AssignmentRejectionSummary:
+    total_rejected: int
+    by_reason: tuple[tuple[str, int], ...]
+    by_pair: tuple[tuple[MarkerPair, int], ...]
+    top_causes: tuple[AssignmentRejectionCauseCount, ...]
 
 
 @dataclass(frozen=True)
@@ -330,12 +382,13 @@ def calibrate_marker_layout(
             pair_failure,
         )
 
-    assigned_candidates, rejected_frames = _assign_ippe_candidates(
+    assigned_candidates, rejected_frames, assignment_rejections = _assign_ippe_candidates(
         frame_candidates,
         pair_consensus,
         settings,
         marker_size_m,
     )
+    assignment_rejection_summary = summarize_assignment_rejections(assignment_rejections)
     input_frame_count = len(normalized_observations)
     rejected_frame_count = len(rejected_frames)
     accepted_frames = frozenset(assigned_candidates)
@@ -352,6 +405,7 @@ def calibrate_marker_layout(
                 rejected_frame_count=rejected_frame_count,
                 accepted_frame_count=0,
                 observation_count=0,
+                assignment_rejections=assignment_rejection_summary,
             ),
             "No frames with assignable IPPE candidates remain after rejecting inconsistent samples.",
         )
@@ -375,6 +429,7 @@ def calibrate_marker_layout(
                 rejected_frame_count=rejected_frame_count,
                 accepted_frame_count=accepted_frame_count,
                 observation_count=0,
+                assignment_rejections=assignment_rejection_summary,
             ),
             assignment_support_failure,
         )
@@ -393,6 +448,7 @@ def calibrate_marker_layout(
                 rejected_frame_count=rejected_frame_count,
                 accepted_frame_count=accepted_frame_count,
                 observation_count=0,
+                assignment_rejections=assignment_rejection_summary,
             ),
             f"Expected marker IDs have no accepted-frame observations after rejection: {missing_after_rejection}.",
         )
@@ -458,6 +514,7 @@ def calibrate_marker_layout(
                 rejected_frame_count=rejected_frame_count,
                 accepted_frame_count=_covisible_frame_count(corner_observations, inlier_mask),
                 observation_count=int(np.count_nonzero(inlier_mask)),
+                assignment_rejections=assignment_rejection_summary,
             ),
             prune_failure,
         )
@@ -480,6 +537,7 @@ def calibrate_marker_layout(
         object_points,
         camera_matrix,
         dist_coeffs,
+        assignment_rejections=assignment_rejection_summary,
     )
 
     gate_failure = _check_quality_gates(quality, settings, marker_size_m, expected_ids)
@@ -640,6 +698,219 @@ def _pair_translation_gate(settings: CalibrationSettings, marker_size_m: float) 
     return settings.pair_translation_rms_gate_ratio * marker_size_m
 
 
+def compute_live_pair_readiness(
+    observations: Sequence[FrameObservation],
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+    expected_marker_ids: Sequence[int],
+    reference_marker_id: int,
+    marker_size_m: float,
+    settings: CalibrationSettings | None = None,
+) -> LivePairReadinessDiagnostics:
+    """Estimate pair strength and graph readiness without assignment or bundle adjustment."""
+    settings = settings or CalibrationSettings()
+    settings_failure = _validate_settings(settings)
+    if settings_failure is not None:
+        return LivePairReadinessDiagnostics(
+            pairs=(),
+            connected_marker_ids=frozenset(),
+            missing_marker_ids=frozenset(),
+            sample_count=len(observations),
+            failure_reason=settings_failure,
+        )
+
+    expected_ids, expected_failure = _parse_expected_marker_ids(
+        expected_marker_ids,
+        reference_marker_id,
+    )
+    if expected_failure is not None:
+        return LivePairReadinessDiagnostics(
+            pairs=(),
+            connected_marker_ids=frozenset(),
+            missing_marker_ids=frozenset(),
+            sample_count=len(observations),
+            failure_reason=expected_failure,
+        )
+
+    marker_size_failure = _validate_marker_size(marker_size_m)
+    if marker_size_failure is not None:
+        return LivePairReadinessDiagnostics(
+            pairs=(),
+            connected_marker_ids=frozenset(),
+            missing_marker_ids=frozenset(),
+            sample_count=len(observations),
+            failure_reason=marker_size_failure,
+        )
+
+    camera_matrix, dist_coeffs, camera_failure = _validate_camera_inputs(
+        camera_matrix,
+        dist_coeffs,
+    )
+    if camera_failure is not None:
+        return LivePairReadinessDiagnostics(
+            pairs=(),
+            connected_marker_ids=frozenset(),
+            missing_marker_ids=frozenset(),
+            sample_count=len(observations),
+            failure_reason=camera_failure,
+        )
+
+    observations_failure = _validate_observations(observations, expected_ids)
+    if observations_failure is not None:
+        return LivePairReadinessDiagnostics(
+            pairs=(),
+            connected_marker_ids=frozenset(),
+            missing_marker_ids=frozenset(),
+            sample_count=len(observations),
+            failure_reason=observations_failure,
+        )
+
+    object_points = marker_corner_object_points(marker_size_m).astype(np.float64)
+    normalized_observations = _normalize_observations(observations, expected_ids)
+    raw_pair_counts = _raw_covisible_pair_counts(normalized_observations)
+    if not raw_pair_counts:
+        return LivePairReadinessDiagnostics(
+            pairs=(),
+            connected_marker_ids=frozenset({reference_marker_id}),
+            missing_marker_ids=frozenset(expected_ids) - {reference_marker_id},
+            sample_count=len(observations),
+        )
+
+    frame_candidates = _estimate_frame_candidates(
+        normalized_observations,
+        object_points,
+        camera_matrix,
+        dist_coeffs,
+    )
+    pair_hypotheses = _collect_pair_hypotheses(frame_candidates, expected_ids)
+    translation_gate = _pair_translation_gate(settings, marker_size_m)
+    rotation_gate = settings.pair_rotation_rms_gate_deg
+
+    pair_reports: list[PairReadinessEdge] = []
+    passing_consensus: dict[MarkerPair, _PairConsensus] = {}
+    for pair, raw_count in sorted(raw_pair_counts.items()):
+        edge = _best_pair_consensus(
+            pair,
+            pair_hypotheses.get(pair, []),
+            translation_gate,
+            rotation_gate,
+        )
+        status, robust_count, translation_rms_m, rotation_rms_deg = _classify_pair_readiness(
+            edge,
+            settings,
+            marker_size_m,
+        )
+        if status == "pass" and edge is not None:
+            passing_consensus[pair] = edge
+        pair_reports.append(
+            PairReadinessEdge(
+                marker_a=pair[0],
+                marker_b=pair[1],
+                raw_covisible_frames=raw_count,
+                robust_inlier_count=robust_count,
+                translation_rms_m=translation_rms_m,
+                rotation_rms_deg=rotation_rms_deg,
+                status=status,
+            )
+        )
+
+    connected = frozenset(_connected_marker_ids(passing_consensus, reference_marker_id))
+    missing = frozenset(set(expected_ids) - connected)
+    return LivePairReadinessDiagnostics(
+        pairs=tuple(pair_reports),
+        connected_marker_ids=connected,
+        missing_marker_ids=missing,
+        sample_count=len(observations),
+    )
+
+
+def _raw_covisible_pair_counts(
+    observations: list[tuple[str | int, dict[int, np.ndarray]]],
+) -> dict[MarkerPair, int]:
+    counts: dict[MarkerPair, int] = {}
+    for _, markers in observations:
+        marker_ids = sorted(markers)
+        for index_a, marker_low in enumerate(marker_ids):
+            for marker_high in marker_ids[index_a + 1 :]:
+                counts[(marker_low, marker_high)] = counts.get((marker_low, marker_high), 0) + 1
+    return counts
+
+
+def _best_pair_consensus(
+    pair: MarkerPair,
+    hypotheses: list[tuple[np.ndarray, np.ndarray, int]],
+    translation_gate: float,
+    rotation_gate: float,
+) -> _PairConsensus | None:
+    if not hypotheses:
+        return None
+
+    best_frames: dict[int, int] = {}
+    best_rotation = np.eye(3, dtype=np.float64)
+    best_translation = np.zeros(3, dtype=np.float64)
+    for seed_index, (seed_rotation, seed_translation, _) in enumerate(hypotheses):
+        candidate_frames = _inlier_frames_for_seed(
+            hypotheses,
+            seed_index,
+            translation_gate,
+            rotation_gate,
+        )
+        if len(candidate_frames) > len(best_frames):
+            best_frames = candidate_frames
+            best_rotation = seed_rotation
+            best_translation = seed_translation
+
+    if not best_frames:
+        return None
+
+    selected_hypotheses = {
+        frame_index: hypotheses[hypothesis_index][:2]
+        for frame_index, hypothesis_index in best_frames.items()
+    }
+    inlier_rotations = [values[0] for values in selected_hypotheses.values()]
+    inlier_translations = np.stack([values[1] for values in selected_hypotheses.values()], axis=0)
+    best_rotation = _average_rotations(inlier_rotations)
+    best_translation = np.mean(inlier_translations, axis=0)
+    return _PairConsensus(
+        marker_a=pair[0],
+        marker_b=pair[1],
+        rotation_ba=best_rotation,
+        translation_ba=best_translation,
+        inlier_frames=tuple(sorted(selected_hypotheses)),
+        inlier_hypotheses=selected_hypotheses,
+    )
+
+
+def _classify_pair_readiness(
+    edge: _PairConsensus | None,
+    settings: CalibrationSettings,
+    marker_size_m: float,
+) -> tuple[str, int, float | None, float | None]:
+    robust_count = len(edge.inlier_frames) if edge is not None else 0
+    if edge is None or robust_count < settings.min_inliers_per_edge:
+        return "weak", robust_count, None, None
+
+    diagnostics = _edge_diagnostics((edge.marker_a, edge.marker_b), edge)
+    translation_gate = _pair_translation_gate(settings, marker_size_m)
+    rotation_gate = settings.pair_rotation_rms_gate_deg
+    if (
+        diagnostics.translation_rms_m <= translation_gate
+        and diagnostics.rotation_rms_deg <= rotation_gate
+    ):
+        return (
+            "pass",
+            diagnostics.inlier_count,
+            diagnostics.translation_rms_m,
+            diagnostics.rotation_rms_deg,
+        )
+    return (
+        "fail",
+        diagnostics.inlier_count,
+        diagnostics.translation_rms_m,
+        diagnostics.rotation_rms_deg,
+    )
+
+
 def _collect_pair_hypotheses(
     frame_candidates: list[tuple[int, dict[int, list[_MarkerCandidate]]]],
     expected_ids: list[int],
@@ -679,69 +950,31 @@ def _estimate_pair_consensus(
         if len(unique_frames) < settings.min_inliers_per_edge:
             continue
 
-        best_frames: dict[int, int] = {}
-        best_rotation = np.eye(3, dtype=np.float64)
-        best_translation = np.zeros(3, dtype=np.float64)
-        for seed_index, (seed_rotation, seed_translation, _) in enumerate(hypotheses):
-            candidate_frames = _inlier_frames_for_seed(
-                hypotheses,
-                seed_index,
-                translation_gate,
-                rotation_gate,
-            )
-            if len(candidate_frames) > len(best_frames):
-                best_frames = candidate_frames
-                best_rotation = seed_rotation
-                best_translation = seed_translation
-
-        if len(best_frames) < settings.min_inliers_per_edge:
+        edge = _best_pair_consensus(pair, hypotheses, translation_gate, rotation_gate)
+        if edge is None or len(edge.inlier_frames) < settings.min_inliers_per_edge:
             continue
+        consensus[pair] = edge
 
-        selected_hypotheses = {
-            frame_index: hypotheses[hypothesis_index][:2]
-            for frame_index, hypothesis_index in best_frames.items()
-        }
-        inlier_rotations = [values[0] for values in selected_hypotheses.values()]
-        inlier_translations = np.stack([values[1] for values in selected_hypotheses.values()], axis=0)
-        best_rotation = _average_rotations(inlier_rotations)
-        best_translation = np.mean(inlier_translations, axis=0)
-        consensus[pair] = _PairConsensus(
-            marker_a=pair[0],
-            marker_b=pair[1],
-            rotation_ba=best_rotation,
-            translation_ba=best_translation,
-            inlier_frames=tuple(sorted(selected_hypotheses)),
-            inlier_hypotheses=selected_hypotheses,
-        )
+    filtered: dict[MarkerPair, _PairConsensus] = {}
+    for pair, edge in consensus.items():
+        diagnostics = _edge_diagnostics(pair, edge)
+        if diagnostics.inlier_count < settings.min_inliers_per_edge:
+            continue
+        if diagnostics.translation_rms_m > translation_gate:
+            continue
+        if diagnostics.rotation_rms_deg > rotation_gate:
+            continue
+        filtered[pair] = edge
 
-    connected = _connected_marker_ids(consensus, reference_marker_id)
+    connected = _connected_marker_ids(filtered, reference_marker_id)
     missing = sorted(set(expected_ids) - connected)
     if missing:
-        return consensus, (
+        return filtered, (
             f"Expected marker IDs are not connected to reference {reference_marker_id}; "
             f"missing {missing}."
         )
 
-    for pair, edge in consensus.items():
-        diagnostics = _edge_diagnostics(pair, edge)
-        if diagnostics.inlier_count < settings.min_inliers_per_edge:
-            return consensus, (
-                f"Pair ({pair[0]}, {pair[1]}) has only "
-                f"{diagnostics.inlier_count} inlier frames; need "
-                f"{settings.min_inliers_per_edge}."
-            )
-        if diagnostics.translation_rms_m > translation_gate:
-            return consensus, (
-                f"Pair ({pair[0]}, {pair[1]}) translation RMS "
-                f"{diagnostics.translation_rms_m:.4f} m exceeds gate."
-            )
-        if diagnostics.rotation_rms_deg > rotation_gate:
-            return consensus, (
-                f"Pair ({pair[0]}, {pair[1]}) rotation RMS "
-                f"{diagnostics.rotation_rms_deg:.2f} deg exceeds gate."
-            )
-
-    return consensus, None
+    return filtered, None
 
 
 def _inlier_frames_for_seed(
@@ -810,27 +1043,236 @@ def _assign_ippe_candidates(
     pair_consensus: dict[MarkerPair, _PairConsensus],
     settings: CalibrationSettings,
     marker_size_m: float,
-) -> tuple[dict[int, dict[int, _MarkerCandidate]], tuple[int, ...]]:
+) -> tuple[
+    dict[int, dict[int, _MarkerCandidate]],
+    tuple[int, ...],
+    tuple[FrameAssignmentRejection, ...],
+]:
     assigned: dict[int, dict[int, _MarkerCandidate]] = {}
     rejected_frames: list[int] = []
+    rejections: list[FrameAssignmentRejection] = []
     for frame_index, candidates in frame_candidates:
-        marker_ids = sorted(candidates)
-        best_holder: dict[str, object] = {"score": float("-inf"), "assignment": None}
-        _search_assignments(
-            marker_ids,
+        result = resolve_frame_ippe_assignment(
             candidates,
             pair_consensus,
             settings,
             marker_size_m,
-            {},
-            0,
-            best_holder,
         )
-        if best_holder["assignment"] is None:
+        if result.assignment is None:
             rejected_frames.append(frame_index)
+            rejections.append(
+                result.rejection
+                or FrameAssignmentRejection(reason="no_constrained_pair")
+            )
             continue
-        assigned[frame_index] = best_holder["assignment"]
-    return assigned, tuple(rejected_frames)
+        assigned[frame_index] = result.assignment
+    return assigned, tuple(rejected_frames), tuple(rejections)
+
+
+def resolve_frame_ippe_assignment(
+    candidates: dict[int, list[_MarkerCandidate]],
+    pair_consensus: dict[MarkerPair, _PairConsensus],
+    settings: CalibrationSettings,
+    marker_size_m: float,
+) -> FrameAssignmentResult:
+    marker_ids = sorted(candidates)
+    holder = _new_assignment_search_holder(settings, marker_size_m)
+    _search_assignments(marker_ids, candidates, pair_consensus, {}, 0, holder)
+    assignment = holder["assignment"]
+    if assignment is not None:
+        return FrameAssignmentResult(assignment=dict(assignment), rejection=None)
+    return FrameAssignmentResult(
+        assignment=None,
+        rejection=_rejection_from_assignment_search_holder(holder),
+    )
+
+
+def _new_assignment_search_holder(
+    settings: CalibrationSettings,
+    marker_size_m: float,
+) -> dict[str, object]:
+    return {
+        "score": float("-inf"),
+        "assignment": None,
+        "saw_constrained_pair": False,
+        "worst_key": None,
+        "worst_pair": None,
+        "worst_translation_error": 0.0,
+        "worst_rotation_error": 0.0,
+        "worst_translation_fail": False,
+        "worst_rotation_fail": False,
+        "translation_gate": _pair_translation_gate(settings, marker_size_m),
+        "rotation_gate": settings.pair_rotation_rms_gate_deg,
+    }
+
+
+def _rejection_from_assignment_search_holder(holder: dict[str, object]) -> FrameAssignmentRejection:
+    if not holder["saw_constrained_pair"]:
+        return FrameAssignmentRejection(reason="no_constrained_pair")
+
+    worst_pair = holder["worst_pair"]
+    if worst_pair is None:
+        return FrameAssignmentRejection(reason="no_constrained_pair")
+
+    translation_gate = float(holder["translation_gate"])
+    rotation_gate = float(holder["rotation_gate"])
+    worst_translation_error = float(holder["worst_translation_error"])
+    worst_rotation_error = float(holder["worst_rotation_error"])
+    worst_translation_fail = bool(holder["worst_translation_fail"])
+    worst_rotation_fail = bool(holder["worst_rotation_fail"])
+    if worst_translation_fail and worst_rotation_fail:
+        primary_reason = (
+            "translation_gate"
+            if (worst_translation_error / translation_gate)
+            >= (worst_rotation_error / rotation_gate)
+            else "rotation_gate"
+        )
+    elif worst_translation_fail:
+        primary_reason = "translation_gate"
+    else:
+        primary_reason = "rotation_gate"
+    return FrameAssignmentRejection(
+        reason=primary_reason,
+        marker_pair=worst_pair,
+        translation_error_m=worst_translation_error,
+        rotation_error_deg=worst_rotation_error,
+        translation_gate_m=translation_gate,
+        rotation_gate_deg=rotation_gate,
+    )
+
+
+def _evaluate_complete_assignment(
+    assignment: dict[int, _MarkerCandidate],
+    marker_ids: list[int],
+    pair_consensus: dict[MarkerPair, _PairConsensus],
+    translation_gate: float,
+    rotation_gate: float,
+) -> tuple[
+    float | None,
+    bool,
+    tuple[float, MarkerPair, int] | None,
+    MarkerPair | None,
+    float,
+    float,
+    bool,
+    bool,
+]:
+    constrained_edges = 0
+    total_cost = 0.0
+    assignment_valid = True
+    worst_key: tuple[float, MarkerPair, int] | None = None
+    worst_pair: MarkerPair | None = None
+    worst_translation_error = 0.0
+    worst_rotation_error = 0.0
+    worst_translation_fail = False
+    worst_rotation_fail = False
+
+    for index_a, marker_low in enumerate(marker_ids):
+        for marker_high in marker_ids[index_a + 1 :]:
+            pair = (marker_low, marker_high)
+            edge = pair_consensus.get(pair)
+            if edge is None:
+                continue
+            constrained_edges += 1
+            rotation_ba, translation_ba = _transform_high_in_low(
+                assignment[marker_low],
+                assignment[marker_high],
+            )
+            translation_error = float(np.linalg.norm(translation_ba - edge.translation_ba))
+            rotation_error = _rotation_geodesic_deg(rotation_ba, edge.rotation_ba)
+            translation_fail = translation_error > translation_gate
+            rotation_fail = rotation_error > rotation_gate
+            if translation_fail or rotation_fail:
+                assignment_valid = False
+                translation_exceedance = translation_error / translation_gate
+                rotation_exceedance = rotation_error / rotation_gate
+                exceedance = max(translation_exceedance, rotation_exceedance)
+                reason_rank = 0 if translation_exceedance >= rotation_exceedance else 1
+                candidate_key = (exceedance, pair, reason_rank)
+                if worst_key is None or candidate_key > worst_key:
+                    worst_key = candidate_key
+                    worst_pair = pair
+                    worst_translation_error = translation_error
+                    worst_rotation_error = rotation_error
+                    worst_translation_fail = translation_fail
+                    worst_rotation_fail = rotation_fail
+                continue
+            total_cost += (translation_error / translation_gate) ** 2 + (
+                rotation_error / rotation_gate
+            ) ** 2
+
+    if constrained_edges == 0 or not assignment_valid:
+        return (
+            None,
+            constrained_edges > 0,
+            worst_key,
+            worst_pair,
+            worst_translation_error,
+            worst_rotation_error,
+            worst_translation_fail,
+            worst_rotation_fail,
+        )
+    return (
+        -total_cost,
+        True,
+        worst_key,
+        worst_pair,
+        worst_translation_error,
+        worst_rotation_error,
+        worst_translation_fail,
+        worst_rotation_fail,
+    )
+
+
+def _merge_assignment_violation_into_holder(
+    holder: dict[str, object],
+    has_constrained_pair: bool,
+    worst_key: tuple[float, MarkerPair, int] | None,
+    worst_pair: MarkerPair | None,
+    worst_translation_error: float,
+    worst_rotation_error: float,
+    worst_translation_fail: bool,
+    worst_rotation_fail: bool,
+) -> None:
+    if has_constrained_pair:
+        holder["saw_constrained_pair"] = True
+    if worst_key is None:
+        return
+    current_worst_key = holder["worst_key"]
+    if current_worst_key is None or worst_key > current_worst_key:
+        holder["worst_key"] = worst_key
+        holder["worst_pair"] = worst_pair
+        holder["worst_translation_error"] = worst_translation_error
+        holder["worst_rotation_error"] = worst_rotation_error
+        holder["worst_translation_fail"] = worst_translation_fail
+        holder["worst_rotation_fail"] = worst_rotation_fail
+
+
+def summarize_assignment_rejections(
+    rejections: Sequence[FrameAssignmentRejection],
+) -> AssignmentRejectionSummary:
+    by_reason: dict[str, int] = {}
+    by_pair: dict[MarkerPair, int] = {}
+    cause_counts: dict[tuple[str, MarkerPair | None], int] = {}
+    for rejection in rejections:
+        by_reason[rejection.reason] = by_reason.get(rejection.reason, 0) + 1
+        if rejection.marker_pair is not None:
+            by_pair[rejection.marker_pair] = by_pair.get(rejection.marker_pair, 0) + 1
+        cause_key = (rejection.reason, rejection.marker_pair)
+        cause_counts[cause_key] = cause_counts.get(cause_key, 0) + 1
+    top_causes = tuple(
+        AssignmentRejectionCauseCount(reason=reason, marker_pair=pair, count=count)
+        for (reason, pair), count in sorted(
+            cause_counts.items(),
+            key=lambda item: (-item[1], item[0][0], item[0][1] or (-1, -1)),
+        )
+    )
+    return AssignmentRejectionSummary(
+        total_rejected=len(rejections),
+        by_reason=tuple(sorted(by_reason.items())),
+        by_pair=tuple(sorted(by_pair.items())),
+        top_causes=top_causes,
+    )
 
 
 def _restrict_pair_consensus_to_frames(
@@ -846,10 +1288,7 @@ def _restrict_pair_consensus_to_frames(
             sorted(frame_index for frame_index in edge.inlier_frames if frame_index in allowed_frames)
         )
         if len(supported_frames) < settings.min_inliers_per_edge:
-            return updated, (
-                f"Pair ({pair[0]}, {pair[1]}) has only {len(supported_frames)} accepted assigned "
-                f"frames; need {settings.min_inliers_per_edge}."
-            )
+            continue
         updated[pair] = _PairConsensus(
             marker_a=edge.marker_a,
             marker_b=edge.marker_b,
@@ -914,19 +1353,40 @@ def _search_assignments(
     marker_ids: list[int],
     candidates: dict[int, list[_MarkerCandidate]],
     pair_consensus: dict[MarkerPair, _PairConsensus],
-    settings: CalibrationSettings,
-    marker_size_m: float,
     current: dict[int, _MarkerCandidate],
     index: int,
-    best_holder: dict,
+    holder: dict[str, object],
 ) -> None:
     if index == len(marker_ids):
-        score = _score_assignment(current, pair_consensus, settings, marker_size_m)
-        if score is None:
-            return
-        if score > best_holder["score"]:
-            best_holder["score"] = score
-            best_holder["assignment"] = dict(current)
+        (
+            score,
+            has_constrained_pair,
+            worst_key,
+            worst_pair,
+            worst_translation_error,
+            worst_rotation_error,
+            worst_translation_fail,
+            worst_rotation_fail,
+        ) = _evaluate_complete_assignment(
+            current,
+            marker_ids,
+            pair_consensus,
+            float(holder["translation_gate"]),
+            float(holder["rotation_gate"]),
+        )
+        _merge_assignment_violation_into_holder(
+            holder,
+            has_constrained_pair,
+            worst_key,
+            worst_pair,
+            worst_translation_error,
+            worst_rotation_error,
+            worst_translation_fail,
+            worst_rotation_fail,
+        )
+        if score is not None and score > float(holder["score"]):
+            holder["score"] = score
+            holder["assignment"] = dict(current)
         return
 
     marker_id = marker_ids[index]
@@ -936,47 +1396,11 @@ def _search_assignments(
             marker_ids,
             candidates,
             pair_consensus,
-            settings,
-            marker_size_m,
             current,
             index + 1,
-            best_holder,
+            holder,
         )
     current.pop(marker_id, None)
-
-
-def _score_assignment(
-    assignment: dict[int, _MarkerCandidate],
-    pair_consensus: dict[MarkerPair, _PairConsensus],
-    settings: CalibrationSettings,
-    marker_size_m: float,
-) -> float | None:
-    translation_gate = _pair_translation_gate(settings, marker_size_m)
-    rotation_gate = settings.pair_rotation_rms_gate_deg
-    marker_ids = sorted(assignment)
-    total_cost = 0.0
-    constrained_edges = 0
-    for index_a, marker_low in enumerate(marker_ids):
-        for marker_high in marker_ids[index_a + 1 :]:
-            pair = (marker_low, marker_high)
-            edge = pair_consensus.get(pair)
-            if edge is None:
-                continue
-            rotation_ba, translation_ba = _transform_high_in_low(
-                assignment[marker_low],
-                assignment[marker_high],
-            )
-            translation_error = float(np.linalg.norm(translation_ba - edge.translation_ba))
-            rotation_error = _rotation_geodesic_deg(rotation_ba, edge.rotation_ba)
-            if translation_error > translation_gate or rotation_error > rotation_gate:
-                return None
-            constrained_edges += 1
-            total_cost += (translation_error / translation_gate) ** 2 + (
-                rotation_error / rotation_gate
-            ) ** 2
-    if constrained_edges == 0:
-        return None
-    return -total_cost
 
 
 def _reference_gauge_pose(marker_size_m: float) -> tuple[np.ndarray, np.ndarray]:
@@ -1336,11 +1760,7 @@ def _recheck_pair_support(
             )
         )
         if len(supported_frames) < settings.min_inliers_per_edge:
-            return updated, (
-                f"Pair ({marker_low}, {marker_high}) has only "
-                f"{len(supported_frames)} supported frames after pruning; need "
-                f"{settings.min_inliers_per_edge}."
-            )
+            continue
         selected_hypotheses = {
             frame_index: edge.inlier_hypotheses[frame_index]
             for frame_index in supported_frames
@@ -1571,6 +1991,7 @@ def _build_quality_report(
     object_points: np.ndarray,
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
+    assignment_rejections: AssignmentRejectionSummary | None = None,
 ) -> CalibrationQualityReport:
     errors = _corner_errors(
         corner_observations,
@@ -1614,6 +2035,7 @@ def _build_quality_report(
         connected_marker_ids=connected,
         missing_expected_ids=missing_ids,
         unused_expected_ids=frozenset(set(expected_ids) - observed_ids),
+        assignment_rejections=assignment_rejections,
     )
 
 
@@ -1687,6 +2109,7 @@ def _quality_from_pairs(
     rejected_frame_count: int,
     accepted_frame_count: int,
     observation_count: int,
+    assignment_rejections: AssignmentRejectionSummary | None = None,
 ) -> CalibrationQualityReport:
     edge_reports = [_edge_diagnostics(pair, edge) for pair, edge in sorted(pair_consensus.items())]
     return CalibrationQualityReport(
@@ -1704,6 +2127,7 @@ def _quality_from_pairs(
         connected_marker_ids=frozenset(_connected_marker_ids(pair_consensus, reference_marker_id)),
         missing_expected_ids=missing_ids,
         unused_expected_ids=frozenset(set(expected_ids) - _connected_marker_ids(pair_consensus, reference_marker_id)),
+        assignment_rejections=assignment_rejections,
     )
 
 

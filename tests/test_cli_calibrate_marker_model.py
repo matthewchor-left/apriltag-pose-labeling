@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -61,6 +62,7 @@ def _quality_report_mock(**overrides: object) -> mock.Mock:
         "input_frame_count": 25,
         "accepted_frame_count": 20,
         "rejected_frame_count": 5,
+        "assignment_rejections": None,
     }
     values.update(overrides)
     return mock.Mock(**values)
@@ -239,6 +241,75 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
                 saved = run_capture(args)
             return calibrate_mock.call_args_list, output, save_mock, capture, destroy_mock, saved
 
+    def test_samples_refresh_live_pair_readiness(self) -> None:
+        visible_by_frame = [
+            {0: _marker_corners(0)},
+            {0: _marker_corners(0), 1: _marker_corners(1)},
+            {0: _marker_corners(0), 1: _marker_corners(1)},
+            {0: _marker_corners(0), 1: _marker_corners(1)},
+        ]
+        monotonic_values = [0.0, *(index * 0.25 for index in range(1, 10))]
+
+        captured_lengths: list[int] = []
+
+        def track_readiness(observations, *_args, **_kwargs):
+            captured_lengths.append(len(observations))
+            return mock.Mock(
+                pairs=(),
+                connected_marker_ids=frozenset({0}),
+                missing_marker_ids=frozenset({1}),
+                sample_count=len(observations),
+                failure_reason=None,
+            )
+
+        with mock.patch(
+            "object_apriltag.cli.calibrate_marker_model.compute_live_pair_readiness",
+            side_effect=track_readiness,
+        ):
+            self._run_capture(
+                wait_keys=[0] * 6 + [ord("q"), ord("q")],
+                monotonic_values=monotonic_values,
+                visible_by_frame=visible_by_frame,
+            )
+
+        self.assertGreaterEqual(len(captured_lengths), 1)
+        self.assertGreater(captured_lengths[-1], 0)
+
+    def test_capture_continues_while_pair_readiness_is_slow(self) -> None:
+        gate = threading.Event()
+        compute_calls = 0
+
+        def slow_readiness(observations, *_args, **_kwargs):
+            nonlocal compute_calls
+            compute_calls += 1
+            if compute_calls == 1:
+                gate.wait(timeout=2.0)
+            return mock.Mock(
+                pairs=(),
+                connected_marker_ids=frozenset({0}),
+                missing_marker_ids=frozenset({1}),
+                sample_count=len(observations),
+                failure_reason=None,
+            )
+
+        visible_by_frame = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 8
+        monotonic_values = [0.0, *(index * 0.25 for index in range(1, 20))]
+
+        with mock.patch(
+            "object_apriltag.cli.calibrate_marker_model.compute_live_pair_readiness",
+            side_effect=slow_readiness,
+        ):
+            calibrate_calls, _, _, capture, _, _ = self._run_capture(
+                wait_keys=[0] * 10 + [ord("q"), ord("q")],
+                monotonic_values=monotonic_values,
+                visible_by_frame=visible_by_frame,
+            )
+
+        gate.set()
+        self.assertEqual(len(calibrate_calls), 0)
+        self.assertGreaterEqual(capture.read.call_count, 5)
+        self.assertGreaterEqual(compute_calls, 1)
+
     def test_samples_at_two_hz_and_ignores_single_marker_frames(self) -> None:
         visible_by_frame = [
             {0: _marker_corners(0)},
@@ -388,25 +459,49 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
 
 class CalibrationHudTests(unittest.TestCase):
     def test_hud_uses_single_white_text_pass_on_black_panel(self) -> None:
-        from object_apriltag.cli.calibrate_marker_model import draw_calibration_hud
+        from object_apriltag.cli.calibrate_marker_model import (
+            build_pair_readiness_hud_lines,
+            draw_calibration_hud,
+        )
+        from object_apriltag.cli.live_pair_readiness_worker import LivePairReadinessView
+        from object_apriltag.marker_layout_calibration import (
+            LivePairReadinessDiagnostics,
+            PairReadinessEdge,
+        )
 
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        readiness_view = LivePairReadinessView(
+            diagnostics=LivePairReadinessDiagnostics(
+                pairs=(
+                    PairReadinessEdge(
+                        marker_a=0,
+                        marker_b=1,
+                        raw_covisible_frames=3,
+                        robust_inlier_count=3,
+                        translation_rms_m=None,
+                        rotation_rms_deg=None,
+                        status="weak",
+                    ),
+                ),
+                connected_marker_ids=frozenset({0}),
+                missing_marker_ids=frozenset({1}),
+                sample_count=3,
+            ),
+            represented_sample_count=3,
+            is_computing=False,
+        )
+        hud_lines = build_pair_readiness_hud_lines(
+            expected_ids=[0, 1],
+            visible_ids=[0, 1],
+            current_sample_count=3,
+            readiness_view=readiness_view,
+            reference_marker_id=0,
+        )
         with (
             mock.patch("object_apriltag.cli.calibrate_marker_model.cv2.rectangle") as rectangle_mock,
             mock.patch("object_apriltag.cli.calibrate_marker_model.cv2.putText") as text_mock,
         ):
-            draw_calibration_hud(
-                frame,
-                expected_ids=[0, 1],
-                visible_ids=[0, 1],
-                sample_count=3,
-                pair_counts={(0, 1): 3},
-                connected_ids={0},
-                reference_marker_id=0,
-                min_pair_inliers=20,
-                status_line=None,
-                last_solve_quality=None,
-            )
+            draw_calibration_hud(frame, hud_lines=hud_lines, last_solve_quality=None)
 
         rectangle_mock.assert_called_once()
         self.assertEqual(rectangle_mock.call_args.args[4], -1)
