@@ -23,10 +23,11 @@ from object_apriltag.marker_layout_calibration import (
     FrameFallbackAssignmentRecord,
     MarkerExpansionRecord,
     MeasurementDistribution,
+    OmittedMarkerDiagnostic,
     RestoredPairEdge,
 )
 
-CALIBRATION_DIAGNOSTICS_VERSION = 6
+CALIBRATION_DIAGNOSTICS_VERSION = 7
 
 
 def format_reprojection_rms_px(value: float) -> str:
@@ -151,6 +152,18 @@ def format_anchor_core_lines(anchor_core: AnchorCoreDiagnostics) -> list[str]:
     if anchor_core.stopped_after_expansion:
         lines.append("anchor core stopped after expansion (no full reassignment or BA)")
     return lines
+
+
+def format_omitted_marker_diagnostic(record: OmittedMarkerDiagnostic) -> str:
+    return f"omitted marker {record.marker_id}: {record.reason}"
+
+
+def format_omitted_marker_lines(
+    omitted_markers: tuple[OmittedMarkerDiagnostic, ...] | None,
+) -> list[str]:
+    if omitted_markers is None or not isinstance(omitted_markers, tuple):
+        return []
+    return [format_omitted_marker_diagnostic(record) for record in omitted_markers]
 
 
 def format_quality_diagnostics_lines(quality: CalibrationQualityReport) -> list[str]:
@@ -423,6 +436,13 @@ def _anchor_core_to_dict(anchor_core: AnchorCoreDiagnostics | None) -> dict[str,
     }
 
 
+def _omitted_marker_to_dict(record: OmittedMarkerDiagnostic) -> dict[str, Any]:
+    return {
+        "marker_id": record.marker_id,
+        "reason": record.reason,
+    }
+
+
 def build_calibration_diagnostics_document(
     quality: CalibrationQualityReport,
     *,
@@ -433,6 +453,8 @@ def build_calibration_diagnostics_document(
     failed_quality_gates: tuple[str, ...] | list[str] = (),
     selected_checkpoint_stage: str | None = None,
     failed_refinement_stage: str | None = None,
+    omitted_markers: tuple[OmittedMarkerDiagnostic, ...] = (),
+    partial_output: bool = False,
 ) -> dict[str, Any]:
     return {
         "version": CALIBRATION_DIAGNOSTICS_VERSION,
@@ -440,9 +462,11 @@ def build_calibration_diagnostics_document(
         "failure_reason": failure_reason,
         "calibration_policy": calibration_policy,
         "outcome": outcome,
+        "partial_output": partial_output,
         "failed_quality_gates": list(failed_quality_gates),
         "selected_checkpoint_stage": selected_checkpoint_stage,
         "failed_refinement_stage": failed_refinement_stage,
+        "omitted_markers": [_omitted_marker_to_dict(record) for record in omitted_markers],
         "quality": _quality_report_to_dict(quality),
         "assignment_rejections": _assignment_rejection_summary_to_dict(
             quality.assignment_rejections
@@ -482,6 +506,8 @@ def save_calibration_diagnostics(
         failed_quality_gates=result.failed_quality_gates,
         selected_checkpoint_stage=result.selected_checkpoint_stage,
         failed_refinement_stage=result.failed_refinement_stage,
+        omitted_markers=result.omitted_markers,
+        partial_output=result.partial_output,
     )
     serialize = serialize_fn or serialize_calibration_diagnostics_document
     try:

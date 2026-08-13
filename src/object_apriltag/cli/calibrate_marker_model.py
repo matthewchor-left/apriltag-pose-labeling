@@ -15,6 +15,7 @@ from object_apriltag.apriltag import build_apriltag_detector
 from object_apriltag.calibration import load_intrinsics, require_calibration_image_size
 from object_apriltag.layout import marker_color_bgr, save_marker_model
 from object_apriltag.cli.calibration_diagnostics import (
+    format_omitted_marker_lines,
     format_quality_diagnostics_lines,
     save_calibration_diagnostics,
 )
@@ -151,6 +152,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--partial-output",
+        action="store_true",
+        help=(
+            "With --best-effort, write a reference-connected partial marker model when "
+            "some requested markers remain unobservable or disconnected after weak-edge "
+            "recovery."
+        ),
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         required=True,
@@ -227,7 +237,7 @@ def flatten_marker_size_override_tokens(
 
 def validate_args(
     args: argparse.Namespace,
-) -> tuple[list[int], dict[int, float], CalibrationSettings, tuple[int, ...] | None, bool, bool]:
+) -> tuple[list[int], dict[int, float], CalibrationSettings, tuple[int, ...] | None, bool, bool, bool]:
     if not args.calibration.exists():
         raise RuntimeError(
             f"Calibration file not found: {args.calibration}\n"
@@ -263,6 +273,8 @@ def validate_args(
         raise RuntimeError(
             "--best-effort cannot be used with --anchor-stop-after-expansion."
         )
+    if args.partial_output and not args.best_effort:
+        raise RuntimeError("--partial-output requires --best-effort.")
     if args.marker_size <= 0.0:
         raise RuntimeError("--marker-size must be positive.")
     marker_sizes_m, sizes_failure = resolve_marker_sizes_for_calibration(
@@ -291,7 +303,7 @@ def validate_args(
         pair_translation_rms_gate_ratio=args.pair_translation_rms_gate_ratio,
         pair_rotation_rms_gate_deg=args.pair_rotation_rms_gate_deg,
     )
-    return expected_ids, marker_sizes_m, settings, anchor_ids, args.anchor_stop_after_expansion, args.best_effort
+    return expected_ids, marker_sizes_m, settings, anchor_ids, args.anchor_stop_after_expansion, args.best_effort, args.partial_output
 
 
 def open_camera(camera_index: int, width: int, height: int) -> cv2.VideoCapture:
@@ -515,12 +527,18 @@ def print_refusal(result: CalibrationResult) -> None:
     if quality is None:
         return
     print(f"  {format_solve_frame_counts(quality)}")
+    for line in format_omitted_marker_lines(result.omitted_markers):
+        print(f"  {line}")
     for line in format_quality_diagnostics_lines(quality):
         print(f"  {line}")
 
 
 def print_success(result: CalibrationResult, output: Path) -> None:
-    if result.outcome == "provisional":
+    if result.outcome == "partial":
+        print("WARNING: Saved partial marker model (some requested markers were omitted).")
+        for line in format_omitted_marker_lines(result.omitted_markers):
+            print(f"  {line}")
+    elif result.outcome == "provisional":
         if result.failed_refinement_stage is not None:
             print(
                 "WARNING: Saved provisional marker model from optimization checkpoint "
@@ -535,6 +553,9 @@ def print_success(result: CalibrationResult, output: Path) -> None:
     if quality is None:
         return
     print(f"  {format_solve_frame_counts(quality)}")
+    if result.outcome != "partial":
+        for line in format_omitted_marker_lines(result.omitted_markers):
+            print(f"  {line}")
     for line in format_quality_diagnostics_lines(quality):
         print(f"  {line}")
 
@@ -579,6 +600,7 @@ def run_capture(args: argparse.Namespace) -> bool:
         anchor_ids,
         anchor_stop_after_expansion,
         best_effort,
+        partial_output,
     ) = validate_args(args)
     expected_id_set = set(expected_ids)
 
@@ -692,6 +714,7 @@ def run_capture(args: argparse.Namespace) -> bool:
                     anchor_stop_after_expansion=anchor_stop_after_expansion,
                     marker_sizes_m=marker_sizes_m,
                     best_effort=best_effort,
+                    partial_output=partial_output,
                 )
                 if result.layout is None:
                     print_refusal(result)

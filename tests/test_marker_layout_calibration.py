@@ -1583,6 +1583,168 @@ class FrameAssignmentFallbackRecoveryTests(unittest.TestCase):
         self.assertIsNone(result.quality.fallback_assignment_records)
 
 
+class PartialOutputCalibrationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.marker_size_m = 0.07
+        self.settings = CalibrationSettings(min_inliers_per_edge=20)
+        self.reference_marker_id = 0
+
+    def _raw_disconnected_observations(self) -> list[FrameObservation]:
+        marker_poses = {
+            **_triangle_marker_poses(self.marker_size_m),
+            3: (
+                _triangle_marker_poses(self.marker_size_m)[2][0],
+                _triangle_marker_poses(self.marker_size_m)[2][1]
+                + np.array([0.12, 0.0, 0.0], dtype=np.float64),
+            ),
+        }
+        observations: list[FrameObservation] = []
+        for frame_index in range(40):
+            visible = (0, 1) if frame_index < 25 else (2, 3)
+            frame_observation = synthesize_observations(
+                marker_poses,
+                frame_count=1,
+                marker_size_m=self.marker_size_m,
+                visible_markers=lambda _, visible=visible: visible,
+                seed=frame_index,
+            )[0]
+            observations.append(
+                FrameObservation(frame_id=frame_index, markers=frame_observation.markers)
+            )
+        return observations
+
+    def test_partial_output_requires_best_effort(self) -> None:
+        observations = synthesize_observations(
+            _two_marker_poses(self.marker_size_m),
+            frame_count=25,
+            marker_size_m=self.marker_size_m,
+        )
+        result = calibrate_marker_layout(
+            observations,
+            *_default_camera(),
+            expected_marker_ids=[0, 1],
+            reference_marker_id=self.reference_marker_id,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+            partial_output=True,
+        )
+        self.assertIsNone(result.layout)
+        self.assertEqual(result.outcome, "refused")
+        self.assertIn("best-effort", result.failure_reason or "")
+
+    def test_best_effort_without_partial_output_refuses_incomplete_layout(self) -> None:
+        observations = self._raw_disconnected_observations()
+        result = calibrate_marker_layout(
+            observations,
+            *_default_camera(),
+            expected_marker_ids=[0, 1, 2, 3],
+            reference_marker_id=self.reference_marker_id,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+            best_effort=True,
+        )
+        self.assertIsNone(result.layout)
+        self.assertEqual(result.outcome, "refused")
+        self.assertIn("raw observations", result.failure_reason or "")
+
+    def test_partial_output_emits_reference_connected_subset(self) -> None:
+        observations = self._raw_disconnected_observations()
+        result = calibrate_marker_layout(
+            observations,
+            *_default_camera(),
+            expected_marker_ids=[0, 1, 2, 3],
+            reference_marker_id=self.reference_marker_id,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+            best_effort=True,
+            partial_output=True,
+        )
+        self.assertIsNone(result.failure_reason)
+        self.assertIsNotNone(result.layout)
+        self.assertEqual(result.outcome, "partial")
+        assert result.layout is not None
+        self.assertEqual(set(result.layout.marker_ids), {0, 1})
+        assert result.quality is not None
+        self.assertEqual(result.quality.connected_marker_ids, frozenset({0, 1}))
+        self.assertEqual(result.quality.missing_expected_ids, frozenset({2, 3}))
+        omitted = {record.marker_id: record.reason for record in result.omitted_markers}
+        self.assertEqual(set(omitted), {2, 3})
+        self.assertEqual(
+            omitted[2],
+            "not_connected_in_raw_observations",
+        )
+        self.assertEqual(
+            omitted[3],
+            "not_connected_in_raw_observations",
+        )
+
+    def test_partial_model_roundtrips_and_loads(self) -> None:
+        observations = self._raw_disconnected_observations()
+        result = calibrate_marker_layout(
+            observations,
+            *_default_camera(),
+            expected_marker_ids=[0, 1, 2, 3],
+            reference_marker_id=self.reference_marker_id,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+            best_effort=True,
+            partial_output=True,
+        )
+        assert result.layout is not None
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "marker_model.json"
+            save_marker_model(path, result.layout)
+            loaded = load_marker_model(path)
+            self.assertEqual(
+                marker_layout_to_dict(loaded),
+                marker_layout_to_dict(result.layout),
+            )
+
+    def test_emit_partial_refuses_reference_only_component(self) -> None:
+        from object_apriltag.marker_layout_calibration import _emit_partial_calibration_result
+
+        observations = synthesize_observations(
+            _two_marker_poses(self.marker_size_m),
+            frame_count=25,
+            marker_size_m=self.marker_size_m,
+        )
+        result = _emit_partial_calibration_result(
+            observations,
+            *_default_camera(),
+            requested_marker_ids=[0, 1, 2],
+            connected_ids={0},
+            omitted={1: "not_connected_to_reference", 2: "not_connected_to_reference"},
+            reference_marker_id=self.reference_marker_id,
+            marker_size_m=self.marker_size_m,
+            marker_sizes_m=uniform_marker_sizes([0, 1, 2], self.marker_size_m),
+            settings=self.settings,
+            best_effort=True,
+        )
+        self.assertIsNone(result.layout)
+        self.assertEqual(result.outcome, "refused")
+        self.assertIn("reference", (result.failure_reason or "").lower())
+
+    def test_partial_output_validates_marker_sizes_for_emitted_subset(self) -> None:
+        observations = self._raw_disconnected_observations()
+        marker_sizes_m = uniform_marker_sizes([0, 1, 2, 3], self.marker_size_m)
+        marker_sizes_m[1] = self.marker_size_m * 1.1
+        result = calibrate_marker_layout(
+            observations,
+            *_default_camera(),
+            expected_marker_ids=[0, 1, 2, 3],
+            reference_marker_id=self.reference_marker_id,
+            marker_size_m=self.marker_size_m,
+            marker_sizes_m=marker_sizes_m,
+            settings=self.settings,
+            best_effort=True,
+            partial_output=True,
+        )
+        assert result.layout is not None
+        self.assertAlmostEqual(result.layout.marker_sizes_m[1], marker_sizes_m[1])
+        self.assertNotIn(2, result.layout.marker_sizes_m)
+        self.assertNotIn(3, result.layout.marker_sizes_m)
+
+
 class SaveMarkerModelTests(unittest.TestCase):
     def test_roundtrip_matches_in_memory_layout(self) -> None:
         marker_size_m = 0.07

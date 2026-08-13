@@ -349,9 +349,11 @@ class CalibrationDiagnosticsDocumentTests(unittest.TestCase):
         "failure_reason",
         "calibration_policy",
         "outcome",
+        "partial_output",
         "failed_quality_gates",
         "selected_checkpoint_stage",
         "failed_refinement_stage",
+        "omitted_markers",
         "quality",
         "assignment_rejections",
         "assignment_rejection_records",
@@ -496,7 +498,7 @@ class CalibrationDiagnosticsDocumentTests(unittest.TestCase):
         self.assertEqual(list(payload["quality"].keys()), list(self.QUALITY_KEYS))
         self.assertEqual(list(payload["assignment_rejection_records"][0].keys()), list(self.RECORD_KEYS))
         self.assertEqual(list(payload["dropped_pair_edges"][0].keys()), list(self.DROPPED_EDGE_KEYS))
-        self.assertEqual(payload["version"], 6)
+        self.assertEqual(payload["version"], 7)
         self.assertFalse(payload["succeeded"])
         self.assertEqual(payload["failure_reason"], "refused")
         self.assertIsNone(payload["quality"]["reprojection_rms_px"])
@@ -581,6 +583,36 @@ class CalibrationDiagnosticsDocumentTests(unittest.TestCase):
             payload = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual(payload["selected_checkpoint_stage"], "initial_bundle_adjustment")
         self.assertEqual(payload["failed_refinement_stage"], "post_pruning_refit")
+
+    def test_partial_result_records_omitted_markers(self) -> None:
+        from object_apriltag.marker_layout_calibration import OmittedMarkerDiagnostic
+
+        result = CalibrationResult(
+            layout=mock.Mock(),
+            quality=_quality_report(),
+            failure_reason=None,
+            outcome="partial",
+            calibration_policy="best_effort",
+            partial_output=True,
+            omitted_markers=(
+                OmittedMarkerDiagnostic(2, "not_connected_in_raw_observations"),
+                OmittedMarkerDiagnostic(3, "never_observed"),
+            ),
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "diagnostics.json"
+            save_calibration_diagnostics(path, result)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        self.assertTrue(payload["succeeded"])
+        self.assertEqual(payload["outcome"], "partial")
+        self.assertTrue(payload["partial_output"])
+        self.assertEqual(
+            payload["omitted_markers"],
+            [
+                {"marker_id": 2, "reason": "not_connected_in_raw_observations"},
+                {"marker_id": 3, "reason": "never_observed"},
+            ],
+        )
 
 
 if __name__ == "__main__":

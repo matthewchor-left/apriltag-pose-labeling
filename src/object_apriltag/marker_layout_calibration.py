@@ -107,6 +107,12 @@ class AnchorCoreDiagnostics:
 
 
 @dataclass(frozen=True)
+class OmittedMarkerDiagnostic:
+    marker_id: int
+    reason: str
+
+
+@dataclass(frozen=True)
 class QualityGateFailure:
     category: Literal["strict", "connectivity", "data"]
     message: str
@@ -117,20 +123,26 @@ class CalibrationResult:
     layout: MarkerLayout | None
     quality: CalibrationQualityReport | None
     failure_reason: str | None
-    outcome: Literal["accepted", "provisional", "refused"] | None = None
+    outcome: Literal["accepted", "provisional", "partial", "refused"] | None = None
     calibration_policy: Literal["strict", "best_effort"] = "strict"
     failed_quality_gates: tuple[str, ...] = ()
     selected_checkpoint_stage: str | None = None
     failed_refinement_stage: str | None = None
+    omitted_markers: tuple[OmittedMarkerDiagnostic, ...] = ()
+    partial_output: bool = False
 
     def __post_init__(self) -> None:
         if self.outcome is not None:
             return
         if self.layout is not None and self.failure_reason is None:
-            resolved: Literal["accepted", "provisional", "refused"] = (
-                "provisional"
-                if self.failed_quality_gates or self.failed_refinement_stage
-                else "accepted"
+            resolved: Literal["accepted", "provisional", "partial", "refused"] = (
+                "partial"
+                if self.omitted_markers
+                else (
+                    "provisional"
+                    if self.failed_quality_gates or self.failed_refinement_stage
+                    else "accepted"
+                )
             )
         else:
             resolved = "refused"
@@ -612,6 +624,235 @@ def _validate_observations(
     return None
 
 
+def _connectivity_omission_reason(stage: str) -> str:
+    if stage == "initial_consensus":
+        return "not_connected_to_reference"
+    if stage == "assignment_support":
+        return "not_connected_after_assignment_support"
+    if stage == "post_pruning":
+        return "not_connected_after_pruning"
+    return "not_connected_to_reference"
+
+
+def _omitted_marker_records(
+    requested_marker_ids: Sequence[int],
+    emitted_marker_ids: set[int],
+    omitted: Mapping[int, str],
+) -> tuple[OmittedMarkerDiagnostic, ...]:
+    return tuple(
+        OmittedMarkerDiagnostic(marker_id=marker_id, reason=omitted[marker_id])
+        for marker_id in sorted(requested_marker_ids)
+        if marker_id not in emitted_marker_ids
+    )
+
+
+def _quality_for_partial_output(
+    quality: CalibrationQualityReport,
+    *,
+    requested_marker_ids: Sequence[int],
+    emitted_marker_ids: set[int],
+) -> CalibrationQualityReport:
+    missing = frozenset(set(requested_marker_ids) - emitted_marker_ids)
+    return CalibrationQualityReport(
+        reprojection_rms_px=quality.reprojection_rms_px,
+        per_marker_reprojection_rms_px={
+            marker_id: value
+            for marker_id, value in quality.per_marker_reprojection_rms_px.items()
+            if marker_id in emitted_marker_ids
+        },
+        edges=tuple(
+            edge
+            for edge in quality.edges
+            if edge.marker_a in emitted_marker_ids and edge.marker_b in emitted_marker_ids
+        ),
+        pair_translation_rms_max_m=quality.pair_translation_rms_max_m,
+        pair_rotation_rms_max_deg=quality.pair_rotation_rms_max_deg,
+        frame_count=quality.frame_count,
+        observation_count=quality.observation_count,
+        inlier_corner_count=quality.inlier_corner_count,
+        input_frame_count=quality.input_frame_count,
+        rejected_frame_count=quality.rejected_frame_count,
+        accepted_frame_count=quality.accepted_frame_count,
+        connected_marker_ids=frozenset(emitted_marker_ids),
+        missing_expected_ids=missing,
+        unused_expected_ids=frozenset(
+            marker_id
+            for marker_id in quality.unused_expected_ids
+            if marker_id in emitted_marker_ids
+        ),
+        assignment_rejections=quality.assignment_rejections,
+        assignment_rejection_records=quality.assignment_rejection_records,
+        fallback_assignment_records=quality.fallback_assignment_records,
+        dropped_pair_edges=quality.dropped_pair_edges,
+        restored_pair_edges=quality.restored_pair_edges,
+        anchor_core=quality.anchor_core,
+    )
+
+
+def _wrap_subset_as_partial(
+    subset_result: CalibrationResult,
+    *,
+    requested_marker_ids: Sequence[int],
+    emitted_marker_ids: set[int],
+    omitted: Mapping[int, str],
+) -> CalibrationResult:
+    if subset_result.layout is None or subset_result.quality is None:
+        return CalibrationResult(
+            None,
+            subset_result.quality,
+            subset_result.failure_reason,
+            outcome="refused",
+            calibration_policy="best_effort",
+        )
+    omitted_records = _omitted_marker_records(requested_marker_ids, emitted_marker_ids, omitted)
+    return CalibrationResult(
+        subset_result.layout,
+        _quality_for_partial_output(
+            subset_result.quality,
+            requested_marker_ids=requested_marker_ids,
+            emitted_marker_ids=emitted_marker_ids,
+        ),
+        None,
+        outcome="partial",
+        calibration_policy="best_effort",
+        failed_quality_gates=subset_result.failed_quality_gates,
+        selected_checkpoint_stage=subset_result.selected_checkpoint_stage,
+        failed_refinement_stage=subset_result.failed_refinement_stage,
+        omitted_markers=omitted_records,
+        partial_output=True,
+    )
+
+
+def _emit_partial_calibration_result(
+    observations: Sequence[FrameObservation],
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+    *,
+    requested_marker_ids: Sequence[int],
+    connected_ids: set[int],
+    omitted: Mapping[int, str],
+    reference_marker_id: int,
+    marker_size_m: float,
+    marker_sizes_m: Mapping[int, float],
+    settings: CalibrationSettings,
+    best_effort: bool,
+    anchor_marker_ids: Sequence[int] | None = None,
+) -> CalibrationResult:
+    emitted_ids = sorted(connected_ids & set(requested_marker_ids))
+    non_reference = [marker_id for marker_id in emitted_ids if marker_id != reference_marker_id]
+    if reference_marker_id not in emitted_ids or not non_reference:
+        return CalibrationResult(
+            None,
+            None,
+            (
+                "Partial output requires at least one non-reference marker connected "
+                f"to reference {reference_marker_id}."
+            ),
+            outcome="refused",
+            calibration_policy="best_effort",
+            partial_output=True,
+        )
+
+    merged_omitted = dict(omitted)
+    for marker_id in requested_marker_ids:
+        if marker_id not in connected_ids and marker_id not in merged_omitted:
+            merged_omitted[marker_id] = "not_connected_to_reference"
+
+    emitted_sizes = {marker_id: marker_sizes_m[marker_id] for marker_id in emitted_ids}
+    subset_result = calibrate_marker_layout(
+        observations,
+        camera_matrix,
+        dist_coeffs,
+        expected_marker_ids=emitted_ids,
+        reference_marker_id=reference_marker_id,
+        marker_size_m=marker_size_m,
+        settings=settings,
+        anchor_marker_ids=anchor_marker_ids,
+        marker_sizes_m=emitted_sizes,
+        best_effort=best_effort,
+        partial_output=False,
+    )
+    if subset_result.layout is None:
+        return CalibrationResult(
+            None,
+            subset_result.quality,
+            subset_result.failure_reason,
+            outcome="refused",
+            calibration_policy="best_effort",
+            partial_output=True,
+            omitted_markers=_omitted_marker_records(
+                requested_marker_ids,
+                set(emitted_ids),
+                merged_omitted,
+            ),
+        )
+    return _wrap_subset_as_partial(
+        subset_result,
+        requested_marker_ids=requested_marker_ids,
+        emitted_marker_ids=set(emitted_ids),
+        omitted=merged_omitted,
+    )
+
+
+def _partial_from_pair_consensus_or_refuse(
+    observations: Sequence[FrameObservation],
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+    pair_consensus: dict[MarkerPair, _PairConsensus],
+    quality: CalibrationQualityReport,
+    failure_message: str,
+    *,
+    requested_marker_ids: Sequence[int],
+    omitted_markers: Mapping[int, str],
+    connectivity_stage: str,
+    reference_marker_id: int,
+    marker_size_m: float,
+    marker_sizes_m: Mapping[int, float],
+    settings: CalibrationSettings,
+    best_effort: bool,
+    partial_output: bool,
+    anchor_marker_ids: Sequence[int] | None,
+) -> CalibrationResult:
+    if partial_output and best_effort:
+        connected = _connected_marker_ids(pair_consensus, reference_marker_id)
+        merged = dict(omitted_markers)
+        for marker_id in requested_marker_ids:
+            if marker_id not in connected and marker_id not in merged:
+                merged[marker_id] = _connectivity_omission_reason(connectivity_stage)
+        return _emit_partial_calibration_result(
+            observations,
+            camera_matrix,
+            dist_coeffs,
+            requested_marker_ids=requested_marker_ids,
+            connected_ids=connected,
+            omitted=merged,
+            reference_marker_id=reference_marker_id,
+            marker_size_m=marker_size_m,
+            marker_sizes_m=marker_sizes_m,
+            settings=settings,
+            best_effort=best_effort,
+            anchor_marker_ids=anchor_marker_ids,
+        )
+    return CalibrationResult(None, quality, failure_message)
+
+
+def _maybe_wrap_partial_success(
+    result: CalibrationResult,
+    *,
+    requested_marker_ids: Sequence[int],
+    emitted_marker_ids: set[int],
+    omitted_markers: Mapping[int, str],
+) -> CalibrationResult:
+    if not omitted_markers or result.layout is None or result.failure_reason is not None:
+        return result
+    return _wrap_subset_as_partial(
+        result,
+        requested_marker_ids=requested_marker_ids,
+        emitted_marker_ids=emitted_marker_ids,
+        omitted=omitted_markers,
+    )
+
+
 def calibrate_marker_layout(
     observations: Sequence[FrameObservation],
     camera_matrix: np.ndarray,
@@ -624,8 +865,17 @@ def calibrate_marker_layout(
     anchor_stop_after_expansion: bool = False,
     marker_sizes_m: Mapping[int, float] | None = None,
     best_effort: bool = False,
+    partial_output: bool = False,
 ) -> CalibrationResult:
     """Estimate a connected marker layout or refuse with a structured reason."""
+    if partial_output and not best_effort:
+        return CalibrationResult(
+            None,
+            None,
+            "partial_output requires best-effort calibration policy.",
+            outcome="refused",
+        )
+
     settings = settings or CalibrationSettings()
     settings_failure = _validate_settings(settings)
     if settings_failure is not None:
@@ -637,6 +887,9 @@ def calibrate_marker_layout(
     )
     if expected_failure is not None:
         return CalibrationResult(None, None, expected_failure)
+
+    requested_marker_ids = list(expected_ids)
+    omitted_markers: dict[int, str] = {}
 
     anchor_ids, anchor_failure = parse_anchor_marker_ids(
         anchor_marker_ids,
@@ -693,15 +946,49 @@ def calibrate_marker_layout(
     }
     never_observed = sorted(set(expected_ids) - observed_ids)
     if never_observed:
-        return CalibrationResult(
-            None,
-            _empty_quality(
-                frozenset(never_observed),
-                frozenset(observed_ids),
-                input_frame_count=len(normalized_observations),
-            ),
-            f"Expected marker IDs never observed: {never_observed}.",
-        )
+        if partial_output and best_effort:
+            for marker_id in never_observed:
+                omitted_markers[marker_id] = "never_observed"
+            expected_ids = [marker_id for marker_id in expected_ids if marker_id in observed_ids]
+            if reference_marker_id not in expected_ids:
+                return CalibrationResult(
+                    None,
+                    _empty_quality(
+                        frozenset(never_observed),
+                        frozenset(observed_ids),
+                        input_frame_count=len(normalized_observations),
+                    ),
+                    f"Reference marker {reference_marker_id} was never observed.",
+                    outcome="refused",
+                    calibration_policy="best_effort",
+                    partial_output=True,
+                )
+            if len(expected_ids) < 2:
+                return CalibrationResult(
+                    None,
+                    _empty_quality(
+                        frozenset(never_observed),
+                        frozenset(observed_ids),
+                        input_frame_count=len(normalized_observations),
+                    ),
+                    (
+                        "Partial output requires at least one non-reference marker connected "
+                        f"to reference {reference_marker_id}."
+                    ),
+                    outcome="refused",
+                    calibration_policy="best_effort",
+                    partial_output=True,
+                )
+        else:
+            return CalibrationResult(
+                None,
+                _empty_quality(
+                    frozenset(never_observed),
+                    frozenset(observed_ids),
+                    input_frame_count=len(normalized_observations),
+                ),
+                f"Expected marker IDs never observed: {never_observed}.",
+            )
 
     frame_candidates = _estimate_frame_candidates(
         normalized_observations,
@@ -725,23 +1012,53 @@ def calibrate_marker_layout(
     raw_connected = _connected_marker_ids_from_pairs(raw_pair_counts.keys(), reference_marker_id)
     raw_missing = sorted(set(expected_ids) - raw_connected)
     if raw_missing:
-        return CalibrationResult(
-            None,
-            _quality_from_pairs(
-                {},
-                expected_ids,
-                reference_marker_id,
-                frozenset(raw_missing),
-                input_frame_count=len(normalized_observations),
-                rejected_frame_count=0,
-                accepted_frame_count=0,
-                observation_count=0,
-            ),
-            (
-                f"Expected marker IDs are not connected in raw observations; "
-                f"missing {raw_missing}."
-            ),
-        )
+        if partial_output and best_effort:
+            for marker_id in raw_missing:
+                omitted_markers[marker_id] = "not_connected_in_raw_observations"
+            expected_ids = [marker_id for marker_id in expected_ids if marker_id in raw_connected]
+            non_reference = [
+                marker_id for marker_id in expected_ids if marker_id != reference_marker_id
+            ]
+            if not non_reference:
+                return CalibrationResult(
+                    None,
+                    _quality_from_pairs(
+                        {},
+                        requested_marker_ids,
+                        reference_marker_id,
+                        frozenset(raw_missing),
+                        input_frame_count=len(normalized_observations),
+                        rejected_frame_count=0,
+                        accepted_frame_count=0,
+                        observation_count=0,
+                    ),
+                    (
+                        "Partial output requires at least one non-reference marker connected "
+                        f"to reference {reference_marker_id}."
+                    ),
+                    outcome="refused",
+                    calibration_policy="best_effort",
+                    partial_output=True,
+                )
+            pair_hypotheses = _collect_pair_hypotheses(frame_candidates, expected_ids)
+        else:
+            return CalibrationResult(
+                None,
+                _quality_from_pairs(
+                    {},
+                    expected_ids,
+                    reference_marker_id,
+                    frozenset(raw_missing),
+                    input_frame_count=len(normalized_observations),
+                    rejected_frame_count=0,
+                    accepted_frame_count=0,
+                    observation_count=0,
+                ),
+                (
+                    f"Expected marker IDs are not connected in raw observations; "
+                    f"missing {raw_missing}."
+                ),
+            )
 
     restored_pair_edges: list[RestoredPairEdge] = []
     use_legacy_assignment = anchor_ids is None or set(anchor_ids) == set(expected_ids)
@@ -916,8 +1233,11 @@ def calibrate_marker_layout(
         )
         dropped_edges.extend(assignment_drops)
         if assignment_support_failure is not None:
-            return CalibrationResult(
-                None,
+            return _partial_from_pair_consensus_or_refuse(
+                observations,
+                camera_matrix,
+                dist_coeffs,
+                pair_consensus,
                 _quality_from_pairs(
                     pair_consensus,
                     expected_ids,
@@ -935,6 +1255,16 @@ def calibrate_marker_layout(
                     anchor_core=anchor_core_diagnostics,
                 ),
                 assignment_support_failure,
+                requested_marker_ids=requested_marker_ids,
+                omitted_markers=omitted_markers,
+                connectivity_stage="assignment_support",
+                reference_marker_id=reference_marker_id,
+                marker_size_m=marker_size_m,
+                marker_sizes_m=marker_sizes_m,
+                settings=settings,
+                best_effort=best_effort,
+                partial_output=partial_output,
+                anchor_marker_ids=anchor_ids,
             )
         markers_in_accepted_frames = _markers_in_frame_indices(
             normalized_observations,
@@ -1042,6 +1372,24 @@ def calibrate_marker_layout(
             anchor_core=anchor_core_diagnostics,
         )
         gate_failure = _check_quality_gates(quality, settings, marker_sizes_m, expected_ids)
+        if missing_ids and partial_output and best_effort:
+            merged = dict(omitted_markers)
+            for marker_id in missing_ids:
+                merged.setdefault(marker_id, "not_connected_after_pruning")
+            return _emit_partial_calibration_result(
+                observations,
+                camera_matrix,
+                dist_coeffs,
+                requested_marker_ids=requested_marker_ids,
+                connected_ids=set(connected_ids),
+                omitted=merged,
+                reference_marker_id=reference_marker_id,
+                marker_size_m=marker_size_m,
+                marker_sizes_m=marker_sizes_m,
+                settings=settings,
+                best_effort=best_effort,
+                anchor_marker_ids=anchor_ids,
+            )
         finalized = _finalize_solved_calibration(
             marker_poses,
             quality,
@@ -1056,20 +1404,32 @@ def calibrate_marker_layout(
         )
         if finalized is not None:
             return finalized
+        emitted_footprints = _footprints_from_poses(marker_poses, marker_sizes_m)
+        emitted_sizes = {
+            marker_id: marker_sizes_m[marker_id] for marker_id in emitted_footprints
+        }
         layout = build_marker_layout(
             reference_marker_id=reference_marker_id,
             marker_size_m=marker_size_m,
-            footprints=_footprints_from_poses(marker_poses, marker_sizes_m),
-            marker_sizes_m=dict(marker_sizes_m),
+            footprints=emitted_footprints,
+            marker_sizes_m=emitted_sizes,
         )
-        return _accepted_calibration_result(layout, quality, best_effort=best_effort)
+        return _maybe_wrap_partial_success(
+            _accepted_calibration_result(layout, quality, best_effort=best_effort),
+            requested_marker_ids=requested_marker_ids,
+            emitted_marker_ids=set(expected_ids),
+            omitted_markers=omitted_markers,
+        )
 
     dropped_edges = list(dropped_pair_edges)
     pair_failure = pair_failure if use_legacy_assignment else None
     if pair_failure is not None:
         missing = _missing_from_graph(pair_consensus, expected_ids, reference_marker_id)
-        return CalibrationResult(
-            None,
+        return _partial_from_pair_consensus_or_refuse(
+            observations,
+            camera_matrix,
+            dist_coeffs,
+            pair_consensus,
             _quality_from_pairs(
                 pair_consensus,
                 expected_ids,
@@ -1083,6 +1443,16 @@ def calibrate_marker_layout(
                 restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
             ),
             pair_failure,
+            requested_marker_ids=requested_marker_ids,
+            omitted_markers=omitted_markers,
+            connectivity_stage="initial_consensus",
+            reference_marker_id=reference_marker_id,
+            marker_size_m=marker_size_m,
+            marker_sizes_m=marker_sizes_m,
+            settings=settings,
+            best_effort=best_effort,
+            partial_output=partial_output,
+            anchor_marker_ids=anchor_ids,
         )
 
     assigned_candidates, rejected_frames, assignment_rejections, fallback_assignments = (
@@ -1142,8 +1512,11 @@ def calibrate_marker_layout(
     )
     dropped_edges.extend(assignment_drops)
     if assignment_support_failure is not None:
-        return CalibrationResult(
-            None,
+        return _partial_from_pair_consensus_or_refuse(
+            observations,
+            camera_matrix,
+            dist_coeffs,
+            pair_consensus,
             _quality_from_pairs(
                 pair_consensus,
                 expected_ids,
@@ -1160,6 +1533,16 @@ def calibrate_marker_layout(
                 restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
             ),
             assignment_support_failure,
+            requested_marker_ids=requested_marker_ids,
+            omitted_markers=omitted_markers,
+            connectivity_stage="assignment_support",
+            reference_marker_id=reference_marker_id,
+            marker_size_m=marker_size_m,
+            marker_sizes_m=marker_sizes_m,
+            settings=settings,
+            best_effort=best_effort,
+            partial_output=partial_output,
+            anchor_marker_ids=anchor_ids,
         )
 
     markers_in_accepted_frames = _markers_in_frame_indices(normalized_observations, accepted_frames)
@@ -1269,6 +1652,24 @@ def calibrate_marker_layout(
     )
 
     gate_failure = _check_quality_gates(quality, settings, marker_sizes_m, expected_ids)
+    if missing_ids and partial_output and best_effort:
+        merged = dict(omitted_markers)
+        for marker_id in missing_ids:
+            merged.setdefault(marker_id, "not_connected_after_pruning")
+        return _emit_partial_calibration_result(
+            observations,
+            camera_matrix,
+            dist_coeffs,
+            requested_marker_ids=requested_marker_ids,
+            connected_ids=set(connected_ids),
+            omitted=merged,
+            reference_marker_id=reference_marker_id,
+            marker_size_m=marker_size_m,
+            marker_sizes_m=marker_sizes_m,
+            settings=settings,
+            best_effort=best_effort,
+            anchor_marker_ids=anchor_ids,
+        )
     finalized = _finalize_solved_calibration(
         marker_poses,
         quality,
@@ -1283,13 +1684,20 @@ def calibrate_marker_layout(
     )
     if finalized is not None:
         return finalized
+    emitted_footprints = _footprints_from_poses(marker_poses, marker_sizes_m)
+    emitted_sizes = {marker_id: marker_sizes_m[marker_id] for marker_id in emitted_footprints}
     layout = build_marker_layout(
         reference_marker_id=reference_marker_id,
         marker_size_m=marker_size_m,
-        footprints=_footprints_from_poses(marker_poses, marker_sizes_m),
-        marker_sizes_m=dict(marker_sizes_m),
+        footprints=emitted_footprints,
+        marker_sizes_m=emitted_sizes,
     )
-    return _accepted_calibration_result(layout, quality, best_effort=best_effort)
+    return _maybe_wrap_partial_success(
+        _accepted_calibration_result(layout, quality, best_effort=best_effort),
+        requested_marker_ids=requested_marker_ids,
+        emitted_marker_ids=set(expected_ids),
+        omitted_markers=omitted_markers,
+    )
 
 
 OptimizationCheckpointStage = Literal[

@@ -78,6 +78,7 @@ class CliHelpTests(unittest.TestCase):
         self.assertIn("--anchor-marker-ids", help_text)
         self.assertIn("--anchor-stop-after-expansion", help_text)
         self.assertIn("--best-effort", help_text)
+        self.assertIn("--partial-output", help_text)
         self.assertIn("--auto", help_text)
         self.assertIn("--sample-rate-hz", help_text)
         self.assertIn("ignored in manual mode", help_text)
@@ -120,6 +121,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 anchor_marker_ids=None,
                 anchor_stop_after_expansion=False,
                 best_effort=False,
+                partial_output=False,
                 marker_size_for=None,
             )
             with self.assertRaises(RuntimeError) as ctx:
@@ -149,6 +151,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 anchor_marker_ids=None,
                 anchor_stop_after_expansion=False,
                 best_effort=False,
+                partial_output=False,
                 marker_size_for=None,
             )
             with self.assertRaises(RuntimeError) as ctx:
@@ -178,9 +181,10 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 anchor_marker_ids=["0", "3-4"],
                 anchor_stop_after_expansion=False,
                 best_effort=False,
+                partial_output=False,
                 marker_size_for=None,
             )
-            expected_ids, marker_sizes_m, _, anchor_ids, stop_after, _ = validate_args(args)
+            expected_ids, marker_sizes_m, _, anchor_ids, stop_after, _, _ = validate_args(args)
             self.assertEqual(expected_ids, [0, 1, 3, 4, 5])
             self.assertEqual(anchor_ids, (0, 3, 4))
             self.assertFalse(stop_after)
@@ -208,6 +212,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 anchor_marker_ids=["1", "2"],
                 anchor_stop_after_expansion=False,
                 best_effort=False,
+                partial_output=False,
                 marker_size_for=None,
             )
             with self.assertRaises(RuntimeError) as ctx:
@@ -238,8 +243,9 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 anchor_marker_ids=None,
                 anchor_stop_after_expansion=False,
                 best_effort=False,
+                partial_output=False,
             )
-            expected_ids, marker_sizes_m, _, _, _, _ = validate_args(args)
+            expected_ids, marker_sizes_m, _, _, _, _, _ = validate_args(args)
             self.assertEqual(expected_ids, [0, 1, 4, 10, 11])
             self.assertEqual(marker_sizes_m[4], 0.03)
             self.assertEqual(marker_sizes_m[10], 0.025)
@@ -269,8 +275,9 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 anchor_marker_ids=None,
                 anchor_stop_after_expansion=False,
                 best_effort=False,
+                partial_output=False,
             )
-            _, marker_sizes_m, _, _, _, _ = validate_args(args)
+            _, marker_sizes_m, _, _, _, _, _ = validate_args(args)
             self.assertEqual(marker_sizes_m[4], 0.03)
             self.assertEqual(marker_sizes_m[11], 0.025)
 
@@ -297,6 +304,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 anchor_marker_ids=None,
                 anchor_stop_after_expansion=True,
                 best_effort=False,
+                partial_output=False,
                 marker_size_for=None,
             )
             with self.assertRaises(RuntimeError) as ctx:
@@ -326,12 +334,44 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 anchor_marker_ids=["0", "1"],
                 anchor_stop_after_expansion=True,
                 best_effort=True,
+                partial_output=False,
                 marker_size_for=None,
             )
             with self.assertRaises(RuntimeError) as ctx:
                 validate_args(args)
             self.assertIn("--best-effort", str(ctx.exception))
             self.assertIn("--anchor-stop-after-expansion", str(ctx.exception))
+
+    def test_partial_output_requires_best_effort(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import validate_args
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            calibration = Path(tmp_dir) / "intrinsics.json"
+            _write_intrinsics(calibration)
+            args = mock.Mock(
+                calibration=calibration,
+                output=Path(tmp_dir) / "out.json",
+                force=True,
+                marker_ids=["0", "1", "2"],
+                reference_marker_id=0,
+                marker_size=0.07,
+                sample_rate_hz=2.0,
+                auto=False,
+                min_pair_inliers=20,
+                reprojection_rms_gate_px=2.0,
+                pair_translation_rms_gate_ratio=0.10,
+                pair_rotation_rms_gate_deg=5.0,
+                diagnostics_output=None,
+                anchor_marker_ids=["0", "1"],
+                anchor_stop_after_expansion=False,
+                best_effort=False,
+                partial_output=True,
+                marker_size_for=None,
+            )
+            with self.assertRaises(RuntimeError) as ctx:
+                validate_args(args)
+            self.assertIn("--partial-output", str(ctx.exception))
+            self.assertIn("--best-effort", str(ctx.exception))
 
     def test_sample_rate_hz_must_be_finite_and_positive(self) -> None:
         from object_apriltag.cli.calibrate_marker_model import validate_args
@@ -357,7 +397,8 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                         diagnostics_output=None,
                         anchor_marker_ids=None,
                         anchor_stop_after_expansion=False,
-                best_effort=False,
+                        best_effort=False,
+                        partial_output=False,
                         marker_size_for=None,
                     )
                     with self.assertRaises(RuntimeError) as ctx:
@@ -408,6 +449,7 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
                 anchor_marker_ids=None,
                 anchor_stop_after_expansion=False,
                 best_effort=False,
+                partial_output=False,
                 marker_size_for=None,
             )
 

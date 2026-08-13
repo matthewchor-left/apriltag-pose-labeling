@@ -4,12 +4,12 @@
 
 **Blocked by:** 02 — Recover connectivity through weak pair consensus.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Partial output requires both best-effort mode and an explicit partial-output option.
-- [ ] The emitted model contains only the connected component containing the reference marker.
-- [ ] Marker sizes and footprints are resolved and validated against exactly the emitted marker subset.
-- [ ] Diagnostics and console output list every requested marker omitted from the model and why it was omitted.
-- [ ] Strict mode and best-effort mode without partial output continue to refuse incomplete requested layouts.
-- [ ] A partial model uses the existing marker-model format and loads successfully in object detection and model inspection.
-- [ ] Calibration still refuses when no non-reference marker can be connected to the reference marker or the retained geometry is invalid.
+- [x] Partial output requires both best-effort mode and an explicit partial-output option.
+- [x] The emitted model contains only the connected component containing the reference marker.
+- [x] Marker sizes and footprints are resolved and validated against exactly the emitted marker subset.
+- [x] Diagnostics and console output list every requested marker omitted from the model and why it was omitted.
+- [x] Strict mode and best-effort mode without partial output continue to refuse incomplete requested layouts.
+- [x] A partial model uses the existing marker-model format and loads successfully in object detection and model inspection.
+- [x] Calibration still refuses when no non-reference marker can be connected to the reference marker or the retained geometry is invalid.
