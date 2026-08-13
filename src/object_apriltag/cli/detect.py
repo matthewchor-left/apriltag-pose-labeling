@@ -335,7 +335,7 @@ def main() -> None:
                     preview_frame,
                     corners,
                     marker_id,
-                    marker_size_m,
+                    marker_model.marker_size_for(marker_id),
                     camera_matrix,
                     dist_coeffs,
                     marker_model,

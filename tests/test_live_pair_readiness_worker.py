@@ -51,7 +51,6 @@ class LivePairReadinessWorkerTests(unittest.TestCase):
             dist_coeffs=self.dist_coeffs,
             expected_marker_ids=[0, 1],
             reference_marker_id=0,
-            marker_size_m=0.07,
             settings=self.settings,
         )
 
@@ -187,13 +186,14 @@ class LivePairReadinessWorkerCaptureIntegrationTests(unittest.TestCase):
                 reference_marker_id=0,
                 output=output,
                 force=True,
-                sample_rate_hz=2.0,
                 min_pair_inliers=20,
                 reprojection_rms_gate_px=2.0,
                 pair_translation_rms_gate_ratio=0.10,
                 pair_rotation_rms_gate_deg=5.0,
                 diagnostics_output=None,
                 anchor_marker_ids=None,
+                anchor_stop_after_expansion=False,
+                marker_size_for=None,
             )
 
             frame = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -213,15 +213,7 @@ class LivePairReadinessWorkerCaptureIntegrationTests(unittest.TestCase):
 
             detector.detectMarkers.side_effect = detect_markers
 
-            monotonic_values = [index * 0.25 for index in range(30)]
-            monotonic_iter = iter(monotonic_values)
-            wait_keys = [0] * 12 + [ord("q")]
-
-            def monotonic_side_effect() -> float:
-                try:
-                    return next(monotonic_iter)
-                except StopIteration:
-                    return monotonic_values[-1] + 1.0
+            wait_keys = [ord("c")] + [0] * 11 + [ord("q")]
 
             wait_iter = iter(wait_keys)
 
@@ -230,10 +222,6 @@ class LivePairReadinessWorkerCaptureIntegrationTests(unittest.TestCase):
                 mock.patch(
                     "object_apriltag.cli.calibrate_marker_model.build_apriltag_detector",
                     return_value=detector,
-                ),
-                mock.patch(
-                    "object_apriltag.cli.calibrate_marker_model.time.monotonic",
-                    side_effect=monotonic_side_effect,
                 ),
                 mock.patch(
                     "object_apriltag.cli.calibrate_marker_model.cv2.waitKey",

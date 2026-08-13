@@ -42,7 +42,6 @@ class ObjectDetectorTests(unittest.TestCase):
         origin, rotation = estimate_fused_pose(
             detections,
             self.marker_model,
-            self.marker_size_m,
             self.camera_matrix,
             self.dist_coeffs,
         )
@@ -56,7 +55,7 @@ class ObjectDetectorTests(unittest.TestCase):
     def test_object_pose_dataclass(self) -> None:
         corners = self._synthetic_corners()
         rotation, origin = object_pose_from_marker(
-            corners, 0, self.marker_size_m, self.camera_matrix, self.dist_coeffs, self.marker_model
+            corners, 0, self.marker_model, self.camera_matrix, self.dist_coeffs
         )
         pose = ObjectPose(origin=origin, rotation=rotation)
         self.assertEqual(pose.origin.shape, (3,))

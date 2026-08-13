@@ -43,13 +43,20 @@ def main() -> None:
     print(f"Marker model: {args.marker_model}")
     print(f"Reference marker id: {marker_model.reference_marker_id}")
     print(f"Units: {marker_model.units}")
-    print(f"Marker size: {marker_model.marker_size_m:.4f} m")
+    print(f"Default marker size: {marker_model.marker_size_m:.4f} m")
 
     for marker_id in sorted(marker_model.footprints):
         footprint = marker_model.footprints[marker_id]
         transform = marker_model.transforms[marker_id]
+        resolved_size = marker_model.marker_size_for(marker_id)
+        size_note = (
+            f"{resolved_size:.4f} m (override)"
+            if resolved_size != marker_model.marker_size_m
+            else f"{resolved_size:.4f} m (default)"
+        )
         top, right, bottom, left = footprint_edge_lengths(*footprint.corners())
         print(f"\nMarker {marker_id}")
+        print(f"  resolved size: {size_note}")
         for corner_name in CORNER_NAMES:
             point = footprint.corners_by_name()[corner_name]
             print(f"  {corner_name}: {point.round(6).tolist()}")

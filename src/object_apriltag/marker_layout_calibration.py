@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
@@ -18,6 +19,7 @@ from object_apriltag.layout import (
     footprint_from_dict,
     footprint_orientation,
     marker_origin_on_object,
+    resolve_marker_sizes,
 )
 from object_apriltag.pose import marker_corner_object_points
 
@@ -357,6 +359,122 @@ def _validate_marker_size(marker_size_m: float) -> str | None:
     return None
 
 
+def uniform_marker_sizes(expected_ids: Sequence[int], marker_size_m: float) -> dict[int, float]:
+    return {int(marker_id): float(marker_size_m) for marker_id in expected_ids}
+
+
+def _validate_marker_sizes(
+    marker_sizes_m: Mapping[int, float],
+    expected_ids: Sequence[int],
+) -> str | None:
+    expected_set = {int(marker_id) for marker_id in expected_ids}
+    if set(marker_sizes_m) != expected_set:
+        missing = sorted(expected_set - set(marker_sizes_m))
+        extra = sorted(set(marker_sizes_m) - expected_set)
+        if missing:
+            return f"marker_sizes_m missing expected marker IDs: {missing}."
+        return f"marker_sizes_m contains unexpected marker IDs: {extra}."
+    for marker_id, size in marker_sizes_m.items():
+        failure = _validate_marker_size(size)
+        if failure is not None:
+            return f"marker_sizes_m[{marker_id}]: {failure}"
+    return None
+
+
+def _object_points_by_marker(marker_sizes_m: Mapping[int, float]) -> dict[int, np.ndarray]:
+    by_size: dict[float, np.ndarray] = {}
+    result: dict[int, np.ndarray] = {}
+    for marker_id, size in marker_sizes_m.items():
+        if size not in by_size:
+            by_size[size] = marker_corner_object_points(size).astype(np.float64)
+        result[int(marker_id)] = by_size[size]
+    return result
+
+
+def _parse_marker_id_range_token(token: str) -> tuple[list[int] | None, str | None]:
+    token = str(token).strip()
+    if not token:
+        return None, "must not be empty."
+    if "-" in token:
+        start_text, end_text = token.split("-", 1)
+        if not start_text or not end_text:
+            return None, f"invalid range token {token!r}."
+        try:
+            start = int(start_text)
+            end = int(end_text)
+        except ValueError:
+            return None, f"range token must use integers: {token!r}."
+        if start > end:
+            return None, f"range token must be ascending: {token!r}."
+        return list(range(start, end + 1)), None
+    try:
+        return [int(token)], None
+    except ValueError:
+        return None, f"token must be an integer or range: {token!r}."
+
+
+def parse_marker_size_override_spec(
+    tokens: Sequence[str],
+) -> tuple[list[tuple[list[int], float]] | None, str | None]:
+    if not tokens:
+        return [], None
+    overrides: list[tuple[list[int], float]] = []
+    used_ids: set[int] = set()
+    for token in tokens:
+        token = str(token).strip()
+        if ":" not in token:
+            return None, f"invalid override token {token!r}; expected ID_OR_RANGE:SIZE."
+        id_part, size_part = token.rsplit(":", 1)
+        if not id_part or not size_part:
+            return None, f"invalid override token {token!r}."
+        marker_ids, parse_failure = _parse_marker_id_range_token(id_part)
+        if parse_failure is not None:
+            return None, parse_failure
+        assert marker_ids is not None
+        try:
+            size = float(size_part)
+        except ValueError:
+            return None, f"override size must be a number in {token!r}."
+        if not np.isfinite(size) or size <= 0.0:
+            return None, f"override size must be positive and finite in {token!r}."
+        overlap = sorted(set(marker_ids) & used_ids)
+        if overlap:
+            return None, f"overlapping marker size overrides for IDs {overlap}."
+        used_ids.update(marker_ids)
+        overrides.append((marker_ids, size))
+    return overrides, None
+
+
+def resolve_marker_sizes_for_calibration(
+    expected_ids: Sequence[int],
+    default_size_m: float,
+    override_tokens: Sequence[str] | None = None,
+) -> tuple[dict[int, float] | None, str | None]:
+    default_failure = _validate_marker_size(default_size_m)
+    if default_failure is not None:
+        return None, default_failure
+    overrides: dict[int, float] = {}
+    if override_tokens:
+        parsed, parse_failure = parse_marker_size_override_spec(override_tokens)
+        if parse_failure is not None:
+            return None, parse_failure
+        assert parsed is not None
+        for marker_ids, size in parsed:
+            for marker_id in marker_ids:
+                overrides[marker_id] = size
+        unknown = sorted(set(overrides) - {int(marker_id) for marker_id in expected_ids})
+        if unknown:
+            return None, f"marker size overrides are not subset of marker IDs; extra {unknown}."
+    try:
+        resolved = resolve_marker_sizes(set(expected_ids), default_size_m, overrides)
+    except ValueError as exc:
+        return None, str(exc)
+    sizes_failure = _validate_marker_sizes(resolved, expected_ids)
+    if sizes_failure is not None:
+        return None, sizes_failure
+    return resolved, None
+
+
 def _validate_camera_inputs(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
@@ -437,6 +555,7 @@ def calibrate_marker_layout(
     settings: CalibrationSettings | None = None,
     anchor_marker_ids: Sequence[int] | None = None,
     anchor_stop_after_expansion: bool = False,
+    marker_sizes_m: Mapping[int, float] | None = None,
 ) -> CalibrationResult:
     """Estimate a connected marker layout or refuse with a structured reason."""
     settings = settings or CalibrationSettings()
@@ -470,6 +589,13 @@ def calibrate_marker_layout(
     if marker_size_failure is not None:
         return CalibrationResult(None, None, marker_size_failure)
 
+    if marker_sizes_m is None:
+        marker_sizes_m = uniform_marker_sizes(expected_ids, marker_size_m)
+    else:
+        sizes_failure = _validate_marker_sizes(marker_sizes_m, expected_ids)
+        if sizes_failure is not None:
+            return CalibrationResult(None, None, sizes_failure)
+
     camera_matrix, dist_coeffs, camera_failure = _validate_camera_inputs(
         camera_matrix,
         dist_coeffs,
@@ -481,7 +607,7 @@ def calibrate_marker_layout(
     if observations_failure is not None:
         return CalibrationResult(None, None, observations_failure)
 
-    object_points = marker_corner_object_points(marker_size_m).astype(np.float64)
+    object_points_by_marker = _object_points_by_marker(marker_sizes_m)
 
     normalized_observations = _normalize_observations(observations, expected_ids)
     if not normalized_observations:
@@ -511,7 +637,7 @@ def calibrate_marker_layout(
 
     frame_candidates = _estimate_frame_candidates(
         normalized_observations,
-        object_points,
+        object_points_by_marker,
         camera_matrix,
         dist_coeffs,
     )
@@ -536,7 +662,7 @@ def calibrate_marker_layout(
             pair_hypotheses,
             expected_ids,
             reference_marker_id,
-            marker_size_m,
+            marker_sizes_m,
             settings,
         )
     else:
@@ -557,9 +683,9 @@ def calibrate_marker_layout(
             expected_ids,
             anchor_ids,
             reference_marker_id,
-            marker_size_m,
+            marker_sizes_m,
             settings,
-            object_points,
+            object_points_by_marker,
             camera_matrix,
             dist_coeffs,
             stop_after_expansion=anchor_stop_after_expansion,
@@ -602,7 +728,7 @@ def calibrate_marker_layout(
             assert preinitialized_marker_poses is not None
             assert pair_consensus is not None
             marker_poses = preinitialized_marker_poses
-            footprints = _footprints_from_poses(marker_poses, marker_size_m)
+            footprints = _footprints_from_poses(marker_poses, marker_sizes_m)
             if set(footprints) != set(expected_ids):
                 absent = sorted(set(expected_ids) - set(footprints))
                 return CalibrationResult(
@@ -636,6 +762,7 @@ def calibrate_marker_layout(
                 reference_marker_id=reference_marker_id,
                 marker_size_m=marker_size_m,
                 footprints=footprints,
+                marker_sizes_m=dict(marker_sizes_m),
             )
             quality = _quality_from_pairs(
                 pair_consensus,
@@ -673,7 +800,7 @@ def calibrate_marker_layout(
                 expected_ids,
                 reference_marker_id,
                 settings,
-                marker_size_m=marker_size_m,
+                marker_sizes_m=marker_sizes_m,
             )
         )
         dropped_edges.extend(assignment_drops)
@@ -742,7 +869,7 @@ def calibrate_marker_layout(
             frame_poses,
             reference_marker_id,
             non_reference_ids,
-            object_points,
+            object_points_by_marker,
             camera_matrix,
             dist_coeffs,
             settings,
@@ -775,7 +902,7 @@ def calibrate_marker_layout(
         pair_consensus = _pair_consensus_from_assignment_hypotheses(
             _collect_pair_hypotheses(frozen_frames, expected_ids),
             settings,
-            marker_size_m,
+            marker_sizes_m,
             marker_poses=marker_poses,
         )
         marker_poses, frame_poses, inlier_mask, pair_consensus, prune_failure, pruning_drops = (
@@ -789,11 +916,11 @@ def calibrate_marker_layout(
                 expected_ids,
                 pair_consensus,
                 accepted_frames,
-                object_points,
+                object_points_by_marker,
                 camera_matrix,
                 dist_coeffs,
                 settings,
-                marker_size_m,
+                marker_sizes_m,
             )
         )
         dropped_edges.extend(pruning_drops)
@@ -832,7 +959,7 @@ def calibrate_marker_layout(
             input_frame_count,
             rejected_frame_count,
             final_accepted_frame_count,
-            object_points,
+            object_points_by_marker,
             camera_matrix,
             dist_coeffs,
             assignment_rejections=assignment_rejection_summary,
@@ -840,7 +967,7 @@ def calibrate_marker_layout(
             dropped_pair_edges=tuple(dropped_edges),
             anchor_core=anchor_core_diagnostics,
         )
-        gate_failure = _check_quality_gates(quality, settings, marker_size_m, expected_ids)
+        gate_failure = _check_quality_gates(quality, settings, marker_sizes_m, expected_ids)
         if gate_failure is not None:
             return CalibrationResult(None, quality, gate_failure)
         if missing_ids:
@@ -849,7 +976,7 @@ def calibrate_marker_layout(
                 quality,
                 f"Expected marker IDs are not connected to reference: {sorted(missing_ids)}.",
             )
-        footprints = _footprints_from_poses(marker_poses, marker_size_m)
+        footprints = _footprints_from_poses(marker_poses, marker_sizes_m)
         if set(footprints) != set(expected_ids):
             absent = sorted(set(expected_ids) - set(footprints))
             return CalibrationResult(
@@ -861,6 +988,7 @@ def calibrate_marker_layout(
             reference_marker_id=reference_marker_id,
             marker_size_m=marker_size_m,
             footprints=footprints,
+            marker_sizes_m=dict(marker_sizes_m),
         )
         return CalibrationResult(layout, quality, None)
 
@@ -888,7 +1016,7 @@ def calibrate_marker_layout(
         frame_candidates,
         pair_consensus,
         settings,
-        marker_size_m,
+        marker_sizes_m,
     )
     assignment_rejection_records = build_assignment_rejection_records(
         normalized_observations,
@@ -925,7 +1053,7 @@ def calibrate_marker_layout(
         expected_ids,
         reference_marker_id,
         settings,
-        marker_size_m=marker_size_m,
+        marker_sizes_m=marker_sizes_m,
     )
     dropped_edges.extend(assignment_drops)
     if assignment_support_failure is not None:
@@ -968,7 +1096,7 @@ def calibrate_marker_layout(
             f"Expected marker IDs have no accepted-frame observations after rejection: {missing_after_rejection}.",
         )
 
-    ref_rotation, ref_translation = _reference_gauge_pose(marker_size_m)
+    ref_rotation, ref_translation = _reference_gauge_pose(marker_sizes_m[reference_marker_id])
     marker_poses = _initialize_marker_poses(
         reference_marker_id,
         ref_rotation,
@@ -993,7 +1121,7 @@ def calibrate_marker_layout(
         frame_poses,
         reference_marker_id,
         non_reference_ids,
-        object_points,
+        object_points_by_marker,
         camera_matrix,
         dist_coeffs,
         settings,
@@ -1028,11 +1156,11 @@ def calibrate_marker_layout(
         expected_ids,
         pair_consensus,
         accepted_frames,
-        object_points,
+        object_points_by_marker,
         camera_matrix,
         dist_coeffs,
         settings,
-        marker_size_m,
+        marker_sizes_m,
     )
     dropped_edges.extend(pruning_drops)
     if prune_failure is not None:
@@ -1070,7 +1198,7 @@ def calibrate_marker_layout(
         input_frame_count,
         rejected_frame_count,
         final_accepted_frame_count,
-        object_points,
+        object_points_by_marker,
         camera_matrix,
         dist_coeffs,
         assignment_rejections=assignment_rejection_summary,
@@ -1078,7 +1206,7 @@ def calibrate_marker_layout(
         dropped_pair_edges=tuple(dropped_edges),
     )
 
-    gate_failure = _check_quality_gates(quality, settings, marker_size_m, expected_ids)
+    gate_failure = _check_quality_gates(quality, settings, marker_sizes_m, expected_ids)
     if gate_failure is not None:
         return CalibrationResult(None, quality, gate_failure)
     if missing_ids:
@@ -1088,7 +1216,7 @@ def calibrate_marker_layout(
             f"Expected marker IDs are not connected to reference: {sorted(missing_ids)}.",
         )
 
-    footprints = _footprints_from_poses(marker_poses, marker_size_m)
+    footprints = _footprints_from_poses(marker_poses, marker_sizes_m)
     if set(footprints) != set(expected_ids):
         absent = sorted(set(expected_ids) - set(footprints))
         return CalibrationResult(
@@ -1101,6 +1229,7 @@ def calibrate_marker_layout(
         reference_marker_id=reference_marker_id,
         marker_size_m=marker_size_m,
         footprints=footprints,
+        marker_sizes_m=dict(marker_sizes_m),
     )
     return CalibrationResult(layout, quality, None)
 
@@ -1128,7 +1257,7 @@ def _normalize_observations(
 
 def _estimate_frame_candidates(
     observations: list[tuple[str | int, dict[int, np.ndarray]]],
-    object_points: np.ndarray,
+    object_points_by_marker: dict[int, np.ndarray],
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> list[tuple[int, dict[int, list[_MarkerCandidate]]]]:
@@ -1137,7 +1266,7 @@ def _estimate_frame_candidates(
         candidates: dict[int, list[_MarkerCandidate]] = {}
         for marker_id, image_points in markers.items():
             marker_candidates = _ippe_candidates(
-                object_points,
+                object_points_by_marker[marker_id],
                 image_points,
                 camera_matrix,
                 dist_coeffs,
@@ -1232,8 +1361,15 @@ def _transform_high_in_low(
     return _relative_marker_transform(low, high)
 
 
-def _pair_translation_gate(settings: CalibrationSettings, marker_size_m: float) -> float:
-    return settings.pair_translation_rms_gate_ratio * marker_size_m
+def _pair_translation_gate(
+    settings: CalibrationSettings,
+    marker_sizes_m: Mapping[int, float],
+    pair: MarkerPair,
+) -> float:
+    return settings.pair_translation_rms_gate_ratio * min(
+        marker_sizes_m[pair[0]],
+        marker_sizes_m[pair[1]],
+    )
 
 
 def compute_live_pair_readiness(
@@ -1242,7 +1378,6 @@ def compute_live_pair_readiness(
     dist_coeffs: np.ndarray,
     expected_marker_ids: Sequence[int],
     reference_marker_id: int,
-    marker_size_m: float,
     settings: CalibrationSettings | None = None,
 ) -> LivePairReadinessDiagnostics:
     """Estimate co-visibility pair strength and graph readiness (topology only)."""
@@ -1268,16 +1403,6 @@ def compute_live_pair_readiness(
             missing_marker_ids=frozenset(),
             sample_count=len(observations),
             failure_reason=expected_failure,
-        )
-
-    marker_size_failure = _validate_marker_size(marker_size_m)
-    if marker_size_failure is not None:
-        return LivePairReadinessDiagnostics(
-            pairs=(),
-            connected_marker_ids=frozenset(),
-            missing_marker_ids=frozenset(),
-            sample_count=len(observations),
-            failure_reason=marker_size_failure,
         )
 
     camera_matrix, dist_coeffs, camera_failure = _validate_camera_inputs(
@@ -1423,14 +1548,15 @@ def _best_pair_consensus(
 def _classify_pair_readiness(
     edge: _PairConsensus | None,
     settings: CalibrationSettings,
-    marker_size_m: float,
+    marker_sizes_m: Mapping[int, float],
+    pair: MarkerPair,
 ) -> tuple[str, int, float | None, float | None]:
     robust_count = len(edge.inlier_frames) if edge is not None else 0
     if edge is None or robust_count < settings.min_inliers_per_edge:
         return "weak", robust_count, None, None
 
-    diagnostics = _edge_diagnostics((edge.marker_a, edge.marker_b), edge)
-    translation_gate = _pair_translation_gate(settings, marker_size_m)
+    diagnostics = _edge_diagnostics(pair, edge)
+    translation_gate = _pair_translation_gate(settings, marker_sizes_m, pair)
     rotation_gate = settings.pair_rotation_rms_gate_deg
     if (
         diagnostics.translation_rms_m <= translation_gate
@@ -1477,17 +1603,17 @@ def _estimate_pair_consensus(
     pair_hypotheses: dict[MarkerPair, list[tuple[np.ndarray, np.ndarray, int]]],
     expected_ids: list[int],
     reference_marker_id: int,
-    marker_size_m: float,
+    marker_sizes_m: Mapping[int, float],
     settings: CalibrationSettings,
     *,
     connectivity_ids: Sequence[int] | None = None,
 ) -> tuple[dict[MarkerPair, _PairConsensus], str | None, tuple[DroppedPairEdge, ...]]:
-    translation_gate = _pair_translation_gate(settings, marker_size_m)
     rotation_gate = settings.pair_rotation_rms_gate_deg
     consensus: dict[MarkerPair, _PairConsensus] = {}
     dropped: list[DroppedPairEdge] = []
 
     for pair, hypotheses in pair_hypotheses.items():
+        translation_gate = _pair_translation_gate(settings, marker_sizes_m, pair)
         unique_frames = {frame_index for _, _, frame_index in hypotheses}
         observed_count = len(unique_frames)
         if observed_count < settings.min_inliers_per_edge:
@@ -1526,6 +1652,7 @@ def _estimate_pair_consensus(
 
     filtered: dict[MarkerPair, _PairConsensus] = {}
     for pair, edge in consensus.items():
+        translation_gate = _pair_translation_gate(settings, marker_sizes_m, pair)
         diagnostics = _edge_diagnostics(pair, edge)
         if diagnostics.inlier_count < settings.min_inliers_per_edge:
             dropped.append(
@@ -1651,7 +1778,7 @@ def _assign_ippe_candidates(
     frame_candidates: list[tuple[int, dict[int, list[_MarkerCandidate]]]],
     pair_consensus: dict[MarkerPair, _PairConsensus],
     settings: CalibrationSettings,
-    marker_size_m: float,
+    marker_sizes_m: Mapping[int, float],
     *,
     search_marker_ids: frozenset[int] | None = None,
 ) -> tuple[
@@ -1667,7 +1794,7 @@ def _assign_ippe_candidates(
             candidates,
             pair_consensus,
             settings,
-            marker_size_m,
+            marker_sizes_m,
             search_marker_ids=search_marker_ids,
         )
         if result.assignment is None:
@@ -1685,7 +1812,7 @@ def resolve_frame_ippe_assignment(
     candidates: dict[int, list[_MarkerCandidate]],
     pair_consensus: dict[MarkerPair, _PairConsensus],
     settings: CalibrationSettings,
-    marker_size_m: float,
+    marker_sizes_m: Mapping[int, float],
     *,
     search_marker_ids: frozenset[int] | None = None,
 ) -> FrameAssignmentResult:
@@ -1698,7 +1825,7 @@ def resolve_frame_ippe_assignment(
             assignment=None,
             rejection=FrameAssignmentRejection(reason="insufficient_anchors_visible"),
         )
-    holder = _new_assignment_search_holder(settings, marker_size_m)
+    holder = _new_assignment_search_holder(settings, marker_sizes_m)
     _search_assignments(marker_ids, candidates, pair_consensus, {}, 0, holder)
     assignment = holder["assignment"]
     if assignment is not None:
@@ -1711,7 +1838,7 @@ def resolve_frame_ippe_assignment(
 
 def _new_assignment_search_holder(
     settings: CalibrationSettings,
-    marker_size_m: float,
+    marker_sizes_m: Mapping[int, float],
 ) -> dict[str, object]:
     return {
         "score": float("-inf"),
@@ -1723,7 +1850,9 @@ def _new_assignment_search_holder(
         "worst_rotation_error": 0.0,
         "worst_translation_fail": False,
         "worst_rotation_fail": False,
-        "translation_gate": _pair_translation_gate(settings, marker_size_m),
+        "worst_translation_gate": 0.0,
+        "marker_sizes_m": dict(marker_sizes_m),
+        "settings": settings,
         "rotation_gate": settings.pair_rotation_rms_gate_deg,
     }
 
@@ -1736,7 +1865,9 @@ def _rejection_from_assignment_search_holder(holder: dict[str, object]) -> Frame
     if worst_pair is None:
         return FrameAssignmentRejection(reason="no_constrained_pair")
 
-    translation_gate = float(holder["translation_gate"])
+    marker_sizes_m = holder["marker_sizes_m"]
+    assert isinstance(marker_sizes_m, dict)
+    translation_gate = float(holder.get("worst_translation_gate", 0.0))
     rotation_gate = float(holder["rotation_gate"])
     worst_translation_error = float(holder["worst_translation_error"])
     worst_rotation_error = float(holder["worst_rotation_error"])
@@ -1767,7 +1898,8 @@ def _evaluate_complete_assignment(
     assignment: dict[int, _MarkerCandidate],
     marker_ids: list[int],
     pair_consensus: dict[MarkerPair, _PairConsensus],
-    translation_gate: float,
+    marker_sizes_m: Mapping[int, float],
+    settings: CalibrationSettings,
     rotation_gate: float,
 ) -> tuple[
     float | None,
@@ -1778,6 +1910,7 @@ def _evaluate_complete_assignment(
     float,
     bool,
     bool,
+    float,
 ]:
     constrained_edges = 0
     total_cost = 0.0
@@ -1788,6 +1921,7 @@ def _evaluate_complete_assignment(
     worst_rotation_error = 0.0
     worst_translation_fail = False
     worst_rotation_fail = False
+    worst_translation_gate = 0.0
 
     for index_a, marker_low in enumerate(marker_ids):
         for marker_high in marker_ids[index_a + 1 :]:
@@ -1795,6 +1929,7 @@ def _evaluate_complete_assignment(
             edge = pair_consensus.get(pair)
             if edge is None:
                 continue
+            translation_gate = _pair_translation_gate(settings, marker_sizes_m, pair)
             constrained_edges += 1
             rotation_ba, translation_ba = _transform_high_in_low(
                 assignment[marker_low],
@@ -1818,6 +1953,7 @@ def _evaluate_complete_assignment(
                     worst_rotation_error = rotation_error
                     worst_translation_fail = translation_fail
                     worst_rotation_fail = rotation_fail
+                    worst_translation_gate = translation_gate
                 continue
             total_cost += (translation_error / translation_gate) ** 2 + (
                 rotation_error / rotation_gate
@@ -1833,6 +1969,7 @@ def _evaluate_complete_assignment(
             worst_rotation_error,
             worst_translation_fail,
             worst_rotation_fail,
+            worst_translation_gate,
         )
     return (
         -total_cost,
@@ -1843,6 +1980,7 @@ def _evaluate_complete_assignment(
         worst_rotation_error,
         worst_translation_fail,
         worst_rotation_fail,
+        worst_translation_gate,
     )
 
 
@@ -1855,6 +1993,7 @@ def _merge_assignment_violation_into_holder(
     worst_rotation_error: float,
     worst_translation_fail: bool,
     worst_rotation_fail: bool,
+    worst_translation_gate: float,
 ) -> None:
     if has_constrained_pair:
         holder["saw_constrained_pair"] = True
@@ -1868,6 +2007,7 @@ def _merge_assignment_violation_into_holder(
         holder["worst_rotation_error"] = worst_rotation_error
         holder["worst_translation_fail"] = worst_translation_fail
         holder["worst_rotation_fail"] = worst_rotation_fail
+        holder["worst_translation_gate"] = worst_translation_gate
 
 
 def summarize_assignment_rejections(
@@ -2106,14 +2246,14 @@ def _relative_pose_high_in_low(
 def _pair_consensus_from_assignment_hypotheses(
     pair_hypotheses: dict[MarkerPair, list[tuple[np.ndarray, np.ndarray, int]]],
     settings: CalibrationSettings,
-    marker_size_m: float,
+    marker_sizes_m: Mapping[int, float],
     *,
     marker_poses: dict[int, tuple[np.ndarray, np.ndarray]] | None = None,
 ) -> dict[MarkerPair, _PairConsensus]:
-    translation_gate = _pair_translation_gate(settings, marker_size_m)
     rotation_gate = settings.pair_rotation_rms_gate_deg
     consensus: dict[MarkerPair, _PairConsensus] = {}
     for pair, hypotheses in pair_hypotheses.items():
+        translation_gate = _pair_translation_gate(settings, marker_sizes_m, pair)
         edge = _best_pair_consensus(pair, hypotheses, translation_gate, rotation_gate)
         if edge is not None and len(edge.inlier_frames) >= settings.min_inliers_per_edge:
             diagnostics = _edge_diagnostics(pair, edge)
@@ -2231,14 +2371,13 @@ def _expand_markers_hierarchically(
     solved_ids: frozenset[int],
     expected_ids: list[int],
     settings: CalibrationSettings,
-    marker_size_m: float,
+    marker_sizes_m: Mapping[int, float],
 ) -> tuple[
     dict[int, tuple[np.ndarray, np.ndarray]],
     dict[int, dict[int, _MarkerCandidate]],
     tuple[MarkerExpansionRecord, ...],
     frozenset[int],
 ]:
-    translation_gate = _pair_translation_gate(settings, marker_size_m)
     rotation_gate = settings.pair_rotation_rms_gate_deg
     poses = dict(marker_poses)
     assignments = {
@@ -2293,6 +2432,11 @@ def _expand_markers_hierarchically(
                     )
             if not hypotheses:
                 continue
+            translation_gate = _pair_translation_gate(
+                settings,
+                marker_sizes_m,
+                (marker_id, marker_id),
+            )
             relative_hypotheses = [
                 (hypothesis.rotation, hypothesis.translation, hypothesis.frame_index)
                 for hypothesis in hypotheses
@@ -2395,9 +2539,9 @@ def _assign_and_initialize_anchor_core(
     expected_ids: list[int],
     anchor_ids: tuple[int, ...],
     reference_marker_id: int,
-    marker_size_m: float,
+    marker_sizes_m: Mapping[int, float],
     settings: CalibrationSettings,
-    object_points: np.ndarray,
+    object_points_by_marker: dict[int, np.ndarray],
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
     *,
@@ -2419,7 +2563,7 @@ def _assign_and_initialize_anchor_core(
         anchor_hypotheses,
         expected_ids,
         reference_marker_id,
-        marker_size_m,
+        marker_sizes_m,
         settings,
         connectivity_ids=anchor_ids,
     )
@@ -2447,7 +2591,7 @@ def _assign_and_initialize_anchor_core(
         frame_candidates,
         anchor_consensus,
         settings,
-        marker_size_m,
+        marker_sizes_m,
         search_marker_ids=anchor_set,
     )
     accepted_frames = frozenset(assigned_candidates)
@@ -2477,7 +2621,7 @@ def _assign_and_initialize_anchor_core(
             "No frames with assignable anchor IPPE candidates remain after bootstrap.",
         )
 
-    ref_rotation, ref_translation = _reference_gauge_pose(marker_size_m)
+    ref_rotation, ref_translation = _reference_gauge_pose(marker_sizes_m[reference_marker_id])
     marker_poses = _initialize_marker_poses(
         reference_marker_id,
         ref_rotation,
@@ -2505,7 +2649,7 @@ def _assign_and_initialize_anchor_core(
         frame_poses,
         reference_marker_id,
         non_reference_anchors,
-        object_points,
+        object_points_by_marker,
         camera_matrix,
         dist_coeffs,
         settings,
@@ -2543,7 +2687,7 @@ def _assign_and_initialize_anchor_core(
         anchor_set,
         expected_ids,
         settings,
-        marker_size_m,
+        marker_sizes_m,
     )
     if unresolved:
         anchor_core = AnchorCoreDiagnostics(
@@ -2574,7 +2718,7 @@ def _assign_and_initialize_anchor_core(
         pair_consensus = _pair_consensus_from_assignment_hypotheses(
             _collect_assignment_pair_hypotheses(assignments, expected_set),
             settings,
-            marker_size_m,
+            marker_sizes_m,
             marker_poses=marker_poses,
         )
         anchor_core = AnchorCoreDiagnostics(
@@ -2608,7 +2752,7 @@ def _assign_and_initialize_anchor_core(
         seed_hypotheses,
         expected_ids,
         reference_marker_id,
-        marker_size_m,
+        marker_sizes_m,
         settings,
     )
     dropped_edges.extend(seed_drops)
@@ -2616,7 +2760,7 @@ def _assign_and_initialize_anchor_core(
         seed_consensus = _pair_consensus_from_assignment_hypotheses(
             _collect_assignment_pair_hypotheses(assignments, expected_set),
             settings,
-            marker_size_m,
+            marker_sizes_m,
             marker_poses=marker_poses,
         )
 
@@ -2624,7 +2768,7 @@ def _assign_and_initialize_anchor_core(
         frame_candidates,
         seed_consensus,
         settings,
-        marker_size_m,
+        marker_sizes_m,
         search_marker_ids=expected_set,
     )
 
@@ -2634,7 +2778,7 @@ def _assign_and_initialize_anchor_core(
         frozen_hypotheses,
         expected_ids,
         reference_marker_id,
-        marker_size_m,
+        marker_sizes_m,
         settings,
     )
     dropped_edges.extend(post_drops)
@@ -2642,7 +2786,7 @@ def _assign_and_initialize_anchor_core(
         pair_consensus = _pair_consensus_from_assignment_hypotheses(
             _collect_assignment_pair_hypotheses(assignments, expected_set),
             settings,
-            marker_size_m,
+            marker_sizes_m,
             marker_poses=marker_poses,
         )
         connected = _connected_marker_ids(pair_consensus, reference_marker_id)
@@ -2705,13 +2849,13 @@ def _restrict_pair_consensus_to_frames(
     reference_marker_id: int,
     settings: CalibrationSettings,
     *,
-    marker_size_m: float,
+    marker_sizes_m: Mapping[int, float],
 ) -> tuple[dict[MarkerPair, _PairConsensus], str | None, tuple[DroppedPairEdge, ...]]:
-    translation_gate = _pair_translation_gate(settings, marker_size_m)
     rotation_gate = settings.pair_rotation_rms_gate_deg
     updated: dict[MarkerPair, _PairConsensus] = {}
     dropped: list[DroppedPairEdge] = []
     for pair, edge in pair_consensus.items():
+        translation_gate = _pair_translation_gate(settings, marker_sizes_m, pair)
         supported_frames = tuple(
             sorted(frame_index for frame_index in edge.inlier_frames if frame_index in allowed_frames)
         )
@@ -2808,11 +2952,13 @@ def _search_assignments(
             worst_rotation_error,
             worst_translation_fail,
             worst_rotation_fail,
+            worst_translation_gate,
         ) = _evaluate_complete_assignment(
             current,
             marker_ids,
             pair_consensus,
-            float(holder["translation_gate"]),
+            holder["marker_sizes_m"],  # type: ignore[arg-type]
+            holder["settings"],  # type: ignore[arg-type]
             float(holder["rotation_gate"]),
         )
         _merge_assignment_violation_into_holder(
@@ -2824,6 +2970,7 @@ def _search_assignments(
             worst_rotation_error,
             worst_translation_fail,
             worst_rotation_fail,
+            worst_translation_gate,
         )
         if score is not None and score > float(holder["score"]):
             holder["score"] = score
@@ -2961,7 +3108,7 @@ def _run_bundle_adjustment(
     frame_poses: list[tuple[np.ndarray, np.ndarray] | None],
     reference_marker_id: int,
     non_reference_ids: list[int],
-    object_points: np.ndarray,
+    object_points_by_marker: dict[int, np.ndarray],
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
     settings: CalibrationSettings,
@@ -3017,9 +3164,10 @@ def _run_bundle_adjustment(
                 continue
             projected = _project_corner(
                 observation.corner_index,
+                observation.marker_id,
                 marker_pose,
                 frame_pose,
-                object_points,
+                object_points_by_marker,
                 camera_matrix,
                 dist_coeffs,
             )
@@ -3063,7 +3211,7 @@ def _run_bundle_adjustment(
         inlier_mask,
         marker_poses,
         frame_poses,
-        object_points,
+        object_points_by_marker,
     )
     if depth_failure is not None:
         return marker_poses, frame_poses, inlier_mask, depth_failure
@@ -3080,11 +3228,11 @@ def _prune_and_refit(
     expected_ids: list[int],
     pair_consensus: dict[MarkerPair, _PairConsensus],
     accepted_frames: frozenset[int],
-    object_points: np.ndarray,
+    object_points_by_marker: dict[int, np.ndarray],
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
     settings: CalibrationSettings,
-    marker_size_m: float,
+    marker_sizes_m: Mapping[int, float],
 ) -> tuple[
     dict[int, tuple[np.ndarray, np.ndarray]],
     list[tuple[np.ndarray, np.ndarray] | None],
@@ -3098,7 +3246,7 @@ def _prune_and_refit(
         inlier_mask,
         marker_poses,
         frame_poses,
-        object_points,
+        object_points_by_marker,
         camera_matrix,
         dist_coeffs,
     )
@@ -3119,7 +3267,7 @@ def _prune_and_refit(
         reference_marker_id,
         settings,
         allowed_frames=remaining_frames,
-        marker_size_m=marker_size_m,
+        marker_sizes_m=marker_sizes_m,
     )
     if support_failure is not None:
         return marker_poses, frame_poses, pruned, updated_consensus, support_failure, dropped_edges
@@ -3131,7 +3279,7 @@ def _prune_and_refit(
         frame_poses,
         reference_marker_id,
         non_reference_ids,
-        object_points,
+        object_points_by_marker,
         camera_matrix,
         dist_coeffs,
         settings,
@@ -3189,14 +3337,14 @@ def _recheck_pair_support(
     settings: CalibrationSettings,
     allowed_frames: frozenset[int] | None = None,
     *,
-    marker_size_m: float,
+    marker_sizes_m: Mapping[int, float],
 ) -> tuple[dict[MarkerPair, _PairConsensus], str | None, tuple[DroppedPairEdge, ...]]:
-    translation_gate = _pair_translation_gate(settings, marker_size_m)
     rotation_gate = settings.pair_rotation_rms_gate_deg
     complete = _complete_markers_per_frame(corner_observations, inlier_mask)
     updated: dict[MarkerPair, _PairConsensus] = {}
     dropped: list[DroppedPairEdge] = []
     for pair, edge in pair_consensus.items():
+        translation_gate = _pair_translation_gate(settings, marker_sizes_m, pair)
         marker_low, marker_high = pair
         supported_frames = tuple(
             sorted(
@@ -3277,7 +3425,7 @@ def _positive_depth_failure(
     inlier_mask: np.ndarray,
     marker_poses: dict[int, tuple[np.ndarray, np.ndarray]],
     frame_poses: list[tuple[np.ndarray, np.ndarray] | None],
-    object_points: np.ndarray,
+    object_points_by_marker: dict[int, np.ndarray],
     min_depth_m: float = 1e-4,
 ) -> str | None:
     for observation, keep in zip(corner_observations, inlier_mask, strict=True):
@@ -3289,6 +3437,7 @@ def _positive_depth_failure(
             return "Bundle adjustment produced a frame or marker pose with missing state."
         marker_rotation, marker_translation = marker_pose
         frame_rotation, frame_translation = frame_pose
+        object_points = object_points_by_marker[observation.marker_id]
         point_layout = marker_rotation @ object_points[observation.corner_index] + marker_translation
         point_camera = frame_rotation @ point_layout + frame_translation
         if not np.all(np.isfinite(point_camera)) or float(point_camera[2]) <= min_depth_m:
@@ -3353,14 +3502,16 @@ def _unpack_parameters(
 
 def _project_corner(
     corner_index: int,
+    marker_id: int,
     marker_pose: tuple[np.ndarray, np.ndarray],
     frame_pose: tuple[np.ndarray, np.ndarray],
-    object_points: np.ndarray,
+    object_points_by_marker: dict[int, np.ndarray],
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> np.ndarray:
     marker_rotation, marker_translation = marker_pose
     frame_rotation, frame_translation = frame_pose
+    object_points = object_points_by_marker[marker_id]
     point_layout = marker_rotation @ object_points[corner_index] + marker_translation
     point_camera = frame_rotation @ point_layout + frame_translation
     projected, _ = cv2.projectPoints(
@@ -3378,7 +3529,7 @@ def _corner_errors(
     inlier_mask: np.ndarray,
     marker_poses: dict[int, tuple[np.ndarray, np.ndarray]],
     frame_poses: list[tuple[np.ndarray, np.ndarray] | None],
-    object_points: np.ndarray,
+    object_points_by_marker: dict[int, np.ndarray],
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> np.ndarray:
@@ -3394,9 +3545,10 @@ def _corner_errors(
             continue
         projected = _project_corner(
             observation.corner_index,
+            observation.marker_id,
             marker_pose,
             frame_pose,
-            object_points,
+            object_points_by_marker,
             camera_matrix,
             dist_coeffs,
         )
@@ -3406,11 +3558,12 @@ def _corner_errors(
 
 def _footprints_from_poses(
     marker_poses: dict[int, tuple[np.ndarray, np.ndarray]],
-    marker_size_m: float,
+    marker_sizes_m: Mapping[int, float],
 ) -> dict[int, MarkerFootprint]:
-    object_points = marker_corner_object_points(marker_size_m)
+    object_points_by_marker = _object_points_by_marker(marker_sizes_m)
     footprints: dict[int, MarkerFootprint] = {}
     for marker_id, (rotation, translation) in marker_poses.items():
+        object_points = object_points_by_marker[marker_id]
         payload = {}
         for corner_index, corner_name in enumerate(CORNER_NAMES):
             point = rotation @ object_points[corner_index] + translation
@@ -3450,7 +3603,7 @@ def _build_quality_report(
     input_frame_count: int,
     rejected_frame_count: int,
     accepted_frame_count: int,
-    object_points: np.ndarray,
+    object_points_by_marker: dict[int, np.ndarray],
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
     assignment_rejections: AssignmentRejectionSummary | None = None,
@@ -3463,7 +3616,7 @@ def _build_quality_report(
         inlier_mask,
         marker_poses,
         frame_poses,
-        object_points,
+        object_points_by_marker,
         camera_matrix,
         dist_coeffs,
     )
@@ -3510,7 +3663,7 @@ def _build_quality_report(
 def _check_quality_gates(
     quality: CalibrationQualityReport,
     settings: CalibrationSettings,
-    marker_size_m: float,
+    marker_sizes_m: Mapping[int, float],
     expected_ids: list[int],
 ) -> str | None:
     if quality.reprojection_rms_px > settings.reprojection_rms_gate_px:
@@ -3527,12 +3680,14 @@ def _check_quality_gates(
                 f"Marker {marker_id} reprojection RMS {marker_rms:.3f} px exceeds "
                 f"{settings.reprojection_rms_gate_px:.3f} px gate."
             )
-    translation_gate = settings.pair_translation_rms_gate_ratio * marker_size_m
-    if quality.pair_translation_rms_max_m > translation_gate:
-        return (
-            f"Pair translation RMS {quality.pair_translation_rms_max_m:.4f} m exceeds "
-            f"{translation_gate:.4f} m gate."
-        )
+    for edge in quality.edges:
+        pair = (edge.marker_a, edge.marker_b)
+        translation_gate = _pair_translation_gate(settings, marker_sizes_m, pair)
+        if edge.translation_rms_m > translation_gate:
+            return (
+                f"Pair ({pair[0]},{pair[1]}) translation RMS {edge.translation_rms_m:.4f} m exceeds "
+                f"{translation_gate:.4f} m gate."
+            )
     if quality.pair_rotation_rms_max_deg > settings.pair_rotation_rms_gate_deg:
         return (
             f"Pair rotation RMS {quality.pair_rotation_rms_max_deg:.2f} deg exceeds "

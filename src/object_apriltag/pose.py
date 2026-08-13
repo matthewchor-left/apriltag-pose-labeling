@@ -5,9 +5,20 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from object_apriltag.layout import MarkerLayout, OBJECT_AXIS_FLIP, layout_point_to_camera, object_reference_origin
+from object_apriltag.layout import (
+    MarkerLayout,
+    OBJECT_AXIS_FLIP,
+    layout_point_to_camera,
+    layout_point_to_object_frame,
+    object_reference_origin,
+)
 
 Detection = tuple[np.ndarray, int]
+PoseTuple = tuple[np.ndarray, np.ndarray]
+
+GLOBAL_PNP_REPROJECTION_ERROR_PX = 3.0
+GLOBAL_PNP_ITERATIONS = 100
+GLOBAL_PNP_CONFIDENCE = 0.99
 
 # object_model.json uses +X left→right and +Z out of the rubber surface.
 
@@ -50,6 +61,39 @@ def estimate_marker_pose(
     return rvec, tvec
 
 
+def _marker_pose_candidates(
+    corners: np.ndarray,
+    marker_size_m: float,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+) -> list[tuple[np.ndarray, np.ndarray, float]]:
+    object_points = marker_corner_object_points(marker_size_m)
+    image_points = corners.reshape(4, 2).astype(np.float32)
+    ok, rvecs, tvecs, reprojection_errors = cv2.solvePnPGeneric(
+        object_points,
+        image_points,
+        camera_matrix,
+        dist_coeffs,
+        flags=cv2.SOLVEPNP_IPPE,
+    )
+    if not ok or rvecs is None or tvecs is None:
+        return []
+    raw_errors = (
+        np.asarray(reprojection_errors, dtype=np.float64).reshape(-1)
+        if reprojection_errors is not None
+        else np.full(len(rvecs), np.inf, dtype=np.float64)
+    )
+    candidates = [
+        (
+            np.asarray(rvec, dtype=np.float64).reshape(3, 1),
+            np.asarray(tvec, dtype=np.float64).reshape(3, 1),
+            float(raw_errors[index]),
+        )
+        for index, (rvec, tvec) in enumerate(zip(rvecs, tvecs, strict=True))
+    ]
+    return sorted(candidates, key=lambda candidate: candidate[2])
+
+
 def marker_reprojection_error(
     corners: np.ndarray,
     marker_size_m: float,
@@ -65,15 +109,16 @@ def marker_reprojection_error(
 
 def mean_reprojection_error(
     detections: list[Detection],
-    marker_size_m: float,
+    layout: MarkerLayout,
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> float | None:
     errors: list[float] = []
-    for corners, _ in detections:
+    for corners, marker_id in detections:
         try:
+            marker_size_m = layout.marker_size_for(marker_id)
             errors.append(marker_reprojection_error(corners, marker_size_m, camera_matrix, dist_coeffs))
-        except RuntimeError:
+        except (RuntimeError, KeyError):
             continue
     return float(np.mean(errors)) if errors else None
 
@@ -207,37 +252,169 @@ def object_pose_from_marker_pose(
 def object_pose_from_marker(
     corners: np.ndarray,
     marker_id: int,
-    marker_size_m: float,
+    layout: MarkerLayout,
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
-    layout: MarkerLayout,
 ) -> tuple[np.ndarray, np.ndarray]:
+    marker_size_m = layout.marker_size_for(marker_id)
     rvec, tvec = estimate_marker_pose(corners, marker_size_m, camera_matrix, dist_coeffs)
     return object_pose_from_marker_pose(rvec, tvec, marker_id, layout)
+
+
+def _global_pose_correspondences(
+    detections: list[Detection],
+    layout: MarkerLayout,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    object_points: list[np.ndarray] = []
+    image_points: list[np.ndarray] = []
+    marker_ids: list[int] = []
+    for corners, marker_id in detections:
+        footprint = layout.footprints.get(marker_id)
+        if footprint is None:
+            continue
+        detected = np.asarray(corners, dtype=np.float64).reshape(4, 2)
+        if not np.all(np.isfinite(detected)):
+            continue
+        for point_layout, point_image in zip(
+            footprint.corners(), detected, strict=True
+        ):
+            object_points.append(layout_point_to_object_frame(point_layout, layout))
+            image_points.append(point_image)
+            marker_ids.append(marker_id)
+    return (
+        np.asarray(object_points, dtype=np.float64).reshape(-1, 3),
+        np.asarray(image_points, dtype=np.float64).reshape(-1, 2),
+        np.asarray(marker_ids, dtype=np.int32),
+    )
+
+
+def _estimate_global_layout_pose(
+    detections: list[Detection],
+    layout: MarkerLayout,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+) -> PoseTuple | None:
+    object_points, image_points, marker_ids = _global_pose_correspondences(
+        detections, layout
+    )
+    if len(set(marker_ids.tolist())) < 2:
+        return None
+    try:
+        ok, rvec, tvec, inliers = cv2.solvePnPRansac(
+            object_points,
+            image_points,
+            camera_matrix,
+            dist_coeffs,
+            iterationsCount=GLOBAL_PNP_ITERATIONS,
+            reprojectionError=GLOBAL_PNP_REPROJECTION_ERROR_PX,
+            confidence=GLOBAL_PNP_CONFIDENCE,
+            flags=cv2.SOLVEPNP_SQPNP,
+        )
+    except cv2.error:
+        return None
+    if not ok or inliers is None:
+        return None
+
+    inlier_indices = np.asarray(inliers, dtype=np.int32).reshape(-1)
+    if len(set(marker_ids[inlier_indices].tolist())) < 2:
+        return None
+    try:
+        rvec, tvec = cv2.solvePnPRefineLM(
+            object_points[inlier_indices],
+            image_points[inlier_indices],
+            camera_matrix,
+            dist_coeffs,
+            rvec,
+            tvec,
+        )
+    except cv2.error:
+        return None
+
+    rotation, _ = cv2.Rodrigues(rvec)
+    origin = np.asarray(tvec, dtype=np.float64).reshape(3)
+    camera_points = (
+        np.asarray(rotation, dtype=np.float64)
+        @ object_points[inlier_indices].T
+    ).T + origin
+    if (
+        not np.all(np.isfinite(rotation))
+        or not np.all(np.isfinite(origin))
+        or np.any(camera_points[:, 2] <= 0.0)
+    ):
+        return None
+    return origin, np.asarray(rotation, dtype=np.float64)
+
+
+def _rotation_distance_rad(rotation_a: np.ndarray, rotation_b: np.ndarray) -> float:
+    relative = rotation_a @ rotation_b.T
+    cosine = np.clip((np.trace(relative) - 1.0) / 2.0, -1.0, 1.0)
+    return float(np.arccos(cosine))
+
+
+def _estimate_best_marker_pose(
+    detections: list[Detection],
+    layout: MarkerLayout,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+    previous_pose: PoseTuple | None,
+) -> PoseTuple | None:
+    candidates: list[tuple[np.ndarray, np.ndarray, float, float]] = []
+    for corners, marker_id in detections:
+        if marker_id not in layout.transforms:
+            continue
+        marker_size_m = layout.marker_size_for(marker_id)
+        for rvec, tvec, reprojection_error in _marker_pose_candidates(
+            corners, marker_size_m, camera_matrix, dist_coeffs
+        ):
+            try:
+                rotation, origin = object_pose_from_marker_pose(
+                    rvec, tvec, marker_id, layout
+                )
+            except (RuntimeError, KeyError):
+                continue
+            temporal_cost = 0.0
+            if previous_pose is not None:
+                previous_origin, previous_rotation = previous_pose
+                temporal_cost = (
+                    np.linalg.norm(origin - previous_origin)
+                    / max(marker_size_m, 1e-9)
+                    + _rotation_distance_rad(rotation, previous_rotation)
+                )
+            candidates.append(
+                (origin, rotation, temporal_cost, reprojection_error)
+            )
+    if not candidates:
+        return None
+    if previous_pose is None:
+        origin, rotation, _, _ = min(
+            candidates, key=lambda candidate: candidate[3]
+        )
+    else:
+        origin, rotation, _, _ = min(
+            candidates, key=lambda candidate: (candidate[2], candidate[3])
+        )
+    return origin, rotation
 
 
 def estimate_fused_pose(
     detections: list[Detection],
     layout: MarkerLayout,
-    marker_size_m: float,
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
+    previous_pose: PoseTuple | None = None,
 ) -> tuple[np.ndarray | None, np.ndarray | None]:
-    origins: list[np.ndarray] = []
-    rotations: list[np.ndarray] = []
-
-    for corners, marker_id in detections:
-        try:
-            object_rotation, object_origin = object_pose_from_marker(
-                corners, marker_id, marker_size_m, camera_matrix, dist_coeffs, layout
-            )
-            origins.append(object_origin)
-            rotations.append(object_rotation)
-        except (RuntimeError, KeyError):
-            continue
-
-    if not origins:
+    """Estimate one layout-wide object pose, with temporal single-marker fallback."""
+    pose = _estimate_global_layout_pose(
+        detections, layout, camera_matrix, dist_coeffs
+    )
+    if pose is None:
+        pose = _estimate_best_marker_pose(
+            detections,
+            layout,
+            camera_matrix,
+            dist_coeffs,
+            previous_pose,
+        )
+    if pose is None:
         return None, None
-    fused_origin = np.mean(np.stack(origins, axis=0), axis=0)
-    fused_rotation = fuse_rotations(rotations)
-    return fused_origin, fused_rotation
+    return pose

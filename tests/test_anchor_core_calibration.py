@@ -23,6 +23,7 @@ from tests.test_marker_layout_calibration import (
     _chain_marker_poses,
     _default_camera,
     _ground_truth_footprints,
+    _uniform_marker_sizes,
     _pair_poses,
     synthesize_observations,
 )
@@ -97,7 +98,7 @@ class AnchorAssignmentComplexityTests(unittest.TestCase):
                 candidates,
                 pair_consensus,
                 settings,
-                0.07,
+                _uniform_marker_sizes(range(6), 0.07),
                 search_marker_ids=frozenset(range(6)),
             )
         self.assertEqual(evaluation_count, 64)

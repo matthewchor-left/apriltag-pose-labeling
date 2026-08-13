@@ -73,12 +73,16 @@ class MarkerLayout:
     reference_marker_id: int
     units: str
     marker_size_m: float
+    marker_sizes_m: dict[int, float]
     footprints: dict[int, MarkerFootprint]
     transforms: dict[int, MarkerToObject]
 
     @property
     def marker_ids(self) -> set[int]:
         return set(self.footprints)
+
+    def marker_size_for(self, marker_id: int) -> float:
+        return self.marker_sizes_m[marker_id]
 
 
 def _as_point3(value: Any, field_name: str) -> np.ndarray:
@@ -224,14 +228,40 @@ def footprint_to_dict(footprint: MarkerFootprint) -> dict[str, list[float]]:
 
 
 def marker_layout_to_dict(layout: MarkerLayout) -> dict[str, Any]:
+    markers: dict[str, Any] = {}
+    for marker_id, footprint in sorted(layout.footprints.items()):
+        payload = footprint_to_dict(footprint)
+        size_m = layout.marker_sizes_m[marker_id]
+        if size_m != layout.marker_size_m:
+            payload["size_m"] = size_m
+        markers[str(marker_id)] = payload
     return {
         "reference_marker_id": layout.reference_marker_id,
         "units": layout.units,
         "marker_size_m": layout.marker_size_m,
-        "markers": {
-            str(marker_id): footprint_to_dict(footprint)
-            for marker_id, footprint in sorted(layout.footprints.items())
-        },
+        "markers": markers,
+    }
+
+
+def resolve_marker_sizes(
+    marker_ids: set[int] | frozenset[int],
+    default_size_m: float,
+    overrides: dict[int, float] | None = None,
+) -> dict[int, float]:
+    if default_size_m <= 0.0 or not np.isfinite(default_size_m):
+        raise ValueError(f"marker_size_m must be positive and finite, got {default_size_m}.")
+    overrides = overrides or {}
+    unknown = sorted(set(overrides) - set(marker_ids))
+    if unknown:
+        raise ValueError(f"marker size overrides are not subset of markers; extra {unknown}.")
+    for marker_id, size in overrides.items():
+        if size <= 0.0 or not np.isfinite(size):
+            raise ValueError(
+                f"markers.{marker_id}.size_m must be positive and finite, got {size}."
+            )
+    return {
+        marker_id: float(overrides.get(marker_id, default_size_m))
+        for marker_id in marker_ids
     }
 
 
@@ -240,13 +270,27 @@ def build_marker_layout(
     marker_size_m: float,
     footprints: dict[int, MarkerFootprint],
     units: str = "meters",
+    marker_sizes_m: dict[int, float] | None = None,
 ) -> MarkerLayout:
-    validate_all_footprint_sizes(footprints, marker_size_m)
+    footprint_ids = set(footprints)
+    if marker_sizes_m is None:
+        resolved_sizes = resolve_marker_sizes(footprint_ids, marker_size_m)
+    else:
+        size_ids = set(marker_sizes_m)
+        if size_ids != footprint_ids:
+            missing = sorted(footprint_ids - size_ids)
+            extra = sorted(size_ids - footprint_ids)
+            if missing:
+                raise ValueError(f"marker_sizes_m missing footprint marker IDs: {missing}.")
+            raise ValueError(f"marker_sizes_m contains unexpected marker IDs: {extra}.")
+        resolved_sizes = dict(marker_sizes_m)
+    validate_all_footprint_sizes(footprints, resolved_sizes)
     transforms = derive_marker_to_object_transforms(footprints, reference_marker_id)
     return MarkerLayout(
         reference_marker_id=reference_marker_id,
         units=units,
         marker_size_m=marker_size_m,
+        marker_sizes_m=resolved_sizes,
         footprints=footprints,
         transforms=transforms,
     )
@@ -284,23 +328,38 @@ def load_marker_model(path: str | Path) -> MarkerLayout:
     if "marker_size_m" not in data:
         raise ValueError("Marker model must include 'marker_size_m'.")
     marker_size_m = float(data["marker_size_m"])
-    if marker_size_m <= 0.0:
-        raise ValueError(f"marker_size_m must be positive, got {marker_size_m}.")
+    if marker_size_m <= 0.0 or not np.isfinite(marker_size_m):
+        raise ValueError(
+            f"marker_size_m must be positive and finite, got {marker_size_m}."
+        )
 
     markers_raw = data.get("markers")
     if not isinstance(markers_raw, dict) or not markers_raw:
         raise ValueError("Marker model must contain a non-empty 'markers' object.")
 
-    footprints = {
-        int(marker_id): footprint_from_dict(int(marker_id), payload)
-        for marker_id, payload in markers_raw.items()
-    }
-    validate_all_footprint_sizes(footprints, marker_size_m)
+    size_overrides: dict[int, float] = {}
+    footprints: dict[int, MarkerFootprint] = {}
+    for marker_id_text, payload in markers_raw.items():
+        if not isinstance(payload, dict):
+            raise ValueError(f"markers.{marker_id_text} must be an object.")
+        marker_id = int(marker_id_text)
+        footprint_payload = {key: value for key, value in payload.items() if key != "size_m"}
+        if "size_m" in payload:
+            size_m = float(payload["size_m"])
+            if size_m <= 0.0 or not np.isfinite(size_m):
+                raise ValueError(
+                    f"markers.{marker_id}.size_m must be positive and finite, got {size_m}."
+                )
+            size_overrides[marker_id] = size_m
+        footprints[marker_id] = footprint_from_dict(marker_id, footprint_payload)
+    marker_sizes_m = resolve_marker_sizes(set(footprints), marker_size_m, size_overrides)
+    validate_all_footprint_sizes(footprints, marker_sizes_m)
     transforms = derive_marker_to_object_transforms(footprints, reference_marker_id)
     return MarkerLayout(
         reference_marker_id=reference_marker_id,
         units=units,
         marker_size_m=marker_size_m,
+        marker_sizes_m=marker_sizes_m,
         footprints=footprints,
         transforms=transforms,
     )
@@ -324,11 +383,18 @@ def validate_footprint_size(
 
 def validate_all_footprint_sizes(
     footprints: dict[int, MarkerFootprint],
-    marker_size_m: float,
+    marker_sizes_m: float | dict[int, float],
     tolerance: float = 1e-4,
 ) -> None:
+    if isinstance(marker_sizes_m, (int, float)):
+        expected_by_id = {footprint.marker_id: float(marker_sizes_m) for footprint in footprints.values()}
+    else:
+        expected_by_id = marker_sizes_m
     for footprint in footprints.values():
-        validate_footprint_size(footprint, marker_size_m, tolerance=tolerance)
+        marker_id = footprint.marker_id
+        if marker_id not in expected_by_id:
+            raise ValueError(f"marker_sizes_m missing footprint marker ID {marker_id}.")
+        validate_footprint_size(footprint, expected_by_id[marker_id], tolerance=tolerance)
 
 
 def layout_axis_limits(

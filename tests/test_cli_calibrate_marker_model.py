@@ -74,13 +74,14 @@ class CliHelpTests(unittest.TestCase):
     def test_calibrate_marker_model_help_lists_controls_and_sampling(self) -> None:
         help_text = _run_cli_help("object-calibrate-marker-model")
         self.assertIn("--marker-ids", help_text)
+        self.assertIn("--marker-size-for", help_text)
         self.assertIn("--anchor-marker-ids", help_text)
         self.assertIn("--anchor-stop-after-expansion", help_text)
-        self.assertIn("--sample-rate-hz", help_text)
+        self.assertNotIn("--sample-rate-hz", help_text)
         self.assertIn("--diagnostics-output", help_text)
+        self.assertIn("C  capture", help_text)
         self.assertIn("S  solve", help_text)
         self.assertIn("Q  quit", help_text)
-        self.assertIn("2 Hz", help_text) if "2 Hz" in help_text else self.assertIn("sample-rate-hz", help_text)
 
     def test_inspect_marker_model_help_lists_visualize_option(self) -> None:
         help_text = _run_cli_help("object-inspect-marker-model")
@@ -114,6 +115,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 diagnostics_output=None,
                 anchor_marker_ids=None,
                 anchor_stop_after_expansion=False,
+                marker_size_for=None,
             )
             with self.assertRaises(RuntimeError) as ctx:
                 validate_args(args)
@@ -140,6 +142,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 diagnostics_output=None,
                 anchor_marker_ids=None,
                 anchor_stop_after_expansion=False,
+                marker_size_for=None,
             )
             with self.assertRaises(RuntimeError) as ctx:
                 validate_args(args)
@@ -166,8 +169,9 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 diagnostics_output=None,
                 anchor_marker_ids=["0", "3-4"],
                 anchor_stop_after_expansion=False,
+                marker_size_for=None,
             )
-            expected_ids, _, anchor_ids, stop_after = validate_args(args)
+            expected_ids, marker_sizes_m, _, anchor_ids, stop_after = validate_args(args)
             self.assertEqual(expected_ids, [0, 1, 3, 4, 5])
             self.assertEqual(anchor_ids, (0, 3, 4))
             self.assertFalse(stop_after)
@@ -193,10 +197,67 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 diagnostics_output=None,
                 anchor_marker_ids=["1", "2"],
                 anchor_stop_after_expansion=False,
+                marker_size_for=None,
             )
             with self.assertRaises(RuntimeError) as ctx:
                 validate_args(args)
             self.assertIn("reference_marker_id", str(ctx.exception))
+
+    def test_marker_size_for_resolves_overrides(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import validate_args
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            calibration = Path(tmp_dir) / "intrinsics.json"
+            _write_intrinsics(calibration)
+            args = mock.Mock(
+                calibration=calibration,
+                output=Path(tmp_dir) / "out.json",
+                force=True,
+                marker_ids=["0", "1", "4", "10", "11"],
+                reference_marker_id=0,
+                marker_size=0.07,
+                marker_size_for=["4:0.03", "10-11:0.025"],
+                sample_rate_hz=2.0,
+                min_pair_inliers=20,
+                reprojection_rms_gate_px=2.0,
+                pair_translation_rms_gate_ratio=0.10,
+                pair_rotation_rms_gate_deg=5.0,
+                diagnostics_output=None,
+                anchor_marker_ids=None,
+                anchor_stop_after_expansion=False,
+            )
+            expected_ids, marker_sizes_m, _, _, _ = validate_args(args)
+            self.assertEqual(expected_ids, [0, 1, 4, 10, 11])
+            self.assertEqual(marker_sizes_m[4], 0.03)
+            self.assertEqual(marker_sizes_m[10], 0.025)
+            self.assertEqual(marker_sizes_m[0], 0.07)
+
+    def test_marker_size_for_accepts_repeatable_flag_groups(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import validate_args
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            calibration = Path(tmp_dir) / "intrinsics.json"
+            _write_intrinsics(calibration)
+            args = mock.Mock(
+                calibration=calibration,
+                output=Path(tmp_dir) / "out.json",
+                force=True,
+                marker_ids=["0", "1", "4", "10", "11"],
+                reference_marker_id=0,
+                marker_size=0.07,
+                marker_size_for=[["4:0.03"], ["10-11:0.025"]],
+                sample_rate_hz=2.0,
+                min_pair_inliers=20,
+                reprojection_rms_gate_px=2.0,
+                pair_translation_rms_gate_ratio=0.10,
+                pair_rotation_rms_gate_deg=5.0,
+                diagnostics_output=None,
+                anchor_marker_ids=None,
+                anchor_stop_after_expansion=False,
+            )
+            _, marker_sizes_m, _, _, _ = validate_args(args)
+            self.assertEqual(marker_sizes_m[4], 0.03)
+            self.assertEqual(marker_sizes_m[11], 0.025)
 
     def test_anchor_stop_after_expansion_requires_anchor_marker_ids(self) -> None:
         from object_apriltag.cli.calibrate_marker_model import validate_args
@@ -264,6 +325,7 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
                 diagnostics_output=diagnostics_output,
                 anchor_marker_ids=None,
                 anchor_stop_after_expansion=False,
+                marker_size_for=None,
             )
 
             frame = np.zeros((height, width, 3), dtype=np.uint8)
@@ -283,14 +345,6 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
                 return corners, ids, None
 
             detector.detectMarkers.side_effect = detect_markers
-
-            monotonic_iter = iter(monotonic_values)
-
-            def monotonic_side_effect() -> float:
-                try:
-                    return next(monotonic_iter)
-                except StopIteration:
-                    return monotonic_values[-1] + 1.0
 
             wait_iter = iter(wait_keys)
 
@@ -314,10 +368,6 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
                 mock.patch(
                     "object_apriltag.cli.calibrate_marker_model.build_apriltag_detector",
                     return_value=detector,
-                ),
-                mock.patch(
-                    "object_apriltag.cli.calibrate_marker_model.time.monotonic",
-                    side_effect=monotonic_side_effect,
                 ),
                 mock.patch(
                     "object_apriltag.cli.calibrate_marker_model.cv2.waitKey",
@@ -360,7 +410,7 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
             side_effect=track_readiness,
         ):
             self._run_capture(
-                wait_keys=[0] * 6 + [ord("q"), ord("q")],
+                wait_keys=[0, ord("c"), ord("c"), 0, 0, ord("q")],
                 monotonic_values=monotonic_values,
                 visible_by_frame=visible_by_frame,
             )
@@ -393,7 +443,7 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
             side_effect=slow_readiness,
         ):
             calibrate_calls, _, _, capture, _, _ = self._run_capture(
-                wait_keys=[0] * 10 + [ord("q"), ord("q")],
+                wait_keys=[ord("c")] + [0] * 9 + [ord("q")],
                 monotonic_values=monotonic_values,
                 visible_by_frame=visible_by_frame,
             )
@@ -403,7 +453,7 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
         self.assertGreaterEqual(capture.read.call_count, 5)
         self.assertGreaterEqual(compute_calls, 1)
 
-    def test_samples_at_two_hz_and_ignores_single_marker_frames(self) -> None:
+    def test_manual_capture_records_only_frames_with_two_markers(self) -> None:
         visible_by_frame = [
             {0: _marker_corners(0)},
             {0: _marker_corners(0), 1: _marker_corners(1)},
@@ -421,7 +471,14 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
             return mock.Mock(layout=None, failure_reason="refused", quality=None)
 
         self._run_capture(
-            wait_keys=[0] * 8 + [ord("S"), ord("q"), ord("q")],
+            wait_keys=[
+                ord("c"),
+                ord("c"),
+                ord("c"),
+                ord("c"),
+                ord("S"),
+                ord("q"),
+            ],
             monotonic_values=monotonic_values,
             visible_by_frame=visible_by_frame,
             calibrate_side_effect=capture_observations,

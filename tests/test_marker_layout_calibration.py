@@ -29,13 +29,23 @@ from object_apriltag.marker_layout_calibration import (
     _CornerObservation,
     _PairConsensus,
     _estimate_pair_consensus,
+    _object_points_by_marker,
     _recheck_pair_support,
     _reference_gauge_pose,
     _restrict_pair_consensus_to_frames,
     _synth_pair_observations,
     calibrate_marker_layout,
+    uniform_marker_sizes,
 )
 from object_apriltag.pose import marker_corner_object_points
+
+
+def _uniform_marker_sizes(marker_ids: Iterable[int], marker_size_m: float) -> dict[int, float]:
+    return uniform_marker_sizes(list(marker_ids), marker_size_m)
+
+
+def _uniform_object_points_by_marker(marker_ids: Iterable[int], marker_size_m: float) -> dict[int, np.ndarray]:
+    return _object_points_by_marker(_uniform_marker_sizes(marker_ids, marker_size_m))
 
 
 def _default_camera() -> tuple[np.ndarray, np.ndarray]:
@@ -338,11 +348,11 @@ class MarkerLayoutCalibrationSuccessTests(unittest.TestCase):
             _normalize_observations,
         )
 
-        object_points = marker_corner_object_points(self.marker_size_m)
+        object_points_by_marker = _uniform_object_points_by_marker([0, 1], self.marker_size_m)
         normalized = _normalize_observations(observations, [0, 1])
         frame_candidates = _estimate_frame_candidates(
             normalized,
-            object_points.astype(np.float64),
+            object_points_by_marker,
             self.camera_matrix,
             self.dist_coeffs,
         )
@@ -909,7 +919,7 @@ class PairGraphFilteringTests(unittest.TestCase):
             self.expected_ids,
             self.reference_marker_id,
             self.settings,
-            marker_size_m=0.07,
+            marker_sizes_m=_uniform_marker_sizes(self.expected_ids, 0.07),
         )
 
         self.assertIsNone(failure)
@@ -932,7 +942,7 @@ class PairGraphFilteringTests(unittest.TestCase):
             self.expected_ids,
             self.reference_marker_id,
             self.settings,
-            marker_size_m=0.07,
+            marker_sizes_m=_uniform_marker_sizes(self.expected_ids, 0.07),
         )
 
         self.assertIsNotNone(failure)
@@ -969,11 +979,12 @@ class PairGraphFilteringTests(unittest.TestCase):
             (0, 2): _hypotheses((0, 2), bad=True),
         }
 
+        marker_sizes_m = _uniform_marker_sizes(self.expected_ids, marker_size_m)
         filtered, failure, dropped = _estimate_pair_consensus(
             pair_hypotheses,
             self.expected_ids,
             self.reference_marker_id,
-            marker_size_m,
+            marker_sizes_m,
             self.settings,
         )
 
@@ -1010,7 +1021,7 @@ class PairGraphFilteringTests(unittest.TestCase):
             self.reference_marker_id,
             self.settings,
             allowed_frames=frozenset(range(20)),
-            marker_size_m=0.07,
+            marker_sizes_m=_uniform_marker_sizes(self.expected_ids, 0.07),
         )
 
         self.assertIsNone(failure)

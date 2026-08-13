@@ -38,11 +38,22 @@ class ObjectDetector:
             if isinstance(marker_model, MarkerModel)
             else load_marker_model(marker_model)
         )
-        self._marker_size_m = (
-            self._marker_model.marker_size_m if marker_size_m is None else marker_size_m
-        )
+        if marker_size_m is not None:
+            default_size = self._marker_model.marker_size_m
+            sizes = self._marker_model.marker_sizes_m
+            if any(size != default_size for size in sizes.values()):
+                raise ValueError(
+                    "marker_size_m override is only supported for uniform marker models; "
+                    "use per-marker size_m in the marker model JSON for mixed layouts."
+                )
+            if abs(marker_size_m - default_size) > 1e-9:
+                raise ValueError(
+                    f"marker_size_m override {marker_size_m:.6f} m does not match the "
+                    f"uniform model default {default_size:.6f} m."
+                )
         self._known_ids = self._marker_model.marker_ids if marker_ids is None else marker_ids
         self._detector = build_apriltag_detector(dictionary, sensitivity)
+        self._previous_pose: ObjectPose | None = None
 
     @property
     def marker_model(self) -> MarkerModel:
@@ -50,7 +61,7 @@ class ObjectDetector:
 
     @property
     def marker_size_m(self) -> float:
-        return self._marker_size_m
+        return self._marker_model.marker_size_m
 
     def find_markers(self, frame: np.ndarray) -> list[Detection]:
         gray = frame if frame.ndim == 2 else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -66,16 +77,23 @@ class ObjectDetector:
         return detections
 
     def fuse(self, detections: list[Detection]) -> ObjectPose | None:
+        previous_pose = (
+            (self._previous_pose.origin, self._previous_pose.rotation)
+            if self._previous_pose is not None
+            else None
+        )
         origin, rotation = estimate_fused_pose(
             detections,
             self._marker_model,
-            self._marker_size_m,
             self._camera_matrix,
             self._dist_coeffs,
+            previous_pose=previous_pose,
         )
         if origin is None or rotation is None:
             return None
-        return ObjectPose(origin=origin, rotation=rotation)
+        pose = ObjectPose(origin=origin, rotation=rotation)
+        self._previous_pose = pose
+        return pose
 
     def detect(self, frame: np.ndarray) -> ObjectPose | None:
         return self.fuse(self.find_markers(frame))

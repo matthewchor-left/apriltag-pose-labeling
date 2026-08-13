@@ -385,7 +385,7 @@ def draw_reference_marker_orientation(
     """Draw reference-marker X/Y/Z axes from the calibrated layout footprint."""
     origin_layout = object_reference_origin(marker_model)
     orientation = object_reference_orientation(marker_model)
-    axis_length = marker_model.marker_size_m * 0.5
+    axis_length = marker_model.marker_size_for(marker_model.reference_marker_id) * 0.5
 
     origin_xy = _layout_point_image_xy(
         origin_layout, pose, marker_model, camera_matrix, dist_coeffs
@@ -417,10 +417,12 @@ def draw_object_pose(
     *,
     draw_point_labels: bool = True,
 ) -> None:
+    del marker_size_m
+    axis_length_m = marker_model.marker_size_for(marker_model.reference_marker_id) * 0.5
     draw_object_origin(frame, pose.origin, camera_matrix, dist_coeffs, label="object origin")
     try:
         origin_xy, x_end, y_end, z_end = object_axis_image_points(
-            pose.rotation, pose.origin, camera_matrix, dist_coeffs, marker_size_m * 0.5
+            pose.rotation, pose.origin, camera_matrix, dist_coeffs, axis_length_m
         )
         cv2.arrowedLine(frame, origin_xy, x_end, (0, 0, 255), 2, tipLength=0.25)
         cv2.arrowedLine(frame, origin_xy, y_end, (0, 255, 0), 2, tipLength=0.25)

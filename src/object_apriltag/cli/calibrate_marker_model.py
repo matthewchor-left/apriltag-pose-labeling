@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-import time
 from pathlib import Path
 
 import cv2
@@ -33,11 +32,11 @@ from object_apriltag.marker_layout_calibration import (
     compute_live_pair_readiness,
     parse_anchor_marker_ids,
     parse_marker_id_spec,
+    resolve_marker_sizes_for_calibration,
 )
 
 DEFAULT_ASSIGNMENT_REJECTION_SUMMARY_LINES = 3
 
-DEFAULT_SAMPLE_RATE_HZ = 10.0
 DEFAULT_MIN_PAIR_INLIERS = 20
 DEFAULT_REPROJECTION_RMS_GATE_PX = 2.0
 DEFAULT_PAIR_TRANSLATION_RMS_GATE_RATIO = 0.10
@@ -50,13 +49,14 @@ def parse_args() -> argparse.Namespace:
         description="Calibrate marker sticker layout from live co-visible AprilTag detections.",
         epilog=(
             "Controls:\n"
+            "  C  capture the current frame when at least two expected markers are visible\n"
             "  S  solve from captured samples and write --output when quality gates pass\n"
             "  Q  quit without writing\n"
             "\n"
-            "Sampling:\n"
-            "  Frames are recorded at --sample-rate-hz when at least two expected marker IDs "
-            "are visible. Move the object so every expected ID co-appears with others often "
-            "enough to connect through the reference marker.\n"
+            "Capture:\n"
+            "  Inspect the live image, then press C only for sharp, geometrically diverse "
+            "views. Every expected ID must co-appear with others often enough to connect "
+            "through the reference marker.\n"
             "\n"
             "Scale:\n"
             "  Metric layout depends on --marker-size and calibrated camera intrinsics. "
@@ -86,7 +86,21 @@ def parse_args() -> argparse.Namespace:
         "--marker-size",
         type=float,
         required=True,
-        help="Physical AprilTag edge length in meters (uniform for all expected markers).",
+        help="Default physical AprilTag edge length in meters.",
+    )
+    parser.add_argument(
+        "--marker-size-for",
+        type=str,
+        action="append",
+        nargs="+",
+        default=None,
+        metavar="ID_OR_RANGE:SIZE",
+        help=(
+            "Per-marker physical edge length override (repeatable), e.g. "
+            "--marker-size-for 4:0.03 --marker-size-for 10-12:0.025 or "
+            "--marker-size-for 4:0.03 10-12:0.025. "
+            "Override IDs must be a subset of --marker-ids."
+        ),
     )
     parser.add_argument(
         "--marker-ids",
@@ -135,12 +149,6 @@ def parse_args() -> argparse.Namespace:
         help="Overwrite an existing --output file.",
     )
     parser.add_argument(
-        "--sample-rate-hz",
-        type=float,
-        default=DEFAULT_SAMPLE_RATE_HZ,
-        help=f"Co-visibility sample rate in Hz (default: {DEFAULT_SAMPLE_RATE_HZ:g}).",
-    )
-    parser.add_argument(
         "--min-pair-inliers",
         type=int,
         default=DEFAULT_MIN_PAIR_INLIERS,
@@ -176,9 +184,23 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def flatten_marker_size_override_tokens(
+    tokens: list[str] | list[list[str]] | None,
+) -> list[str] | None:
+    if tokens is None:
+        return None
+    flattened: list[str] = []
+    for token in tokens:
+        if isinstance(token, list):
+            flattened.extend(token)
+        else:
+            flattened.append(token)
+    return flattened
+
+
 def validate_args(
     args: argparse.Namespace,
-) -> tuple[list[int], CalibrationSettings, tuple[int, ...] | None, bool]:
+) -> tuple[list[int], dict[int, float], CalibrationSettings, tuple[int, ...] | None, bool]:
     if not args.calibration.exists():
         raise RuntimeError(
             f"Calibration file not found: {args.calibration}\n"
@@ -212,8 +234,14 @@ def validate_args(
         raise RuntimeError("--anchor-stop-after-expansion requires --anchor-marker-ids.")
     if args.marker_size <= 0.0:
         raise RuntimeError("--marker-size must be positive.")
-    if args.sample_rate_hz <= 0.0:
-        raise RuntimeError("--sample-rate-hz must be positive.")
+    marker_sizes_m, sizes_failure = resolve_marker_sizes_for_calibration(
+        expected_ids,
+        args.marker_size,
+        flatten_marker_size_override_tokens(args.marker_size_for),
+    )
+    if sizes_failure is not None:
+        raise RuntimeError(sizes_failure)
+    assert marker_sizes_m is not None
     if args.min_pair_inliers <= 0:
         raise RuntimeError("--min-pair-inliers must be positive.")
     for name, value in (
@@ -230,7 +258,7 @@ def validate_args(
         pair_translation_rms_gate_ratio=args.pair_translation_rms_gate_ratio,
         pair_rotation_rms_gate_deg=args.pair_rotation_rms_gate_deg,
     )
-    return expected_ids, settings, anchor_ids, args.anchor_stop_after_expansion
+    return expected_ids, marker_sizes_m, settings, anchor_ids, args.anchor_stop_after_expansion
 
 
 def open_camera(camera_index: int, width: int, height: int) -> cv2.VideoCapture:
@@ -480,7 +508,7 @@ def write_calibration_diagnostics_if_requested(
 
 def run_capture(args: argparse.Namespace) -> bool:
     """Capture live samples; return True when a model was saved."""
-    expected_ids, settings, anchor_ids, anchor_stop_after_expansion = validate_args(args)
+    expected_ids, marker_sizes_m, settings, anchor_ids, anchor_stop_after_expansion = validate_args(args)
     expected_id_set = set(expected_ids)
 
     camera_matrix, dist_coeffs, image_width, image_height, calibration_source = load_intrinsics(
@@ -491,8 +519,17 @@ def run_capture(args: argparse.Namespace) -> bool:
 
     print(f"Expected marker IDs: {expected_ids}")
     print(f"Reference marker ID: {args.reference_marker_id}")
-    print(f"Marker size: {args.marker_size:.4f} m")
-    print(f"Sample rate: {args.sample_rate_hz:g} Hz")
+    print(f"Default marker size: {args.marker_size:.4f} m")
+    overrides = {
+        marker_id: size
+        for marker_id, size in sorted(marker_sizes_m.items())
+        if size != args.marker_size
+    }
+    if overrides:
+        print(f"Marker size overrides: {overrides}")
+    else:
+        print("Marker size overrides: none (uniform)")
+    print("Capture mode: manual (press C)")
     print(f"Using calibration: {args.calibration}")
     if calibration_source:
         print(f"Calibration source: {calibration_source}")
@@ -504,16 +541,13 @@ def run_capture(args: argparse.Namespace) -> bool:
         dist_coeffs=dist_coeffs,
         expected_marker_ids=expected_ids,
         reference_marker_id=args.reference_marker_id,
-        marker_size_m=args.marker_size,
         settings=settings,
     )
     try:
         print(f"Camera {args.camera}: target {width}x{height}")
-        print("Press S to solve, Q to quit.")
+        print("Press C to capture, S to solve, Q to quit.")
 
         observations: list[FrameObservation] = []
-        sample_interval = 1.0 / args.sample_rate_hz
-        next_sample_time = time.monotonic()
         status_line: str | None = None
         last_solve_quality: CalibrationQualityReport | None = None
 
@@ -526,19 +560,6 @@ def run_capture(args: argparse.Namespace) -> bool:
             visible = detect_expected_markers(detector, frame, expected_id_set)
             preview = frame.copy()
             draw_detection_outlines(preview, visible, args.reference_marker_id)
-
-            now = time.monotonic()
-            if now >= next_sample_time and len(visible) >= 2:
-                observations.append(
-                    FrameObservation(
-                        frame_id=len(observations),
-                        markers={
-                            marker_id: corners.copy() for marker_id, corners in visible.items()
-                        },
-                    )
-                )
-                next_sample_time = now + sample_interval
-                readiness_worker.submit(observations)
 
             readiness_view = readiness_worker.poll(len(observations))
             hud_lines = build_pair_readiness_hud_lines_from_diagnostics(
@@ -561,6 +582,25 @@ def run_capture(args: argparse.Namespace) -> bool:
             if key in (ord("q"), ord("Q")):
                 print("Calibration cancelled.")
                 return False
+            if key in (ord("c"), ord("C")):
+                if len(visible) < 2:
+                    status_line = "capture skipped: need at least 2 expected markers"
+                    continue
+                observations.append(
+                    FrameObservation(
+                        frame_id=len(observations),
+                        markers={
+                            marker_id: corners.copy()
+                            for marker_id, corners in visible.items()
+                        },
+                    )
+                )
+                readiness_worker.submit(observations)
+                status_line = (
+                    f"captured sample {len(observations)}: "
+                    f"markers {sorted(visible)}"
+                )
+                continue
             if key in (ord("s"), ord("S")):
                 result = calibrate_marker_layout(
                     observations,
@@ -572,6 +612,7 @@ def run_capture(args: argparse.Namespace) -> bool:
                     settings=settings,
                     anchor_marker_ids=anchor_ids,
                     anchor_stop_after_expansion=anchor_stop_after_expansion,
+                    marker_sizes_m=marker_sizes_m,
                 )
                 if result.failure_reason is not None or result.layout is None:
                     print_refusal(result)

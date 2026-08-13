@@ -64,7 +64,6 @@ class LivePairReadinessWorker:
         dist_coeffs: np.ndarray,
         expected_marker_ids: list[int],
         reference_marker_id: int,
-        marker_size_m: float,
         settings: CalibrationSettings,
     ) -> None:
         self._compute_fn = compute_fn
@@ -72,7 +71,6 @@ class LivePairReadinessWorker:
         self._dist_coeffs = dist_coeffs
         self._expected_marker_ids = expected_marker_ids
         self._reference_marker_id = reference_marker_id
-        self._marker_size_m = marker_size_m
         self._settings = settings
 
         self._condition = threading.Condition()
@@ -144,7 +142,6 @@ class LivePairReadinessWorker:
                 self._dist_coeffs,
                 expected_marker_ids=self._expected_marker_ids,
                 reference_marker_id=self._reference_marker_id,
-                marker_size_m=self._marker_size_m,
                 settings=self._settings,
             )
         except Exception as exc:

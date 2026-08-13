@@ -206,11 +206,13 @@ When the **rubber faces the camera**, **+Z** points toward the camera and **−Z
 
 If the object is viewed from the back or from the side, the mapping between model **±Z** and closer/farther relative to the camera changes because the object rotated — the model frame itself does not change.
 
-`ObjectDetector` fuses marker poses into **camera-frame** `origin` and `rotation`. Model coordinates are converted to the camera only through the detected pose and per-marker transforms in `layout.py`.
+`ObjectDetector` estimates one **camera-frame** `origin` and `rotation` from all visible marker-model corners with a layout-wide RANSAC PnP solve. This rejects inconsistent corner detections instead of averaging independent marker poses. When only one marker is usable, both IPPE candidates are considered and the candidate closest to the preceding pose is selected; without history, the lower-reprojection candidate is used.
+
+Marker model JSON uses top-level `marker_size_m` as the default physical edge length (meters). Each `markers.<id>` entry may optionally include `size_m` when that sticker differs from the default; omitted `size_m` means the default. Calibration writes `size_m` only for non-default markers. Footprint validation checks each marker against its resolved size.
 
 ## Marker model calibration (live)
 
-`object-calibrate-marker-model` estimates sticker footprint positions from live camera views. No tape measure or manual corner entry — move the object so expected markers co-appear while the tool samples at **2 Hz** (override with `--sample-rate-hz`).
+`object-calibrate-marker-model` estimates sticker footprint positions from live camera views. No tape measure or manual corner entry — move the object so expected markers co-appear, inspect each view for sharp detections, and press **C** to capture it.
 
 ```bash
 uv run object-calibrate-marker-model \
@@ -219,6 +221,7 @@ uv run object-calibrate-marker-model \
   --dictionary 36h11 \
   --detection-sensitivity relaxed \
   --marker-size 0.07 \
+  --marker-size-for 4:0.03 10-12:0.025 \
   --marker-ids 0 1 2 3-10 11 \
   --reference-marker-id 0 \
   --output config/Model/remote1/marker_model.json
@@ -231,12 +234,13 @@ For layouts with many markers, pass `--anchor-marker-ids` to bootstrap from a sm
   --anchor-stop-after-expansion \
 ```
 
+- **C** — capture the current sharp frame when at least two expected markers are visible
 - **S** — solve from captured samples; writes `--output` only when quality gates pass
 - **Q** — quit without writing
 
-A frame is recorded only when **at least two** expected marker IDs are visible at a sample tick. During solve, frames that cannot be assigned a consistent marker interpretation are rejected automatically; each marker pair used in the layout still needs at least **20** accepted co-visible frames (`--min-pair-inliers`) after rejection. Keep moving the object for diverse views — you do not need to capture pairs in isolated batches. The HUD shows expected/visible IDs, captured sample count, live pair readiness (raw co-visibility and pass/weak status), graph connectivity from the reference marker, and last-solve frame acceptance when you press **S**.
+A frame is recorded only when you press **C** with **at least two** expected marker IDs visible. Capture sharp, diverse viewpoints rather than repeated stationary views. During solve, frames that cannot be assigned a consistent marker interpretation are rejected automatically; each marker pair used in the layout still needs at least **20** accepted co-visible frames (`--min-pair-inliers`) after rejection. You do not need to capture pairs in isolated batches. The HUD shows expected/visible IDs, captured sample count, live pair readiness (raw co-visibility and pass/weak status), graph connectivity from the reference marker, and last-solve frame acceptance when you press **S**.
 
-**Scale caveat:** metric layout depends on the physical `--marker-size` and calibrated intrinsics. Wrong marker size or scaled intrinsics will bias the solved geometry.
+**Scale caveat:** metric layout depends on the physical `--marker-size` (default edge length) and calibrated intrinsics. Use repeatable `--marker-size-for ID_OR_RANGE:SIZE` overrides when markers differ (e.g. `4:0.03 10-12:0.025`). Pair translation gates scale with `ratio * min(size_a, size_b)` per edge. Wrong sizes or scaled intrinsics will bias the solved geometry.
 
 **Quality gates** (defaults; override on the CLI):
 
@@ -244,7 +248,7 @@ A frame is recorded only when **at least two** expected marker IDs are visible a
 |------|---------|
 | Global reprojection RMS | 2 px (`--reprojection-rms-gate-px`) |
 | Per-marker reprojection RMS | 2 px (same gate as global) |
-| Pair translation RMS | 10% of marker size (`--pair-translation-rms-gate-ratio`) |
+| Pair translation RMS | 10% of the smaller marker size in each pair (`--pair-translation-rms-gate-ratio`) |
 | Pair rotation RMS | 5° (`--pair-rotation-rms-gate-deg`) |
 
 Refused solves print diagnostics and resume capture; nothing is written until a solve passes. Use `--force` to overwrite an existing `--output`. Frame resolution must match the calibration `image_size`; intrinsics are not scaled.
@@ -328,8 +332,8 @@ uv.lock                # locked dependency versions (commit this)
 | `object-calibrate-marker-model` | `--marker-ids` / `--reference-marker-id` | Expected unique IDs and layout reference |
 | `object-calibrate-marker-model` | `--anchor-marker-ids` | Optional bootstrap core for large layouts |
 | `object-calibrate-marker-model` | `--anchor-stop-after-expansion` | Debug: write expansion-only layout (no BA/gates) |
-| `object-calibrate-marker-model` | `--marker-size` | Physical tag edge length in meters |
-| `object-calibrate-marker-model` | `--sample-rate-hz` | Co-visibility sample rate (default 10 Hz) |
+| `object-calibrate-marker-model` | `--marker-size` | Default physical tag edge length in meters |
+| `object-calibrate-marker-model` | `--marker-size-for` | Per-marker overrides (`ID_OR_RANGE:SIZE`, repeatable) |
 | `object-calibrate-marker-model` | `--min-pair-inliers` | Minimum co-visible frames per pair (default 20) |
 | `object-calibrate-marker-model` | `--output` / `--force` | Marker model JSON; refuse overwrite unless `--force` |
 | `object-inspect-marker-model` | `--marker-model` / `--visualize` | Print or diagram an existing marker model |

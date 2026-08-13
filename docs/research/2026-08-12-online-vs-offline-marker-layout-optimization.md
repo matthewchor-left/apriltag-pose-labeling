@@ -33,7 +33,7 @@ Out of scope: online camera intrinsic calibration, deformable objects, dynamic t
 
 Accepted architecture ([ADR 0002](../adr/0002-corner-bundle-adjustment-for-marker-calibration.md)):
 
-1. **Accumulate** `FrameObservation` samples at a fixed rate when ≥2 expected markers are visible ([`calibrate_marker_model.py`](../../src/object_apriltag/cli/calibrate_marker_model.py)).
+1. **Accumulate** user-selected `FrameObservation` samples when **C** is pressed with ≥2 expected markers visible ([`calibrate_marker_model.py`](../../src/object_apriltag/cli/calibrate_marker_model.py)).
 2. **Per frame:** `solvePnPGeneric(..., SOLVEPNP_IPPE)` yields up to two facing-camera candidates per marker ([`_ippe_candidates`](../../src/object_apriltag/marker_layout_calibration.py)).
 3. **Pairwise consensus:** for each marker pair, seed-and-expand inlier sets over relative transforms; require `min_inliers_per_edge` frames and RMS gates ([`_estimate_pair_consensus`](../../src/object_apriltag/marker_layout_calibration.py)).
 4. **Assignment filtering:** combinatorial search picks one IPPE candidate per marker per frame consistent with accepted pair edges; inconsistent frames are rejected ([`_assign_ippe_candidates`](../../src/object_apriltag/marker_layout_calibration.py)).

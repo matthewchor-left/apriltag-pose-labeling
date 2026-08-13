@@ -98,7 +98,6 @@ def marker_axis_image_points(
 def object_origin_image_coords(
     corners: np.ndarray,
     marker_id: int,
-    marker_size_m: float,
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
     layout,
@@ -106,7 +105,7 @@ def object_origin_image_coords(
     from object_apriltag.pose import object_pose_from_marker
 
     object_rotation, object_origin = object_pose_from_marker(
-        corners, marker_id, marker_size_m, camera_matrix, dist_coeffs, layout
+        corners, marker_id, layout, camera_matrix, dist_coeffs
     )
     del object_rotation
     point = project_camera_point(object_origin, camera_matrix, dist_coeffs)

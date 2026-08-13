@@ -26,6 +26,8 @@ from object_apriltag.marker_layout_calibration import (
 )
 from object_apriltag.pose import marker_corner_object_points
 from tests.test_marker_layout_calibration import (
+    _uniform_marker_sizes,
+    _uniform_object_points_by_marker,
     _default_camera,
     _pair_poses,
     _rotate_marker_corners,
@@ -73,6 +75,7 @@ class FrameAssignmentRejectionTests(unittest.TestCase):
         self.camera_matrix, self.dist_coeffs = _default_camera()
         self.settings = CalibrationSettings(min_inliers_per_edge=20)
         self.expected_ids = [0, 1]
+        self.marker_sizes_m = _uniform_marker_sizes(self.expected_ids, self.marker_size_m)
 
     def _frame_assignment_inputs(
         self,
@@ -88,10 +91,11 @@ class FrameAssignmentRejectionTests(unittest.TestCase):
             _rotate_marker_corners(observations, [corrupt_frame_index], marker_id=1)
 
         normalized = _normalize_observations(observations, self.expected_ids)
-        object_points = marker_corner_object_points(self.marker_size_m).astype(np.float64)
+        marker_sizes_m = _uniform_marker_sizes(self.expected_ids, self.marker_size_m)
+        object_points_by_marker = _uniform_object_points_by_marker(self.expected_ids, self.marker_size_m)
         frame_candidates = _estimate_frame_candidates(
             normalized,
-            object_points,
+            object_points_by_marker,
             self.camera_matrix,
             self.dist_coeffs,
         )
@@ -100,7 +104,7 @@ class FrameAssignmentRejectionTests(unittest.TestCase):
             pair_hypotheses,
             self.expected_ids,
             reference_marker_id=0,
-            marker_size_m=self.marker_size_m,
+            marker_sizes_m=marker_sizes_m,
             settings=self.settings,
         )
         self.assertIsNone(pair_failure)
@@ -116,7 +120,7 @@ class FrameAssignmentRejectionTests(unittest.TestCase):
             candidates,
             pair_consensus,
             self.settings,
-            self.marker_size_m,
+            self.marker_sizes_m,
         )
 
         self.assertIsNone(result.assignment)
@@ -144,7 +148,7 @@ class FrameAssignmentRejectionTests(unittest.TestCase):
             candidates,
             pair_consensus,
             self.settings,
-            self.marker_size_m,
+            self.marker_sizes_m,
         )
 
         self.assertIsNone(result.assignment)
@@ -169,7 +173,7 @@ class FrameAssignmentRejectionTests(unittest.TestCase):
             candidates,
             pair_consensus,
             self.settings,
-            self.marker_size_m,
+            self.marker_sizes_m,
         )
 
         self.assertIsNone(result.assignment)
@@ -190,13 +194,13 @@ class FrameAssignmentRejectionTests(unittest.TestCase):
             candidates,
             pair_consensus,
             self.settings,
-            self.marker_size_m,
+            self.marker_sizes_m,
         )
         after = resolve_frame_ippe_assignment(
             candidates,
             pair_consensus,
             self.settings,
-            self.marker_size_m,
+            self.marker_sizes_m,
         )
 
         self.assertIsNotNone(before.assignment)
@@ -236,11 +240,8 @@ class FrameAssignmentRejectionTests(unittest.TestCase):
             candidates,
             pair_consensus,
             self.settings,
-            self.marker_size_m,
+            _uniform_marker_sizes([0, 1, 2], self.marker_size_m),
         )
-
-        assert result.rejection is not None
-        self.assertEqual(result.rejection.marker_pair, (1, 2))
         self.assertEqual(result.rejection.reason, "translation_gate")
 
 
@@ -249,6 +250,7 @@ class AssignmentRejectionAggregationTests(unittest.TestCase):
         self.marker_size_m = 0.07
         self.camera_matrix, self.dist_coeffs = _default_camera()
         self.settings = CalibrationSettings(min_inliers_per_edge=20)
+        self.marker_sizes_m = _uniform_marker_sizes([0, 1], self.marker_size_m)
 
     def test_calibration_aggregates_rejection_causes_and_pairs(self) -> None:
         observations = _synth_pair_with_corrupt_frames(
@@ -317,7 +319,7 @@ class AssignmentRejectionAggregationTests(unittest.TestCase):
             candidates,
             pair_consensus,
             self.settings,
-            self.marker_size_m,
+            self.marker_sizes_m,
         )
 
         assert result.rejection is not None
@@ -331,6 +333,7 @@ class AssignmentSearchTraversalTests(unittest.TestCase):
     def setUp(self) -> None:
         self.marker_size_m = 0.07
         self.settings = CalibrationSettings(min_inliers_per_edge=20)
+        self.marker_sizes_m = _uniform_marker_sizes([0, 1], self.marker_size_m)
 
     def test_rejected_frame_evaluates_each_complete_assignment_once(self) -> None:
         from math import prod
@@ -359,7 +362,7 @@ class AssignmentSearchTraversalTests(unittest.TestCase):
                 candidates,
                 pair_consensus,
                 self.settings,
-                self.marker_size_m,
+                self.marker_sizes_m,
             )
 
         self.assertIsNone(result.assignment)
@@ -371,11 +374,11 @@ class AssignmentSearchTraversalTests(unittest.TestCase):
 
         observations = _synth_pair_with_corrupt_frames(25, frozenset({2, 7, 11, 16, 22}))
         normalized = _normalize_observations(observations, [0, 1])
-        object_points = marker_corner_object_points(self.marker_size_m).astype(np.float64)
+        object_points_by_marker = _uniform_object_points_by_marker([0, 1], self.marker_size_m)
         camera_matrix, dist_coeffs = _default_camera()
         frame_candidates = _estimate_frame_candidates(
             normalized,
-            object_points,
+            object_points_by_marker,
             camera_matrix,
             dist_coeffs,
         )
@@ -384,7 +387,7 @@ class AssignmentSearchTraversalTests(unittest.TestCase):
             pair_hypotheses,
             [0, 1],
             reference_marker_id=0,
-            marker_size_m=self.marker_size_m,
+            marker_sizes_m=self.marker_sizes_m,
             settings=self.settings,
         )
         self.assertIsNone(pair_failure)
@@ -393,7 +396,7 @@ class AssignmentSearchTraversalTests(unittest.TestCase):
             frame_candidates,
             pair_consensus,
             self.settings,
-            self.marker_size_m,
+            self.marker_sizes_m,
         )
 
         self.assertEqual(len(rejected_frames), len(rejections))

@@ -147,7 +147,7 @@ class MarkerPoseLayoutCompatibilityTests(unittest.TestCase):
             layout,
         )
         from_corners = object_pose_from_marker(
-            corners, marker_id, layout.marker_size_m, camera_matrix, dist_coeffs, layout
+            corners, marker_id, layout, camera_matrix, dist_coeffs
         )
         np.testing.assert_allclose(from_pose[0], from_corners[0], atol=1e-9)
         np.testing.assert_allclose(from_pose[1], from_corners[1], atol=1e-9)

@@ -40,7 +40,6 @@ class LivePairReadinessStrongGraphTests(unittest.TestCase):
             self.dist_coeffs,
             expected_marker_ids=self.expected_ids,
             reference_marker_id=self.reference_marker_id,
-            marker_size_m=self.marker_size_m,
             settings=settings or self.settings,
         )
 
@@ -85,7 +84,6 @@ class LivePairReadinessStrongGraphTests(unittest.TestCase):
             self.dist_coeffs,
             expected_marker_ids=[0, 1],
             reference_marker_id=0,
-            marker_size_m=self.marker_size_m,
             settings=self.settings,
         )
 
@@ -120,7 +118,8 @@ class LivePairReadinessStrongGraphTests(unittest.TestCase):
         status, robust_count, translation_rms_m, rotation_rms_deg = _classify_pair_readiness(
             edge,
             self.settings,
-            self.marker_size_m,
+            {0: self.marker_size_m, 1: self.marker_size_m},
+            (0, 1),
         )
 
         self.assertEqual(status, "fail")
