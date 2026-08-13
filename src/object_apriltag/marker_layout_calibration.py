@@ -3576,7 +3576,16 @@ def _make_dropped_pair_edge(
     )
 
 
-def _make_restored_pair_edge(dropped: DroppedPairEdge, stage: str) -> RestoredPairEdge:
+def _weak_edge_consensus_support(edge: _PairConsensus) -> int:
+    return len(edge.inlier_frames)
+
+
+def _make_restored_pair_edge(
+    dropped: DroppedPairEdge,
+    edge: _PairConsensus,
+    stage: str,
+) -> RestoredPairEdge:
+    consensus_support = _weak_edge_consensus_support(edge)
     return RestoredPairEdge(
         marker_a=dropped.marker_a,
         marker_b=dropped.marker_b,
@@ -3584,9 +3593,9 @@ def _make_restored_pair_edge(dropped: DroppedPairEdge, stage: str) -> RestoredPa
         original_stage=dropped.stage,
         original_reason=dropped.reason,
         observed_count=dropped.observed_count,
-        supported_count=dropped.supported_count,
+        supported_count=consensus_support,
         required_count=dropped.required_count,
-        support_fraction=dropped.supported_count / max(dropped.observed_count, 1),
+        support_fraction=consensus_support / max(dropped.observed_count, 1),
         translation_rms_m=dropped.translation_rms_m,
         rotation_rms_deg=dropped.rotation_rms_deg,
         translation_gate_m=dropped.translation_gate_m,
@@ -3644,7 +3653,7 @@ def _weak_restore_candidates(
         edge = weak_pool.get(pair)
         if edge is None or not edge.inlier_frames:
             continue
-        if not _meets_best_effort_weak_support_floor(len(edge.inlier_frames)):
+        if not _meets_best_effort_weak_support_floor(_weak_edge_consensus_support(edge)):
             continue
         candidates.append((edge, drop))
         seen.add(pair)
@@ -3673,7 +3682,7 @@ def _maybe_restore_weak_connectivity(
     sorted_candidates = sorted(
         restore_candidates,
         key=lambda item: _weak_edge_rank_key(
-            item[1].supported_count,
+            _weak_edge_consensus_support(item[0]),
             item[1].observed_count,
             item[1].rotation_rms_deg,
             item[1].translation_rms_m,
@@ -3699,7 +3708,7 @@ def _maybe_restore_weak_connectivity(
             break
         edge, drop = remaining.pop(chosen_index)
         pair_consensus[drop.marker_pair] = edge
-        restored_records.append(_make_restored_pair_edge(drop, stage))
+        restored_records.append(_make_restored_pair_edge(drop, edge, stage))
 
     if restored_pair_edges is not None:
         restored_pair_edges.extend(restored_records)

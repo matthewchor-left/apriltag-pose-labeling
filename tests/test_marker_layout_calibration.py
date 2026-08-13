@@ -33,6 +33,7 @@ from object_apriltag.marker_layout_calibration import (
     _object_points_by_marker,
     _maybe_restore_weak_connectivity,
     _make_dropped_pair_edge,
+    _make_restored_pair_edge,
     _recheck_pair_support,
     _reference_gauge_pose,
     _restrict_pair_consensus_to_frames,
@@ -1446,6 +1447,100 @@ class WeakRestoreSupportFloorTests(unittest.TestCase):
         )
 
         self.assertEqual(_weak_restore_candidates({}, {pair: edge}, [dropped]), [])
+
+    def test_make_restored_pair_edge_reports_consensus_support(self) -> None:
+        pair = (0, 1)
+        rotation = np.eye(3, dtype=np.float64)
+        translation = np.zeros(3, dtype=np.float64)
+        edge = _PairConsensus(
+            marker_a=0,
+            marker_b=1,
+            rotation_ba=rotation,
+            translation_ba=translation,
+            inlier_frames=(0, 1, 2),
+            inlier_hypotheses={
+                frame_index: (rotation, translation) for frame_index in (0, 1, 2)
+            },
+        )
+        dropped = _make_dropped_pair_edge(
+            pair,
+            "initial_consensus",
+            "insufficient_observed_frames",
+            observed_count=10,
+            supported_count=10,
+            required_count=20,
+            translation_gate=0.007,
+            rotation_gate=5.0,
+            edge=edge,
+        )
+
+        restored = _make_restored_pair_edge(dropped, edge, "initial_consensus")
+
+        self.assertEqual(restored.supported_count, 3)
+        self.assertAlmostEqual(restored.support_fraction, 0.3)
+        self.assertEqual(dropped.supported_count, 10)
+
+    def test_weak_restore_ranking_prefers_higher_consensus_support(self) -> None:
+        rotation = np.eye(3, dtype=np.float64)
+        translation = np.zeros(3, dtype=np.float64)
+
+        def _edge(marker_a: int, marker_b: int, inlier_frames: tuple[int, ...]) -> _PairConsensus:
+            return _PairConsensus(
+                marker_a=marker_a,
+                marker_b=marker_b,
+                rotation_ba=rotation,
+                translation_ba=translation,
+                inlier_frames=inlier_frames,
+                inlier_hypotheses={
+                    frame_index: (rotation, translation) for frame_index in inlier_frames
+                },
+            )
+
+        edge_01 = _edge(0, 1, tuple(range(8)))
+        edge_02 = _edge(0, 2, tuple(range(3)))
+        drop_02 = _make_dropped_pair_edge(
+            (0, 2),
+            "initial_consensus",
+            "insufficient_observed_frames",
+            observed_count=10,
+            supported_count=10,
+            required_count=20,
+            translation_gate=0.007,
+            rotation_gate=5.0,
+            edge=edge_02,
+        )
+        drop_01 = _make_dropped_pair_edge(
+            (0, 1),
+            "initial_consensus",
+            "insufficient_observed_frames",
+            observed_count=10,
+            supported_count=10,
+            required_count=20,
+            translation_gate=0.007,
+            rotation_gate=5.0,
+            edge=edge_01,
+        )
+        restored: list = []
+
+        failure = _maybe_restore_weak_connectivity(
+            {},
+            {(0, 1): edge_01, (0, 2): edge_02},
+            [drop_02, drop_01],
+            [0, 1, 2],
+            0,
+            "initial_consensus",
+            best_effort=True,
+            restored_pair_edges=restored,
+        )
+
+        self.assertIsNone(failure)
+        self.assertEqual(len(restored), 2)
+        self.assertEqual(restored[0].marker_pair, (0, 1))
+        self.assertEqual(restored[0].supported_count, 8)
+        self.assertAlmostEqual(restored[0].support_fraction, 0.8)
+        self.assertEqual(restored[1].marker_pair, (0, 2))
+        self.assertEqual(restored[1].supported_count, 3)
+        self.assertAlmostEqual(restored[1].support_fraction, 0.3)
 
 
 class WeakPairConnectivityRecoveryTests(unittest.TestCase):
