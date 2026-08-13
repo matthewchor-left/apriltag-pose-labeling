@@ -11,6 +11,10 @@ import numpy as np
 
 from object_apriltag.calibration import DEFAULT_MARKER_MODEL_PATH
 from object_apriltag.layout import (
+    DEFAULT_MARKER_COLOR,
+    DEFAULT_MARKER_COLOR_BGR,
+    REFERENCE_MARKER_COLOR,
+    REFERENCE_MARKER_COLOR_BGR,
     derive_marker_to_object_transform,
     footprint_edge_lengths,
     footprint_from_dict,
@@ -18,6 +22,8 @@ from object_apriltag.layout import (
     layout_point_to_camera,
     layout_point_to_object_frame,
     load_marker_model,
+    marker_color,
+    marker_color_bgr,
     marker_origin_on_object,
     object_reference_origin,
     rectangle_center,
@@ -216,6 +222,22 @@ class MarkerOriginsIntegrationTests(unittest.TestCase):
             layout = load_marker_model(path)
             self.assertEqual(layout.marker_ids, {0, 1})
             self.assertIn(1, layout.transforms)
+
+
+class MarkerLayoutColorTests(unittest.TestCase):
+    def test_reference_marker_uses_distinct_color(self) -> None:
+        reference_marker_id = 14
+        self.assertEqual(marker_color(reference_marker_id, reference_marker_id), REFERENCE_MARKER_COLOR)
+        self.assertEqual(
+            marker_color_bgr(reference_marker_id, reference_marker_id),
+            REFERENCE_MARKER_COLOR_BGR,
+        )
+
+    def test_non_reference_markers_use_yellow(self) -> None:
+        reference_marker_id = 14
+        for marker_id in (0, 1, 19):
+            self.assertEqual(marker_color(marker_id, reference_marker_id), DEFAULT_MARKER_COLOR)
+            self.assertEqual(marker_color_bgr(marker_id, reference_marker_id), DEFAULT_MARKER_COLOR_BGR)
 
 
 if __name__ == "__main__":

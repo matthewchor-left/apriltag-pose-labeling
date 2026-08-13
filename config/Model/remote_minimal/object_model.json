@@ -1,0 +1,18 @@
+{
+    "units": "meters",
+    "coordinate_frame": "marker_model",
+    "keypoints": {
+      "center": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "skeleton": [
+      [
+        "center",
+        "center"
+      ]
+    ]
+  }
+  

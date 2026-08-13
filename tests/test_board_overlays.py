@@ -322,6 +322,7 @@ class OrdinaryLabelSuppressionTests(unittest.TestCase):
             mock.patch("object_apriltag.viz.overlay.cv2.putText", side_effect=lambda _i, t, *_a, **_k: texts.append(t)),
             mock.patch("object_apriltag.viz.overlay.cv2.circle") as circle_mock,
             mock.patch("object_apriltag.viz.overlay.cv2.polylines") as polyline_mock,
+            mock.patch("object_apriltag.viz.overlay.cv2.arrowedLine") as arrow_mock,
         ):
             draw_marker_model_footprints(
                 frame,
@@ -335,6 +336,8 @@ class OrdinaryLabelSuppressionTests(unittest.TestCase):
         self.assertFalse(any(label in texts for label in expected_corner_labels))
         self.assertGreater(circle_mock.call_count, 0)
         self.assertGreater(polyline_mock.call_count, 0)
+        self.assertGreaterEqual(arrow_mock.call_count, 3)
+        self.assertEqual(set(texts), {"X", "Y", "Z"})
 
 
 if __name__ == "__main__":

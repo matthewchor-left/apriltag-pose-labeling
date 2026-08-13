@@ -71,7 +71,7 @@ def _draw_skeleton_2d(ax, sane_points: dict[str, list[float]], model: ObjectMode
 def _draw_marker_layout_footprints_2d(ax, layout: MarkerLayout, horiz_index: int, vert_index: int) -> None:
     for marker_id in sorted(layout.footprints):
         footprint = layout.footprints[marker_id]
-        color = marker_color(marker_id)
+        color = marker_color(marker_id, layout.reference_marker_id)
         corners = footprint.corners()
         xs = [point[horiz_index] for point in corners] + [corners[0][horiz_index]]
         ys = [point[vert_index] for point in corners] + [corners[0][vert_index]]
@@ -164,9 +164,14 @@ class LiveHud:
     def __init__(self, reproj_window: int = 30) -> None:
         self._prev_time = time.perf_counter()
         self._fps = 0.0
-        self._reproj_errors: deque[float] = deque(maxlen=reproj_window)
+        self._reproj_means: deque[float] = deque(maxlen=reproj_window)
+        self._reproj_maxes: deque[float] = deque(maxlen=reproj_window)
 
-    def tick(self, reproj_error: float | None = None) -> tuple[float, float | None]:
+    def tick(
+        self,
+        reproj_mean: float | None = None,
+        reproj_max: float | None = None,
+    ) -> tuple[float, float | None, float | None]:
         now = time.perf_counter()
         dt = now - self._prev_time
         self._prev_time = now
@@ -174,11 +179,13 @@ class LiveHud:
             instant_fps = 1.0 / dt
             self._fps = instant_fps if self._fps <= 0.0 else 0.9 * self._fps + 0.1 * instant_fps
 
-        if reproj_error is not None:
-            self._reproj_errors.append(reproj_error)
+        if reproj_mean is not None and reproj_max is not None:
+            self._reproj_means.append(reproj_mean)
+            self._reproj_maxes.append(reproj_max)
 
-        avg_reproj = sum(self._reproj_errors) / len(self._reproj_errors) if self._reproj_errors else None
-        return self._fps, avg_reproj
+        avg_reproj = sum(self._reproj_means) / len(self._reproj_means) if self._reproj_means else None
+        max_reproj = max(self._reproj_maxes) if self._reproj_maxes else None
+        return self._fps, avg_reproj, max_reproj
 
 
 def make_side_by_side(frame_bgr: np.ndarray, plot_bgr: np.ndarray, target_height: int) -> np.ndarray:

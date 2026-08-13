@@ -22,20 +22,10 @@ import numpy as np
 
 CORNER_NAMES = ("top_left", "top_right", "bottom_right", "bottom_left")
 
-MARKER_LAYOUT_COLORS: dict[int, str] = {
-    0: "#e41a1c",
-    1: "#377eb8",
-    2: "#4daf4a",
-    3: "#984ea3",
-    4: "#ff7f00",
-}
-MARKER_LAYOUT_COLORS_BGR: dict[int, tuple[int, int, int]] = {
-    0: (60, 26, 228),
-    1: (184, 126, 55),
-    2: (74, 175, 77),
-    3: (163, 78, 152),
-    4: (0, 127, 255),
-}
+REFERENCE_MARKER_COLOR = "#e41a1c"
+REFERENCE_MARKER_COLOR_BGR = (60, 26, 228)
+DEFAULT_MARKER_COLOR = "#ffff00"
+DEFAULT_MARKER_COLOR_BGR = (0, 255, 255)
 CORNER_LABELS = {
     "top_left": "tl",
     "top_right": "tr",
@@ -402,12 +392,16 @@ def camera_point_to_layout_point(
     return origin + orientation @ (OBJECT_AXIS_FLIP @ point_object)
 
 
-def marker_color(marker_id: int) -> str:
-    return MARKER_LAYOUT_COLORS.get(marker_id, "#888888")
+def marker_color(marker_id: int, reference_marker_id: int) -> str:
+    return REFERENCE_MARKER_COLOR if marker_id == reference_marker_id else DEFAULT_MARKER_COLOR
 
 
-def marker_color_bgr(marker_id: int) -> tuple[int, int, int]:
-    return MARKER_LAYOUT_COLORS_BGR.get(marker_id, (136, 136, 136))
+def marker_color_bgr(marker_id: int, reference_marker_id: int) -> tuple[int, int, int]:
+    return (
+        REFERENCE_MARKER_COLOR_BGR
+        if marker_id == reference_marker_id
+        else DEFAULT_MARKER_COLOR_BGR
+    )
 
 
 MarkerModel = MarkerLayout

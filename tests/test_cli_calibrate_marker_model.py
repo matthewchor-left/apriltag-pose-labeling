@@ -836,8 +836,8 @@ class CalibrationHudTests(unittest.TestCase):
             reference_marker_id=0,
         )
         with (
-            mock.patch("object_apriltag.cli.calibrate_marker_model.cv2.rectangle") as rectangle_mock,
-            mock.patch("object_apriltag.cli.calibrate_marker_model.cv2.putText") as text_mock,
+            mock.patch("object_apriltag.viz.overlay.cv2.rectangle") as rectangle_mock,
+            mock.patch("object_apriltag.viz.overlay.cv2.putText") as text_mock,
         ):
             draw_calibration_hud(frame, hud_lines=hud_lines, last_solve_quality=None)
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from object_apriltag.layout import MarkerLayout, OBJECT_AXIS_FLIP
+from object_apriltag.layout import MarkerLayout, OBJECT_AXIS_FLIP, layout_point_to_camera, object_reference_origin
 
 Detection = tuple[np.ndarray, int]
 
@@ -76,6 +76,57 @@ def mean_reprojection_error(
         except RuntimeError:
             continue
     return float(np.mean(errors)) if errors else None
+
+
+def layout_reprojection_errors(
+    detections: list[Detection],
+    object_rotation: np.ndarray,
+    object_origin: np.ndarray,
+    layout: MarkerLayout,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+) -> tuple[float, float] | None:
+    """Per-frame layout reprojection mean and max pixel error across detected known markers."""
+    errors: list[float] = []
+    zero_rvec = np.zeros(3, dtype=np.float64)
+    zero_tvec = np.zeros(3, dtype=np.float64)
+    for corners, marker_id in detections:
+        if marker_id not in layout.footprints:
+            continue
+        footprint = layout.footprints[marker_id]
+        detected = corners.reshape(4, 2).astype(np.float64)
+        for index, point_layout in enumerate(footprint.corners()):
+            camera_point = layout_point_to_camera(
+                point_layout, object_rotation, object_origin, layout
+            )
+            projected, _ = cv2.projectPoints(
+                camera_point.reshape(1, 1, 3).astype(np.float64),
+                zero_rvec,
+                zero_tvec,
+                camera_matrix,
+                dist_coeffs,
+            )
+            projected_xy = projected.reshape(2)
+            if not np.all(np.isfinite(projected_xy)):
+                continue
+            errors.append(float(np.linalg.norm(projected_xy - detected[index])))
+    if not errors:
+        return None
+    return float(np.mean(errors)), float(np.max(errors))
+
+
+def reference_marker_camera_position(
+    object_rotation: np.ndarray,
+    object_origin: np.ndarray,
+    layout: MarkerLayout,
+) -> np.ndarray:
+    """Reference marker center in the OpenCV camera frame (meters)."""
+    return layout_point_to_camera(
+        object_reference_origin(layout),
+        object_rotation,
+        object_origin,
+        layout,
+    )
 
 
 def _rotation_matrix_to_quaternion(rotation: np.ndarray) -> np.ndarray:

@@ -8,7 +8,15 @@ import numpy as np
 from object_apriltag.board_pose import BoardPoseEstimate, board_point_to_camera, camera_point_to_board
 from object_apriltag.detector import ObjectPose
 from object_apriltag.eraser import EraserModel, eraser_offset_to_model_point
-from object_apriltag.layout import CORNER_NAMES, CORNER_LABELS, MarkerLayout, layout_point_to_camera, marker_color_bgr
+from object_apriltag.layout import (
+    CORNER_NAMES,
+    CORNER_LABELS,
+    MarkerLayout,
+    layout_point_to_camera,
+    marker_color_bgr,
+    object_reference_orientation,
+    object_reference_origin,
+)
 from object_apriltag.viz.projection import (
     object_axis_image_points,
     opencv_image_point,
@@ -17,6 +25,48 @@ from object_apriltag.viz.projection import (
 from object_apriltag.viz.skeleton import ObjectModel
 
 BOARD_LABEL_COLOR_BGR = (255, 255, 255)
+AXIS_COLORS_LABELS = (
+    ((0, 0, 255), "X"),
+    ((0, 255, 0), "Y"),
+    ((255, 0, 0), "Z"),
+)
+
+
+def _layout_point_image_xy(
+    point_layout: np.ndarray,
+    pose: ObjectPose,
+    marker_model: MarkerLayout,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+) -> tuple[int, int] | None:
+    camera_point = layout_point_to_camera(
+        point_layout, pose.rotation, pose.origin, marker_model
+    )
+    projected = project_camera_point(camera_point, camera_matrix, dist_coeffs)
+    return opencv_image_point(projected)
+
+
+def _draw_axis_triad(
+    frame: np.ndarray,
+    origin_xy: tuple[int, int],
+    axis_tips: tuple[tuple[tuple[int, int], tuple[int, int, int], str], ...],
+) -> None:
+    cv2.circle(frame, origin_xy, 5, (255, 255, 255), -1, lineType=cv2.LINE_AA)
+    cv2.circle(frame, origin_xy, 5, (0, 0, 0), 1, lineType=cv2.LINE_AA)
+    for tip, color, label in axis_tips:
+        cv2.arrowedLine(frame, origin_xy, tip, color, 2, tipLength=0.2, line_type=cv2.LINE_AA)
+        label_origin = opencv_image_point((tip[0] + 4, tip[1] - 4))
+        if label_origin is not None:
+            cv2.putText(
+                frame,
+                label,
+                label_origin,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                color,
+                2,
+                cv2.LINE_AA,
+            )
 
 
 def format_board_coordinate_mm(point_board: np.ndarray) -> str:
@@ -179,7 +229,7 @@ def draw_marker_model_board_coordinate_labels(
     colors: list[tuple[int, int, int]] = []
     for marker_id in sorted(marker_model.footprints):
         footprint = marker_model.footprints[marker_id]
-        color = marker_color_bgr(marker_id)
+        color = marker_color_bgr(marker_id, marker_model.reference_marker_id)
         for corner_name, point_layout in footprint.corners_by_name().items():
             labeled_points.append(
                 (
@@ -314,28 +364,46 @@ def draw_object_orientation(
     except (RuntimeError, ValueError):
         return
 
-    cv2.circle(frame, origin_xy, 5, (255, 255, 255), -1, lineType=cv2.LINE_AA)
-    cv2.circle(frame, origin_xy, 5, (0, 0, 0), 1, lineType=cv2.LINE_AA)
-
-    axes = (
-        (x_end, (0, 0, 255), "X"),
-        (y_end, (0, 255, 0), "Y"),
-        (z_end, (255, 0, 0), "Z"),
+    _draw_axis_triad(
+        frame,
+        origin_xy,
+        (
+            (x_end, AXIS_COLORS_LABELS[0][0], "X"),
+            (y_end, AXIS_COLORS_LABELS[1][0], "Y"),
+            (z_end, AXIS_COLORS_LABELS[2][0], "Z"),
+        ),
     )
-    for tip, color, label in axes:
-        cv2.arrowedLine(frame, origin_xy, tip, color, 2, tipLength=0.2, line_type=cv2.LINE_AA)
-        label_origin = opencv_image_point((tip[0] + 4, tip[1] - 4))
-        if label_origin is not None:
-            cv2.putText(
-                frame,
-                label,
-                label_origin,
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.55,
-                color,
-                2,
-                cv2.LINE_AA,
-            )
+
+
+def draw_reference_marker_orientation(
+    frame: np.ndarray,
+    pose: ObjectPose,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+    marker_model: MarkerLayout,
+) -> None:
+    """Draw reference-marker X/Y/Z axes from the calibrated layout footprint."""
+    origin_layout = object_reference_origin(marker_model)
+    orientation = object_reference_orientation(marker_model)
+    axis_length = marker_model.marker_size_m * 0.5
+
+    origin_xy = _layout_point_image_xy(
+        origin_layout, pose, marker_model, camera_matrix, dist_coeffs
+    )
+    if origin_xy is None:
+        return
+
+    axis_tips: list[tuple[tuple[int, int], tuple[int, int, int], str]] = []
+    for axis_index, (color, label) in enumerate(AXIS_COLORS_LABELS):
+        tip_layout = origin_layout + orientation[:, axis_index] * axis_length
+        tip_xy = _layout_point_image_xy(
+            tip_layout, pose, marker_model, camera_matrix, dist_coeffs
+        )
+        if tip_xy is None:
+            return
+        axis_tips.append((tip_xy, color, label))
+
+    _draw_axis_triad(frame, origin_xy, tuple(axis_tips))
 
 
 def draw_object_pose(
@@ -390,7 +458,7 @@ def draw_marker_model_footprints(
     height, width = frame.shape[:2]
     for marker_id in sorted(marker_model.footprints):
         footprint = marker_model.footprints[marker_id]
-        color = marker_color_bgr(marker_id)
+        color = marker_color_bgr(marker_id, marker_model.reference_marker_id)
         corners_layout = footprint.corners()
         image_corners: list[tuple[int, int]] = []
         for point_layout in corners_layout:
@@ -430,6 +498,10 @@ def draw_marker_model_footprints(
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA,
                 )
 
+    draw_reference_marker_orientation(
+        frame, pose, camera_matrix, dist_coeffs, marker_model
+    )
+
 
 def draw_marker_annotations(
     frame: np.ndarray,
@@ -442,12 +514,13 @@ def draw_marker_annotations(
     *,
     draw: bool = True,
 ) -> bool:
-    del marker_size_m, camera_matrix, dist_coeffs, layout
+    del marker_size_m, camera_matrix, dist_coeffs
     if not draw:
         return True
 
+    color = marker_color_bgr(marker_id, layout.reference_marker_id)
     pts = corners.reshape(4, 2).astype(np.int32)
-    cv2.polylines(frame, [pts], isClosed=True, color=(0, 255, 255), thickness=2)
+    cv2.polylines(frame, [pts], isClosed=True, color=color, thickness=2)
     anchor = tuple(int(round(v)) for v in pts[0])
     cv2.putText(
         frame,
@@ -455,7 +528,7 @@ def draw_marker_annotations(
         (anchor[0] + 8, anchor[1] - 8),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.55,
-        (0, 255, 255),
+        color,
         1,
         cv2.LINE_AA,
     )
@@ -473,6 +546,42 @@ def draw_eraser_planes(frame: np.ndarray, polygons: list[np.ndarray]) -> None:
             thickness=2,
             lineType=cv2.LINE_AA,
         )
+
+
+STATUS_HUD_FONT_SCALE = 0.55
+STATUS_HUD_THICKNESS = 1
+STATUS_HUD_LINE_SPACING = 22
+STATUS_HUD_ORIGIN_X = 10
+STATUS_HUD_FIRST_LINE_Y = 24
+
+
+def draw_status_hud_panel(frame: np.ndarray, lines: list[str]) -> None:
+    if not lines:
+        return
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = STATUS_HUD_FONT_SCALE
+    thickness = STATUS_HUD_THICKNESS
+    text_width = max(
+        cv2.getTextSize(line, font, font_scale, thickness)[0][0]
+        for line in lines
+    )
+    panel_right = min(frame.shape[1] - 1, text_width + 20)
+    panel_bottom = min(frame.shape[0] - 1, len(lines) * STATUS_HUD_LINE_SPACING + 10)
+    cv2.rectangle(frame, (0, 0), (panel_right, panel_bottom), (0, 0, 0), -1)
+
+    y = STATUS_HUD_FIRST_LINE_Y
+    for line in lines:
+        cv2.putText(
+            frame,
+            line,
+            (STATUS_HUD_ORIGIN_X, y),
+            font,
+            font_scale,
+            (255, 255, 255),
+            thickness,
+            cv2.LINE_AA,
+        )
+        y += STATUS_HUD_LINE_SPACING
 
 
 def draw_object_model_edit_hud(
@@ -498,15 +607,43 @@ def draw_object_model_edit_hud(
         cv2.putText(frame, line, (x, y), font, font_scale, color, thickness, cv2.LINE_AA)
 
 
+def format_reference_marker_camera_line(
+    reference_marker_id: int,
+    camera_point_m: np.ndarray | None,
+) -> str:
+    if camera_point_m is None:
+        return f"ref {reference_marker_id} cam xyz (m): --"
+    point = np.asarray(camera_point_m, dtype=np.float64).reshape(3)
+    return (
+        f"ref {reference_marker_id} cam xyz (m): "
+        f"{point[0]:.3f}, {point[1]:.3f}, {point[2]:.3f}"
+    )
+
+
 def draw_live_hud(
     frame: np.ndarray,
     fps: float,
-    avg_reproj_error: float | None,
-    origin: tuple[int, int] = (10, 30),
-    line_spacing: int = 30,
+    layout_reproj_avg: float | None,
+    layout_reproj_max: float | None,
+    *,
+    reference_marker_id: int | None = None,
+    reference_marker_camera_m: np.ndarray | None = None,
 ) -> None:
     lines = [f"FPS: {fps:.1f}"]
-    lines.append(f"avg reproj: {avg_reproj_error:.1f}px" if avg_reproj_error is not None else "avg reproj: --")
-    for index, line in enumerate(lines):
-        x, y = origin[0], origin[1] + index * line_spacing
-        cv2.putText(frame, line, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
+    lines.append(
+        f"layout reproj avg: {layout_reproj_avg:.1f}px"
+        if layout_reproj_avg is not None
+        else "layout reproj avg: --"
+    )
+    lines.append(
+        f"layout reproj max: {layout_reproj_max:.1f}px"
+        if layout_reproj_max is not None
+        else "layout reproj max: --"
+    )
+    if reference_marker_id is not None:
+        lines.append(
+            format_reference_marker_camera_line(
+                reference_marker_id, reference_marker_camera_m
+            )
+        )
+    draw_status_hud_panel(frame, lines)

@@ -13,7 +13,7 @@ from object_apriltag.calibration import load_intrinsics, require_calibration_ima
 from object_apriltag.detector import ObjectDetector
 from object_apriltag.object_model_edit import ObjectModelEditSession, object_model_for_render
 from object_apriltag.eraser import load_eraser_model, project_eraser_planes
-from object_apriltag.pose import mean_reprojection_error
+from object_apriltag.pose import layout_reprojection_errors, reference_marker_camera_position
 from object_apriltag.viz import (
     DEFAULT_AXIS_LIMITS,
     LiveHud,
@@ -425,10 +425,38 @@ def main() -> None:
                 label=f"{edit_session.preview_keypoint_id} target",
             )
 
-        reproj_error = mean_reprojection_error(detections, marker_size_m, camera_matrix, dist_coeffs)
-        fps, avg_reproj_error = hud.tick(reproj_error)
+        layout_reproj = (
+            layout_reprojection_errors(
+                detections,
+                pose.rotation,
+                pose.origin,
+                marker_model,
+                camera_matrix,
+                dist_coeffs,
+            )
+            if pose is not None
+            else None
+        )
+        if layout_reproj is not None:
+            fps, avg_reproj_error, max_reproj_error = hud.tick(*layout_reproj)
+        else:
+            fps, avg_reproj_error, max_reproj_error = hud.tick()
+        reference_camera_m = (
+            reference_marker_camera_position(
+                pose.rotation, pose.origin, marker_model
+            )
+            if pose is not None
+            else None
+        )
         if args.visualize:
-            draw_live_hud(preview_frame, fps, avg_reproj_error)
+            draw_live_hud(
+                preview_frame,
+                fps,
+                avg_reproj_error,
+                max_reproj_error,
+                reference_marker_id=marker_model.reference_marker_id,
+                reference_marker_camera_m=reference_camera_m,
+            )
         if edit_session is not None:
             draw_object_model_edit_hud(
                 preview_frame,

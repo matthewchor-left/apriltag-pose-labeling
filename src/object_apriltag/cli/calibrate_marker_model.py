@@ -21,6 +21,7 @@ from object_apriltag.cli.live_pair_readiness_worker import (
     LivePairReadinessView,
     LivePairReadinessWorker,
 )
+from object_apriltag.viz.overlay import draw_status_hud_panel
 from object_apriltag.marker_layout_calibration import (
     AssignmentRejectionSummary,
     CalibrationQualityReport,
@@ -275,10 +276,14 @@ def detect_expected_markers(
     return visible
 
 
-def draw_detection_outlines(frame: np.ndarray, visible: dict[int, np.ndarray]) -> None:
+def draw_detection_outlines(
+    frame: np.ndarray,
+    visible: dict[int, np.ndarray],
+    reference_marker_id: int,
+) -> None:
     for marker_id, corners in visible.items():
         points = corners.reshape(4, 2).astype(np.int32)
-        color = marker_color_bgr(marker_id)
+        color = marker_color_bgr(marker_id, reference_marker_id)
         cv2.polylines(frame, [points], isClosed=True, color=color, thickness=2)
         anchor = tuple(int(round(value)) for value in points[0])
         cv2.putText(
@@ -440,30 +445,7 @@ def draw_calibration_hud(
                     *rejection_lines,
                 ]
 
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 0.55
-    thickness = 1
-    text_width = max(
-        cv2.getTextSize(line, font, font_scale, thickness)[0][0]
-        for line in lines
-    )
-    panel_right = min(frame.shape[1] - 1, text_width + 20)
-    panel_bottom = min(frame.shape[0] - 1, len(lines) * 22 + 10)
-    cv2.rectangle(frame, (0, 0), (panel_right, panel_bottom), (0, 0, 0), -1)
-
-    y = 24
-    for line in lines:
-        cv2.putText(
-            frame,
-            line,
-            (10, y),
-            font,
-            font_scale,
-            (255, 255, 255),
-            thickness,
-            cv2.LINE_AA,
-        )
-        y += 22
+    draw_status_hud_panel(frame, lines)
 
 
 def print_refusal(result: CalibrationResult) -> None:
@@ -543,7 +525,7 @@ def run_capture(args: argparse.Namespace) -> bool:
 
             visible = detect_expected_markers(detector, frame, expected_id_set)
             preview = frame.copy()
-            draw_detection_outlines(preview, visible)
+            draw_detection_outlines(preview, visible, args.reference_marker_id)
 
             now = time.monotonic()
             if now >= next_sample_time and len(visible) >= 2:
