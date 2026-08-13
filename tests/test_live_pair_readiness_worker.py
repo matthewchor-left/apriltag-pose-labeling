@@ -183,7 +183,7 @@ class LivePairReadinessWorkerCaptureIntegrationTests(unittest.TestCase):
                 dictionary="36h11",
                 detection_sensitivity="default",
                 marker_size=0.07,
-                marker_ids=[0, 1],
+                marker_ids=["0", "1"],
                 reference_marker_id=0,
                 output=output,
                 force=True,
@@ -192,6 +192,8 @@ class LivePairReadinessWorkerCaptureIntegrationTests(unittest.TestCase):
                 reprojection_rms_gate_px=2.0,
                 pair_translation_rms_gate_ratio=0.10,
                 pair_rotation_rms_gate_deg=5.0,
+                diagnostics_output=None,
+                anchor_marker_ids=None,
             )
 
             frame = np.zeros((480, 640, 3), dtype=np.uint8)

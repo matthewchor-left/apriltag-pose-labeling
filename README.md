@@ -224,16 +224,17 @@ uv run object-calibrate-marker-model \
   --output config/Model/remote1/marker_model.json
 ```
 
-For layouts with many markers, pass `--anchor-marker-ids` to bootstrap from a small spatially diverse core (must include `--reference-marker-id`). The solver exhaustively resolves IPPE ambiguity only on anchors (`2^k` per frame), expands the remaining markers in strict hierarchical rounds, then runs the same corner bundle adjustment and quality gates. Omit the flag to keep full-set exhaustive assignment.
+For layouts with many markers, pass `--anchor-marker-ids` to bootstrap from a small spatially diverse core (must include `--reference-marker-id`). The solver exhaustively resolves IPPE ambiguity only on anchors (`2^k` per frame), expands the remaining markers in strict hierarchical rounds, then runs the same corner bundle adjustment and quality gates. Omit the flag to keep full-set exhaustive assignment. Add `--anchor-stop-after-expansion` to write the expansion-only layout (skips full IPPE reassignment, bundle adjustment, and quality gates) for debugging.
 
 ```bash
   --anchor-marker-ids 0 1 4-7 \
+  --anchor-stop-after-expansion \
 ```
 
 - **S** — solve from captured samples; writes `--output` only when quality gates pass
 - **Q** — quit without writing
 
-A frame is recorded only when **at least two** expected marker IDs are visible at a sample tick. During solve, frames that cannot be assigned a consistent marker interpretation are rejected automatically; each marker pair used in the layout still needs at least **20** accepted co-visible frames (`--min-pair-inliers`) after rejection. Keep moving the object for diverse views — you do not need to capture pairs in isolated batches. The HUD shows expected/visible IDs, captured sample count, live pair readiness (raw co-visibility, robust inlier support, translation/rotation RMS, pass/weak/fail), graph connectivity from the reference marker, and last-solve frame acceptance when you press **S**.
+A frame is recorded only when **at least two** expected marker IDs are visible at a sample tick. During solve, frames that cannot be assigned a consistent marker interpretation are rejected automatically; each marker pair used in the layout still needs at least **20** accepted co-visible frames (`--min-pair-inliers`) after rejection. Keep moving the object for diverse views — you do not need to capture pairs in isolated batches. The HUD shows expected/visible IDs, captured sample count, live pair readiness (raw co-visibility and pass/weak status), graph connectivity from the reference marker, and last-solve frame acceptance when you press **S**.
 
 **Scale caveat:** metric layout depends on the physical `--marker-size` and calibrated intrinsics. Wrong marker size or scaled intrinsics will bias the solved geometry.
 
@@ -326,6 +327,7 @@ uv.lock                # locked dependency versions (commit this)
 | `object-calibrate-marker-model` | `--camera` / `--calibration` | Live camera index and intrinsics JSON |
 | `object-calibrate-marker-model` | `--marker-ids` / `--reference-marker-id` | Expected unique IDs and layout reference |
 | `object-calibrate-marker-model` | `--anchor-marker-ids` | Optional bootstrap core for large layouts |
+| `object-calibrate-marker-model` | `--anchor-stop-after-expansion` | Debug: write expansion-only layout (no BA/gates) |
 | `object-calibrate-marker-model` | `--marker-size` | Physical tag edge length in meters |
 | `object-calibrate-marker-model` | `--sample-rate-hz` | Co-visibility sample rate (default 10 Hz) |
 | `object-calibrate-marker-model` | `--min-pair-inliers` | Minimum co-visible frames per pair (default 20) |

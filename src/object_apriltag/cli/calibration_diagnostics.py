@@ -113,6 +113,8 @@ def format_anchor_core_lines(anchor_core: AnchorCoreDiagnostics) -> list[str]:
         lines.append(detail)
     if anchor_core.unresolved_ids:
         lines.append(f"anchor unresolved: {sorted(anchor_core.unresolved_ids)}")
+    if anchor_core.stopped_after_expansion:
+        lines.append("anchor core stopped after expansion (no full reassignment or BA)")
     return lines
 
 
@@ -328,6 +330,7 @@ def _anchor_core_to_dict(anchor_core: AnchorCoreDiagnostics | None) -> dict[str,
         ],
         "final_solved_ids": sorted(anchor_core.final_solved_ids),
         "unresolved_ids": sorted(anchor_core.unresolved_ids),
+        "stopped_after_expansion": anchor_core.stopped_after_expansion,
     }
 
 

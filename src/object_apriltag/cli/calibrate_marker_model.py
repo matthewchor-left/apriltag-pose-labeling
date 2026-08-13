@@ -114,6 +114,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--anchor-stop-after-expansion",
+        action="store_true",
+        help=(
+            "Anchor-core only: after hierarchical expansion, write marker poses directly "
+            "without full IPPE reassignment, bundle adjustment, or quality gates. "
+            "Requires --anchor-marker-ids."
+        ),
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         required=True,
@@ -168,7 +177,7 @@ def parse_args() -> argparse.Namespace:
 
 def validate_args(
     args: argparse.Namespace,
-) -> tuple[list[int], CalibrationSettings, tuple[int, ...] | None]:
+) -> tuple[list[int], CalibrationSettings, tuple[int, ...] | None, bool]:
     if not args.calibration.exists():
         raise RuntimeError(
             f"Calibration file not found: {args.calibration}\n"
@@ -198,6 +207,8 @@ def validate_args(
     )
     if anchor_failure is not None:
         raise RuntimeError(anchor_failure)
+    if args.anchor_stop_after_expansion and anchor_ids is None:
+        raise RuntimeError("--anchor-stop-after-expansion requires --anchor-marker-ids.")
     if args.marker_size <= 0.0:
         raise RuntimeError("--marker-size must be positive.")
     if args.sample_rate_hz <= 0.0:
@@ -218,7 +229,7 @@ def validate_args(
         pair_translation_rms_gate_ratio=args.pair_translation_rms_gate_ratio,
         pair_rotation_rms_gate_deg=args.pair_rotation_rms_gate_deg,
     )
-    return expected_ids, settings, anchor_ids
+    return expected_ids, settings, anchor_ids, args.anchor_stop_after_expansion
 
 
 def open_camera(camera_index: int, width: int, height: int) -> cv2.VideoCapture:
@@ -310,12 +321,9 @@ def format_assignment_rejection_summary(
 
 
 def format_pair_readiness_edge(edge: PairReadinessEdge) -> str:
-    translation = "-" if edge.translation_rms_m is None else f"{edge.translation_rms_m:.3f}m"
-    rotation = "-" if edge.rotation_rms_deg is None else f"{edge.rotation_rms_deg:.1f}d"
     return (
         f"({edge.marker_a},{edge.marker_b}) {edge.status} "
-        f"raw={edge.raw_covisible_frames} inl={edge.robust_inlier_count} "
-        f"tr={translation} rr={rotation}"
+        f"raw={edge.raw_covisible_frames}"
     )
 
 
@@ -490,7 +498,7 @@ def write_calibration_diagnostics_if_requested(
 
 def run_capture(args: argparse.Namespace) -> bool:
     """Capture live samples; return True when a model was saved."""
-    expected_ids, settings, anchor_ids = validate_args(args)
+    expected_ids, settings, anchor_ids, anchor_stop_after_expansion = validate_args(args)
     expected_id_set = set(expected_ids)
 
     camera_matrix, dist_coeffs, image_width, image_height, calibration_source = load_intrinsics(
@@ -581,6 +589,7 @@ def run_capture(args: argparse.Namespace) -> bool:
                     marker_size_m=args.marker_size,
                     settings=settings,
                     anchor_marker_ids=anchor_ids,
+                    anchor_stop_after_expansion=anchor_stop_after_expansion,
                 )
                 if result.failure_reason is not None or result.layout is None:
                     print_refusal(result)

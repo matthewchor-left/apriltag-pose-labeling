@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Iterable, Sequence
 
 import cv2
 import numpy as np
@@ -99,6 +99,7 @@ class AnchorCoreDiagnostics:
     expansion: tuple[MarkerExpansionRecord, ...]
     final_solved_ids: frozenset[int]
     unresolved_ids: frozenset[int]
+    stopped_after_expansion: bool = False
 
 
 @dataclass(frozen=True)
@@ -435,6 +436,7 @@ def calibrate_marker_layout(
     marker_size_m: float,
     settings: CalibrationSettings | None = None,
     anchor_marker_ids: Sequence[int] | None = None,
+    anchor_stop_after_expansion: bool = False,
 ) -> CalibrationResult:
     """Estimate a connected marker layout or refuse with a structured reason."""
     settings = settings or CalibrationSettings()
@@ -456,6 +458,13 @@ def calibrate_marker_layout(
     )
     if anchor_failure is not None:
         return CalibrationResult(None, None, anchor_failure)
+
+    if anchor_stop_after_expansion and anchor_ids is None:
+        return CalibrationResult(
+            None,
+            None,
+            "--anchor-stop-after-expansion requires explicit anchor_marker_ids.",
+        )
 
     marker_size_failure = _validate_marker_size(marker_size_m)
     if marker_size_failure is not None:
@@ -553,6 +562,7 @@ def calibrate_marker_layout(
             object_points,
             camera_matrix,
             dist_coeffs,
+            stop_after_expansion=anchor_stop_after_expansion,
         )
         dropped_edges = list(anchor_drops)
         if anchor_failure is not None or pair_consensus is None or anchor_assigned is None:
@@ -588,6 +598,66 @@ def calibrate_marker_layout(
         assignment_rejection_summary = summarize_assignment_rejection_records(
             assignment_rejection_records
         )
+        if anchor_stop_after_expansion:
+            assert preinitialized_marker_poses is not None
+            assert pair_consensus is not None
+            marker_poses = preinitialized_marker_poses
+            footprints = _footprints_from_poses(marker_poses, marker_size_m)
+            if set(footprints) != set(expected_ids):
+                absent = sorted(set(expected_ids) - set(footprints))
+                return CalibrationResult(
+                    None,
+                    _quality_from_pairs(
+                        pair_consensus,
+                        expected_ids,
+                        reference_marker_id,
+                        frozenset(absent),
+                        input_frame_count=len(normalized_observations),
+                        rejected_frame_count=len(rejected_frames),
+                        accepted_frame_count=len(
+                            {
+                                frame_index
+                                for frame_index, assignment in assigned_candidates.items()
+                                if len(assignment) >= 2
+                            }
+                        ),
+                        observation_count=0,
+                        assignment_rejections=assignment_rejection_summary,
+                        assignment_rejection_records=assignment_rejection_records,
+                        dropped_pair_edges=tuple(dropped_edges),
+                        anchor_core=anchor_core_diagnostics,
+                    ),
+                    (
+                        "Expansion-only layout did not produce all expected marker "
+                        f"footprints; missing {absent}."
+                    ),
+                )
+            layout = build_marker_layout(
+                reference_marker_id=reference_marker_id,
+                marker_size_m=marker_size_m,
+                footprints=footprints,
+            )
+            quality = _quality_from_pairs(
+                pair_consensus,
+                expected_ids,
+                reference_marker_id,
+                _missing_from_graph(pair_consensus, expected_ids, reference_marker_id),
+                input_frame_count=len(normalized_observations),
+                rejected_frame_count=len(rejected_frames),
+                accepted_frame_count=len(
+                    {
+                        frame_index
+                        for frame_index, assignment in assigned_candidates.items()
+                        if len(assignment) >= 2
+                    }
+                ),
+                observation_count=0,
+                assignment_rejections=assignment_rejection_summary,
+                assignment_rejection_records=assignment_rejection_records,
+                dropped_pair_edges=tuple(dropped_edges),
+                anchor_core=anchor_core_diagnostics,
+            )
+            return CalibrationResult(layout, quality, None)
         input_frame_count = len(normalized_observations)
         rejected_frame_count = len(rejected_frames)
         accepted_frames = frozenset(
@@ -1175,7 +1245,7 @@ def compute_live_pair_readiness(
     marker_size_m: float,
     settings: CalibrationSettings | None = None,
 ) -> LivePairReadinessDiagnostics:
-    """Estimate pair strength and graph readiness without assignment or bundle adjustment."""
+    """Estimate co-visibility pair strength and graph readiness (topology only)."""
     settings = settings or CalibrationSettings()
     settings_failure = _validate_settings(settings)
     if settings_failure is not None:
@@ -1233,7 +1303,6 @@ def compute_live_pair_readiness(
             failure_reason=observations_failure,
         )
 
-    object_points = marker_corner_object_points(marker_size_m).astype(np.float64)
     normalized_observations = _normalize_observations(observations, expected_ids)
     raw_pair_counts = _raw_covisible_pair_counts(normalized_observations)
     if not raw_pair_counts:
@@ -1244,45 +1313,27 @@ def compute_live_pair_readiness(
             sample_count=len(observations),
         )
 
-    frame_candidates = _estimate_frame_candidates(
-        normalized_observations,
-        object_points,
-        camera_matrix,
-        dist_coeffs,
-    )
-    pair_hypotheses = _collect_pair_hypotheses(frame_candidates, expected_ids)
-    translation_gate = _pair_translation_gate(settings, marker_size_m)
-    rotation_gate = settings.pair_rotation_rms_gate_deg
-
     pair_reports: list[PairReadinessEdge] = []
-    passing_consensus: dict[MarkerPair, _PairConsensus] = {}
+    passing_pairs: list[MarkerPair] = []
     for pair, raw_count in sorted(raw_pair_counts.items()):
-        edge = _best_pair_consensus(
-            pair,
-            pair_hypotheses.get(pair, []),
-            translation_gate,
-            rotation_gate,
-        )
-        status, robust_count, translation_rms_m, rotation_rms_deg = _classify_pair_readiness(
-            edge,
-            settings,
-            marker_size_m,
-        )
-        if status == "pass" and edge is not None:
-            passing_consensus[pair] = edge
+        status = "pass" if raw_count >= settings.min_inliers_per_edge else "weak"
+        if status == "pass":
+            passing_pairs.append(pair)
         pair_reports.append(
             PairReadinessEdge(
                 marker_a=pair[0],
                 marker_b=pair[1],
                 raw_covisible_frames=raw_count,
-                robust_inlier_count=robust_count,
-                translation_rms_m=translation_rms_m,
-                rotation_rms_deg=rotation_rms_deg,
+                robust_inlier_count=raw_count,
+                translation_rms_m=None,
+                rotation_rms_deg=None,
                 status=status,
             )
         )
 
-    connected = frozenset(_connected_marker_ids(passing_consensus, reference_marker_id))
+    connected = frozenset(
+        _connected_marker_ids_from_pairs(passing_pairs, reference_marker_id)
+    )
     missing = frozenset(set(expected_ids) - connected)
     return LivePairReadinessDiagnostics(
         pairs=tuple(pair_reports),
@@ -1290,6 +1341,26 @@ def compute_live_pair_readiness(
         missing_marker_ids=missing,
         sample_count=len(observations),
     )
+
+
+def _connected_marker_ids_from_pairs(
+    pairs: Iterable[MarkerPair],
+    reference_marker_id: int,
+) -> set[int]:
+    graph: dict[int, set[int]] = {}
+    for marker_a, marker_b in pairs:
+        graph.setdefault(marker_a, set()).add(marker_b)
+        graph.setdefault(marker_b, set()).add(marker_a)
+
+    connected = {reference_marker_id}
+    queue = [reference_marker_id]
+    while queue:
+        current = queue.pop()
+        for neighbor in graph.get(current, set()):
+            if neighbor not in connected:
+                connected.add(neighbor)
+                queue.append(neighbor)
+    return connected
 
 
 def _raw_covisible_pair_counts(
@@ -2329,6 +2400,8 @@ def _assign_and_initialize_anchor_core(
     object_points: np.ndarray,
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
+    *,
+    stop_after_expansion: bool = False,
 ) -> tuple[
     dict[int, dict[int, _MarkerCandidate]] | None,
     tuple[int, ...],
@@ -2496,6 +2569,38 @@ def _assign_and_initialize_anchor_core(
             f"Anchor core expansion could not solve all expected markers; missing {sorted(unresolved)}.",
         )
 
+    if stop_after_expansion:
+        expected_set = frozenset(expected_ids)
+        pair_consensus = _pair_consensus_from_assignment_hypotheses(
+            _collect_assignment_pair_hypotheses(assignments, expected_set),
+            settings,
+            marker_size_m,
+            marker_poses=marker_poses,
+        )
+        anchor_core = AnchorCoreDiagnostics(
+            mode="anchor_core",
+            configured_anchor_ids=anchor_ids,
+            bootstrap=AnchorCoreBootstrapDiagnostics(
+                status="ok",
+                frames_considered=len(frame_candidates),
+                frames_accepted=len(accepted_frames),
+            ),
+            expansion=expansion_records,
+            final_solved_ids=frozenset(marker_poses),
+            unresolved_ids=frozenset(),
+            stopped_after_expansion=True,
+        )
+        return (
+            assignments,
+            rejected_frames,
+            assignment_rejections,
+            pair_consensus,
+            marker_poses,
+            dropped_edges,
+            anchor_core,
+            None,
+        )
+
     expected_set = frozenset(expected_ids)
     seed_frames = _freeze_assigned_frame_candidates(frame_candidates, assignments)
     seed_hypotheses = _collect_pair_hypotheses(seed_frames, expected_ids)
@@ -2515,15 +2620,13 @@ def _assign_and_initialize_anchor_core(
             marker_poses=marker_poses,
         )
 
-    assignments, reassign_rejected, reassign_rejections = _assign_ippe_candidates(
+    assignments, rejected_frames, assignment_rejections = _assign_ippe_candidates(
         frame_candidates,
         seed_consensus,
         settings,
         marker_size_m,
         search_marker_ids=expected_set,
     )
-    rejected_frames = tuple(sorted(set(rejected_frames) | set(reassign_rejected)))
-    assignment_rejections = assignment_rejections + reassign_rejections
 
     frozen_frames = _freeze_assigned_frame_candidates(frame_candidates, assignments)
     frozen_hypotheses = _collect_pair_hypotheses(frozen_frames, expected_ids)

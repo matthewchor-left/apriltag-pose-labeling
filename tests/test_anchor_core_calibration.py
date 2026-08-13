@@ -115,6 +115,7 @@ class AnchorCoreCalibrationTests(unittest.TestCase):
         expected_ids: list[int],
         *,
         anchor_marker_ids: tuple[int, ...] | None,
+        anchor_stop_after_expansion: bool = False,
     ):
         return calibrate_marker_layout(
             observations,
@@ -125,6 +126,7 @@ class AnchorCoreCalibrationTests(unittest.TestCase):
             marker_size_m=self.marker_size_m,
             settings=self.settings,
             anchor_marker_ids=anchor_marker_ids,
+            anchor_stop_after_expansion=anchor_stop_after_expansion,
         )
 
     def test_anchors_equal_expected_matches_legacy_success(self) -> None:
@@ -166,6 +168,45 @@ class AnchorCoreCalibrationTests(unittest.TestCase):
         self.assertEqual(result.quality.anchor_core.mode, "anchor_core")
         self.assertEqual(result.quality.anchor_core.configured_anchor_ids, (0, 1))
         self.assertEqual(result.quality.anchor_core.bootstrap.status, "ok")
+        if result.quality.assignment_rejection_records is not None:
+            self.assertEqual(
+                result.quality.rejected_frame_count,
+                len(result.quality.assignment_rejection_records),
+            )
+        for marker_id in (2, 3):
+            for corner_name in CORNER_NAMES:
+                expected = getattr(ground_truth[marker_id], corner_name)
+                actual = getattr(result.layout.footprints[marker_id], corner_name)
+                self.assertLess(
+                    float(np.linalg.norm(actual - expected)),
+                    0.01,
+                    msg=f"marker {marker_id} {corner_name}",
+                )
+
+    def test_stop_after_expansion_returns_layout_without_bundle_adjustment(self) -> None:
+        marker_poses = _chain_marker_poses(self.marker_size_m)
+        ground_truth = _ground_truth_footprints(marker_poses, self.marker_size_m)
+        chain_visibility = [(0, 1), (1, 2), (2, 3)]
+        frame_count = 25 * len(chain_visibility)
+        observations = synthesize_observations(
+            marker_poses,
+            frame_count=frame_count,
+            marker_size_m=self.marker_size_m,
+            visible_markers=lambda frame_index: chain_visibility[frame_index % len(chain_visibility)],
+        )
+        result = self._calibrate(
+            observations,
+            [0, 1, 2, 3],
+            anchor_marker_ids=(0, 1),
+            anchor_stop_after_expansion=True,
+        )
+
+        self.assertIsNone(result.failure_reason)
+        assert result.layout is not None
+        assert result.quality is not None
+        assert result.quality.anchor_core is not None
+        self.assertTrue(result.quality.anchor_core.stopped_after_expansion)
+        self.assertEqual(result.quality.observation_count, 0)
         for marker_id in (2, 3):
             for corner_name in CORNER_NAMES:
                 expected = getattr(ground_truth[marker_id], corner_name)
