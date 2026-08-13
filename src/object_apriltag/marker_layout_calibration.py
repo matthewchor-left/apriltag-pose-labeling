@@ -119,13 +119,17 @@ class CalibrationResult:
     outcome: Literal["accepted", "provisional", "refused"] | None = None
     calibration_policy: Literal["strict", "best_effort"] = "strict"
     failed_quality_gates: tuple[str, ...] = ()
+    selected_checkpoint_stage: str | None = None
+    failed_refinement_stage: str | None = None
 
     def __post_init__(self) -> None:
         if self.outcome is not None:
             return
         if self.layout is not None and self.failure_reason is None:
             resolved: Literal["accepted", "provisional", "refused"] = (
-                "provisional" if self.failed_quality_gates else "accepted"
+                "provisional"
+                if self.failed_quality_gates or self.failed_refinement_stage
+                else "accepted"
             )
         else:
             resolved = "refused"
@@ -939,92 +943,44 @@ def calibrate_marker_layout(
         non_reference_ids = [
             marker_id for marker_id in expected_ids if marker_id != reference_marker_id
         ]
-        marker_poses, frame_poses, inlier_mask, ba_failure = _run_bundle_adjustment(
-            corner_observations,
-            inlier_mask,
+        (
             marker_poses,
             frame_poses,
-            reference_marker_id,
-            non_reference_ids,
-            object_points_by_marker,
-            camera_matrix,
-            dist_coeffs,
-            settings,
-        )
-        if ba_failure is not None:
-            missing = _missing_from_graph(pair_consensus, expected_ids, reference_marker_id)
-            return CalibrationResult(
-                None,
-                _quality_from_pairs(
-                    pair_consensus,
-                    expected_ids,
-                    reference_marker_id,
-                    missing,
-                    input_frame_count=input_frame_count,
-                    rejected_frame_count=rejected_frame_count,
-                    accepted_frame_count=accepted_frame_count,
-                    observation_count=len(corner_observations),
-                    assignment_rejections=assignment_rejection_summary,
-                    assignment_rejection_records=assignment_rejection_records,
-                    dropped_pair_edges=tuple(dropped_edges),
-                    restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
-                    anchor_core=anchor_core_diagnostics,
-                ),
-                ba_failure,
-            )
-        assignment_hypotheses = _collect_assignment_pair_hypotheses(
-            assigned_candidates,
-            frozenset(expected_ids),
-        )
-        frozen_frames = _freeze_assigned_frame_candidates(frame_candidates, assigned_candidates)
-        pair_consensus = _pair_consensus_from_assignment_hypotheses(
-            _collect_pair_hypotheses(frozen_frames, expected_ids),
-            settings,
-            marker_sizes_m,
-            marker_poses=marker_poses,
-        )
-        marker_poses, frame_poses, inlier_mask, pair_consensus, prune_failure, pruning_drops = (
-            _prune_and_refit(
-                corner_observations,
-                inlier_mask,
-                marker_poses,
-                frame_poses,
-                reference_marker_id,
-                non_reference_ids,
-                expected_ids,
-                pair_consensus,
-                accepted_frames,
-                object_points_by_marker,
-                camera_matrix,
-                dist_coeffs,
-                settings,
-                marker_sizes_m,
-                best_effort=best_effort,
-                restored_pair_edges=restored_pair_edges,
-            )
+            inlier_mask,
+            pair_consensus,
+            pruning_drops,
+            refinement_result,
+        ) = _refine_layout_with_checkpoints(
+            marker_poses,
+            frame_poses,
+            corner_observations,
+            inlier_mask,
+            pair_consensus,
+            reference_marker_id=reference_marker_id,
+            non_reference_ids=non_reference_ids,
+            expected_ids=expected_ids,
+            accepted_frames=accepted_frames,
+            object_points_by_marker=object_points_by_marker,
+            camera_matrix=camera_matrix,
+            dist_coeffs=dist_coeffs,
+            settings=settings,
+            marker_sizes_m=marker_sizes_m,
+            marker_size_m=marker_size_m,
+            best_effort=best_effort,
+            restored_pair_edges=restored_pair_edges,
+            input_frame_count=input_frame_count,
+            rejected_frame_count=rejected_frame_count,
+            accepted_frame_count=accepted_frame_count,
+            assignment_rejection_summary=assignment_rejection_summary,
+            assignment_rejection_records=assignment_rejection_records,
+            dropped_edges=dropped_edges,
+            anchor_core_diagnostics=anchor_core_diagnostics,
+            frame_candidates=frame_candidates,
+            assigned_candidates=assigned_candidates,
         )
         dropped_edges.extend(pruning_drops)
-        if prune_failure is not None:
-            missing = _missing_from_graph(pair_consensus, expected_ids, reference_marker_id)
-            return CalibrationResult(
-                None,
-                _quality_from_pairs(
-                    pair_consensus,
-                    expected_ids,
-                    reference_marker_id,
-                    missing,
-                    input_frame_count=input_frame_count,
-                    rejected_frame_count=rejected_frame_count,
-                    accepted_frame_count=_covisible_frame_count(corner_observations, inlier_mask),
-                    observation_count=int(np.count_nonzero(inlier_mask)),
-                    assignment_rejections=assignment_rejection_summary,
-                    assignment_rejection_records=assignment_rejection_records,
-                    dropped_pair_edges=tuple(dropped_edges),
-                    restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
-                    anchor_core=anchor_core_diagnostics,
-                ),
-                prune_failure,
-            )
+        if refinement_result is not None:
+            return refinement_result
         connected_ids = _connected_marker_ids(pair_consensus, reference_marker_id)
         missing_ids = frozenset(set(expected_ids) - connected_ids)
         final_accepted_frame_count = _covisible_frame_count(corner_observations, inlier_mask)
@@ -1200,78 +1156,44 @@ def calibrate_marker_layout(
     inlier_mask = _mask_corner_observations_for_frames(corner_observations, accepted_frames)
     non_reference_ids = [marker_id for marker_id in expected_ids if marker_id != reference_marker_id]
 
-    marker_poses, frame_poses, inlier_mask, ba_failure = _run_bundle_adjustment(
-        corner_observations,
-        inlier_mask,
+    (
         marker_poses,
         frame_poses,
-        reference_marker_id,
-        non_reference_ids,
-        object_points_by_marker,
-        camera_matrix,
-        dist_coeffs,
-        settings,
-    )
-    if ba_failure is not None:
-        missing = _missing_from_graph(pair_consensus, expected_ids, reference_marker_id)
-        return CalibrationResult(
-            None,
-            _quality_from_pairs(
-                pair_consensus,
-                expected_ids,
-                reference_marker_id,
-                missing,
-                input_frame_count=input_frame_count,
-                rejected_frame_count=rejected_frame_count,
-                accepted_frame_count=accepted_frame_count,
-                observation_count=len(corner_observations),
-                assignment_rejections=assignment_rejection_summary,
-                assignment_rejection_records=assignment_rejection_records,
-                dropped_pair_edges=tuple(dropped_edges),
-                restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
-            ),
-            ba_failure,
-        )
-
-    marker_poses, frame_poses, inlier_mask, pair_consensus, prune_failure, pruning_drops = _prune_and_refit(
-        corner_observations,
         inlier_mask,
-        marker_poses,
-        frame_poses,
-        reference_marker_id,
-        non_reference_ids,
-        expected_ids,
         pair_consensus,
-        accepted_frames,
-        object_points_by_marker,
-        camera_matrix,
-        dist_coeffs,
-        settings,
-        marker_sizes_m,
+        pruning_drops,
+        refinement_result,
+    ) = _refine_layout_with_checkpoints(
+        marker_poses,
+        frame_poses,
+        corner_observations,
+        inlier_mask,
+        pair_consensus,
+        reference_marker_id=reference_marker_id,
+        non_reference_ids=non_reference_ids,
+        expected_ids=expected_ids,
+        accepted_frames=accepted_frames,
+        object_points_by_marker=object_points_by_marker,
+        camera_matrix=camera_matrix,
+        dist_coeffs=dist_coeffs,
+        settings=settings,
+        marker_sizes_m=marker_sizes_m,
+        marker_size_m=marker_size_m,
         best_effort=best_effort,
         restored_pair_edges=restored_pair_edges,
+        input_frame_count=input_frame_count,
+        rejected_frame_count=rejected_frame_count,
+        accepted_frame_count=accepted_frame_count,
+        assignment_rejection_summary=assignment_rejection_summary,
+        assignment_rejection_records=assignment_rejection_records,
+        dropped_edges=dropped_edges,
+        anchor_core_diagnostics=None,
+        frame_candidates=None,
+        assigned_candidates=None,
     )
     dropped_edges.extend(pruning_drops)
-    if prune_failure is not None:
-        missing = _missing_from_graph(pair_consensus, expected_ids, reference_marker_id)
-        return CalibrationResult(
-            None,
-            _quality_from_pairs(
-                pair_consensus,
-                expected_ids,
-                reference_marker_id,
-                missing,
-                input_frame_count=input_frame_count,
-                rejected_frame_count=rejected_frame_count,
-                accepted_frame_count=_covisible_frame_count(corner_observations, inlier_mask),
-                observation_count=int(np.count_nonzero(inlier_mask)),
-                assignment_rejections=assignment_rejection_summary,
-                assignment_rejection_records=assignment_rejection_records,
-                dropped_pair_edges=tuple(dropped_edges),
-                restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
-            ),
-            prune_failure,
-        )
+    if refinement_result is not None:
+        return refinement_result
 
     connected_ids = _connected_marker_ids(pair_consensus, reference_marker_id)
     missing_ids = frozenset(set(expected_ids) - connected_ids)
@@ -1319,6 +1241,536 @@ def calibrate_marker_layout(
         marker_sizes_m=dict(marker_sizes_m),
     )
     return _accepted_calibration_result(layout, quality, best_effort=best_effort)
+
+
+OptimizationCheckpointStage = Literal[
+    "graph_initialization",
+    "initial_bundle_adjustment",
+    "post_pruning_refit",
+]
+
+
+@dataclass(frozen=True)
+class _OptimizationCheckpoint:
+    stage: OptimizationCheckpointStage
+    marker_poses: dict[int, tuple[np.ndarray, np.ndarray]]
+    frame_poses: list[tuple[np.ndarray, np.ndarray] | None]
+    inlier_mask: np.ndarray
+    pair_consensus: dict[MarkerPair, _PairConsensus]
+
+
+def _copy_marker_poses(
+    marker_poses: dict[int, tuple[np.ndarray, np.ndarray]],
+) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+    return {
+        marker_id: (rotation.copy(), translation.copy())
+        for marker_id, (rotation, translation) in marker_poses.items()
+    }
+
+
+def _copy_frame_poses(
+    frame_poses: list[tuple[np.ndarray, np.ndarray] | None],
+) -> list[tuple[np.ndarray, np.ndarray] | None]:
+    return [
+        None if frame_pose is None else (frame_pose[0].copy(), frame_pose[1].copy())
+        for frame_pose in frame_poses
+    ]
+
+
+def _poses_are_finite(
+    marker_poses: dict[int, tuple[np.ndarray, np.ndarray]],
+    frame_poses: list[tuple[np.ndarray, np.ndarray] | None],
+) -> bool:
+    for rotation, translation in marker_poses.values():
+        if not np.all(np.isfinite(rotation)) or not np.all(np.isfinite(translation)):
+            return False
+    for frame_pose in frame_poses:
+        if frame_pose is None:
+            continue
+        rotation, translation = frame_pose
+        if not np.all(np.isfinite(rotation)) or not np.all(np.isfinite(translation)):
+            return False
+    return True
+
+
+def _is_valid_complete_checkpoint(
+    checkpoint: _OptimizationCheckpoint,
+    *,
+    expected_ids: list[int],
+    reference_marker_id: int,
+    corner_observations: list[_CornerObservation],
+    object_points_by_marker: dict[int, np.ndarray],
+) -> bool:
+    if set(checkpoint.marker_poses) != set(expected_ids):
+        return False
+    connected = _connected_marker_ids(checkpoint.pair_consensus, reference_marker_id)
+    if not set(expected_ids).issubset(connected):
+        return False
+    if not _poses_are_finite(checkpoint.marker_poses, checkpoint.frame_poses):
+        return False
+    return _positive_depth_failure(
+        corner_observations,
+        checkpoint.inlier_mask,
+        checkpoint.marker_poses,
+        checkpoint.frame_poses,
+        object_points_by_marker,
+    ) is None
+
+
+def _record_optimization_checkpoint(
+    checkpoints: list[_OptimizationCheckpoint],
+    stage: OptimizationCheckpointStage,
+    marker_poses: dict[int, tuple[np.ndarray, np.ndarray]],
+    frame_poses: list[tuple[np.ndarray, np.ndarray] | None],
+    inlier_mask: np.ndarray,
+    pair_consensus: dict[MarkerPair, _PairConsensus],
+    *,
+    expected_ids: list[int],
+    reference_marker_id: int,
+    corner_observations: list[_CornerObservation],
+    object_points_by_marker: dict[int, np.ndarray],
+) -> _OptimizationCheckpoint | None:
+    checkpoint = _OptimizationCheckpoint(
+        stage=stage,
+        marker_poses=_copy_marker_poses(marker_poses),
+        frame_poses=_copy_frame_poses(frame_poses),
+        inlier_mask=inlier_mask.copy(),
+        pair_consensus=dict(pair_consensus),
+    )
+    if not _is_valid_complete_checkpoint(
+        checkpoint,
+        expected_ids=expected_ids,
+        reference_marker_id=reference_marker_id,
+        corner_observations=corner_observations,
+        object_points_by_marker=object_points_by_marker,
+    ):
+        return None
+    checkpoints.append(checkpoint)
+    return checkpoint
+
+
+def _latest_valid_optimization_checkpoint(
+    checkpoints: Sequence[_OptimizationCheckpoint],
+    *,
+    expected_ids: list[int],
+    reference_marker_id: int,
+    corner_observations: list[_CornerObservation],
+    object_points_by_marker: dict[int, np.ndarray],
+) -> _OptimizationCheckpoint | None:
+    for checkpoint in reversed(checkpoints):
+        if _is_valid_complete_checkpoint(
+            checkpoint,
+            expected_ids=expected_ids,
+            reference_marker_id=reference_marker_id,
+            corner_observations=corner_observations,
+            object_points_by_marker=object_points_by_marker,
+        ):
+            return checkpoint
+    return None
+
+
+def _pair_consensus_after_initial_bundle_adjustment(
+    pair_consensus: dict[MarkerPair, _PairConsensus],
+    *,
+    frame_candidates: list[tuple[int, dict[int, list[_MarkerCandidate]]]] | None,
+    assigned_candidates: dict[int, dict[int, _MarkerCandidate]] | None,
+    expected_ids: list[int],
+    settings: CalibrationSettings,
+    marker_sizes_m: Mapping[int, float],
+    marker_poses: dict[int, tuple[np.ndarray, np.ndarray]],
+) -> dict[MarkerPair, _PairConsensus]:
+    if frame_candidates is None or assigned_candidates is None:
+        return pair_consensus
+    frozen_frames = _freeze_assigned_frame_candidates(frame_candidates, assigned_candidates)
+    return _pair_consensus_from_assignment_hypotheses(
+        _collect_pair_hypotheses(frozen_frames, expected_ids),
+        settings,
+        marker_sizes_m,
+        marker_poses=marker_poses,
+    )
+
+
+def _provisional_result_from_checkpoint(
+    checkpoint: _OptimizationCheckpoint,
+    *,
+    failed_refinement_stage: OptimizationCheckpointStage,
+    expected_ids: list[int],
+    reference_marker_id: int,
+    corner_observations: list[_CornerObservation],
+    object_points_by_marker: dict[int, np.ndarray],
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+    settings: CalibrationSettings,
+    marker_sizes_m: Mapping[int, float],
+    marker_size_m: float,
+    input_frame_count: int,
+    rejected_frame_count: int,
+    assignment_rejection_summary: AssignmentRejectionSummary | None,
+    assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None,
+    dropped_pair_edges: tuple[DroppedPairEdge, ...],
+    restored_pair_edges: tuple[RestoredPairEdge, ...] | None,
+    anchor_core: AnchorCoreDiagnostics | None,
+) -> CalibrationResult:
+    marker_poses = checkpoint.marker_poses
+    frame_poses = checkpoint.frame_poses
+    inlier_mask = checkpoint.inlier_mask
+    pair_consensus = checkpoint.pair_consensus
+    connected_ids = _connected_marker_ids(pair_consensus, reference_marker_id)
+    missing_ids = frozenset(set(expected_ids) - connected_ids)
+    accepted_frame_count = _covisible_frame_count(corner_observations, inlier_mask)
+    quality = _build_quality_report(
+        corner_observations,
+        inlier_mask,
+        marker_poses,
+        frame_poses,
+        pair_consensus,
+        expected_ids,
+        reference_marker_id,
+        missing_ids,
+        input_frame_count,
+        rejected_frame_count,
+        accepted_frame_count,
+        object_points_by_marker,
+        camera_matrix,
+        dist_coeffs,
+        assignment_rejections=assignment_rejection_summary,
+        assignment_rejection_records=assignment_rejection_records,
+        dropped_pair_edges=dropped_pair_edges,
+        restored_pair_edges=restored_pair_edges,
+        anchor_core=anchor_core,
+    )
+    gate_failures = _collect_quality_gate_failures(
+        quality,
+        settings,
+        marker_sizes_m,
+        expected_ids,
+    )
+    failed_gate_messages = tuple(failure.message for failure in gate_failures)
+    layout = build_marker_layout(
+        reference_marker_id=reference_marker_id,
+        marker_size_m=marker_size_m,
+        footprints=_footprints_from_poses(marker_poses, marker_sizes_m),
+        marker_sizes_m=dict(marker_sizes_m),
+    )
+    return CalibrationResult(
+        layout,
+        quality,
+        None,
+        outcome="provisional",
+        calibration_policy="best_effort",
+        failed_quality_gates=failed_gate_messages,
+        selected_checkpoint_stage=checkpoint.stage,
+        failed_refinement_stage=failed_refinement_stage,
+    )
+
+
+def _maybe_recover_from_checkpoints(
+    checkpoints: list[_OptimizationCheckpoint],
+    *,
+    failed_refinement_stage: OptimizationCheckpointStage,
+    best_effort: bool,
+    expected_ids: list[int],
+    reference_marker_id: int,
+    corner_observations: list[_CornerObservation],
+    object_points_by_marker: dict[int, np.ndarray],
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+    settings: CalibrationSettings,
+    marker_sizes_m: Mapping[int, float],
+    marker_size_m: float,
+    input_frame_count: int,
+    rejected_frame_count: int,
+    assignment_rejection_summary: AssignmentRejectionSummary | None,
+    assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None,
+    dropped_pair_edges: tuple[DroppedPairEdge, ...],
+    restored_pair_edges: tuple[RestoredPairEdge, ...] | None,
+    anchor_core: AnchorCoreDiagnostics | None,
+) -> CalibrationResult | None:
+    if not best_effort:
+        return None
+    checkpoint = _latest_valid_optimization_checkpoint(
+        checkpoints,
+        expected_ids=expected_ids,
+        reference_marker_id=reference_marker_id,
+        corner_observations=corner_observations,
+        object_points_by_marker=object_points_by_marker,
+    )
+    if checkpoint is None:
+        return None
+    return _provisional_result_from_checkpoint(
+        checkpoint,
+        failed_refinement_stage=failed_refinement_stage,
+        expected_ids=expected_ids,
+        reference_marker_id=reference_marker_id,
+        corner_observations=corner_observations,
+        object_points_by_marker=object_points_by_marker,
+        camera_matrix=camera_matrix,
+        dist_coeffs=dist_coeffs,
+        settings=settings,
+        marker_sizes_m=marker_sizes_m,
+        marker_size_m=marker_size_m,
+        input_frame_count=input_frame_count,
+        rejected_frame_count=rejected_frame_count,
+        assignment_rejection_summary=assignment_rejection_summary,
+        assignment_rejection_records=assignment_rejection_records,
+        dropped_pair_edges=dropped_pair_edges,
+        restored_pair_edges=restored_pair_edges,
+        anchor_core=anchor_core,
+    )
+
+
+def _refinement_failure_quality(
+    pair_consensus: dict[MarkerPair, _PairConsensus],
+    *,
+    expected_ids: list[int],
+    reference_marker_id: int,
+    input_frame_count: int,
+    rejected_frame_count: int,
+    accepted_frame_count: int,
+    observation_count: int,
+    assignment_rejection_summary: AssignmentRejectionSummary | None,
+    assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None,
+    dropped_pair_edges: tuple[DroppedPairEdge, ...],
+    restored_pair_edges: tuple[RestoredPairEdge, ...] | None,
+    anchor_core: AnchorCoreDiagnostics | None,
+) -> CalibrationQualityReport:
+    return _quality_from_pairs(
+        pair_consensus,
+        expected_ids,
+        reference_marker_id,
+        _missing_from_graph(pair_consensus, expected_ids, reference_marker_id),
+        input_frame_count=input_frame_count,
+        rejected_frame_count=rejected_frame_count,
+        accepted_frame_count=accepted_frame_count,
+        observation_count=observation_count,
+        assignment_rejections=assignment_rejection_summary,
+        assignment_rejection_records=assignment_rejection_records,
+        dropped_pair_edges=dropped_pair_edges,
+        restored_pair_edges=restored_pair_edges,
+        anchor_core=anchor_core,
+    )
+
+
+def _refine_layout_with_checkpoints(
+    marker_poses: dict[int, tuple[np.ndarray, np.ndarray]],
+    frame_poses: list[tuple[np.ndarray, np.ndarray] | None],
+    corner_observations: list[_CornerObservation],
+    inlier_mask: np.ndarray,
+    pair_consensus: dict[MarkerPair, _PairConsensus],
+    *,
+    reference_marker_id: int,
+    non_reference_ids: list[int],
+    expected_ids: list[int],
+    accepted_frames: frozenset[int],
+    object_points_by_marker: dict[int, np.ndarray],
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+    settings: CalibrationSettings,
+    marker_sizes_m: Mapping[int, float],
+    marker_size_m: float,
+    best_effort: bool,
+    restored_pair_edges: list[RestoredPairEdge] | None,
+    input_frame_count: int,
+    rejected_frame_count: int,
+    accepted_frame_count: int,
+    assignment_rejection_summary: AssignmentRejectionSummary | None,
+    assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None,
+    dropped_edges: list[DroppedPairEdge],
+    anchor_core_diagnostics: AnchorCoreDiagnostics | None,
+    frame_candidates: list[tuple[int, dict[int, list[_MarkerCandidate]]]] | None,
+    assigned_candidates: dict[int, dict[int, _MarkerCandidate]] | None,
+) -> tuple[
+    dict[int, tuple[np.ndarray, np.ndarray]],
+    list[tuple[np.ndarray, np.ndarray] | None],
+    np.ndarray,
+    dict[MarkerPair, _PairConsensus],
+    tuple[DroppedPairEdge, ...],
+    CalibrationResult | None,
+]:
+    checkpoints: list[_OptimizationCheckpoint] = []
+    restored_edges = tuple(restored_pair_edges) if restored_pair_edges else None
+
+    _record_optimization_checkpoint(
+        checkpoints,
+        "graph_initialization",
+        marker_poses,
+        frame_poses,
+        inlier_mask,
+        pair_consensus,
+        expected_ids=expected_ids,
+        reference_marker_id=reference_marker_id,
+        corner_observations=corner_observations,
+        object_points_by_marker=object_points_by_marker,
+    )
+
+    marker_poses, frame_poses, inlier_mask, ba_failure = _run_bundle_adjustment(
+        corner_observations,
+        inlier_mask,
+        marker_poses,
+        frame_poses,
+        reference_marker_id,
+        non_reference_ids,
+        object_points_by_marker,
+        camera_matrix,
+        dist_coeffs,
+        settings,
+    )
+    if ba_failure is not None:
+        recovered = _maybe_recover_from_checkpoints(
+            checkpoints,
+            failed_refinement_stage="initial_bundle_adjustment",
+            best_effort=best_effort,
+            expected_ids=expected_ids,
+            reference_marker_id=reference_marker_id,
+            corner_observations=corner_observations,
+            object_points_by_marker=object_points_by_marker,
+            camera_matrix=camera_matrix,
+            dist_coeffs=dist_coeffs,
+            settings=settings,
+            marker_sizes_m=marker_sizes_m,
+            marker_size_m=marker_size_m,
+            input_frame_count=input_frame_count,
+            rejected_frame_count=rejected_frame_count,
+            assignment_rejection_summary=assignment_rejection_summary,
+            assignment_rejection_records=assignment_rejection_records,
+            dropped_pair_edges=tuple(dropped_edges),
+            restored_pair_edges=restored_edges,
+            anchor_core=anchor_core_diagnostics,
+        )
+        if recovered is not None:
+            return marker_poses, frame_poses, inlier_mask, pair_consensus, (), recovered
+        return (
+            marker_poses,
+            frame_poses,
+            inlier_mask,
+            pair_consensus,
+            (),
+            CalibrationResult(
+                None,
+                _refinement_failure_quality(
+                    pair_consensus,
+                    expected_ids=expected_ids,
+                    reference_marker_id=reference_marker_id,
+                    input_frame_count=input_frame_count,
+                    rejected_frame_count=rejected_frame_count,
+                    accepted_frame_count=accepted_frame_count,
+                    observation_count=len(corner_observations),
+                    assignment_rejection_summary=assignment_rejection_summary,
+                    assignment_rejection_records=assignment_rejection_records,
+                    dropped_pair_edges=tuple(dropped_edges),
+                    restored_pair_edges=restored_edges,
+                    anchor_core=anchor_core_diagnostics,
+                ),
+                ba_failure,
+            ),
+        )
+
+    pair_consensus = _pair_consensus_after_initial_bundle_adjustment(
+        pair_consensus,
+        frame_candidates=frame_candidates,
+        assigned_candidates=assigned_candidates,
+        expected_ids=expected_ids,
+        settings=settings,
+        marker_sizes_m=marker_sizes_m,
+        marker_poses=marker_poses,
+    )
+    _record_optimization_checkpoint(
+        checkpoints,
+        "initial_bundle_adjustment",
+        marker_poses,
+        frame_poses,
+        inlier_mask,
+        pair_consensus,
+        expected_ids=expected_ids,
+        reference_marker_id=reference_marker_id,
+        corner_observations=corner_observations,
+        object_points_by_marker=object_points_by_marker,
+    )
+
+    marker_poses, frame_poses, inlier_mask, pair_consensus, prune_failure, pruning_drops = (
+        _prune_and_refit(
+            corner_observations,
+            inlier_mask,
+            marker_poses,
+            frame_poses,
+            reference_marker_id,
+            non_reference_ids,
+            expected_ids,
+            pair_consensus,
+            accepted_frames,
+            object_points_by_marker,
+            camera_matrix,
+            dist_coeffs,
+            settings,
+            marker_sizes_m,
+            best_effort=best_effort,
+            restored_pair_edges=restored_pair_edges,
+        )
+    )
+    if prune_failure is not None:
+        dropped_edges.extend(pruning_drops)
+        recovered = _maybe_recover_from_checkpoints(
+            checkpoints,
+            failed_refinement_stage="post_pruning_refit",
+            best_effort=best_effort,
+            expected_ids=expected_ids,
+            reference_marker_id=reference_marker_id,
+            corner_observations=corner_observations,
+            object_points_by_marker=object_points_by_marker,
+            camera_matrix=camera_matrix,
+            dist_coeffs=dist_coeffs,
+            settings=settings,
+            marker_sizes_m=marker_sizes_m,
+            marker_size_m=marker_size_m,
+            input_frame_count=input_frame_count,
+            rejected_frame_count=rejected_frame_count,
+            assignment_rejection_summary=assignment_rejection_summary,
+            assignment_rejection_records=assignment_rejection_records,
+            dropped_pair_edges=tuple(dropped_edges),
+            restored_pair_edges=restored_edges,
+            anchor_core=anchor_core_diagnostics,
+        )
+        if recovered is not None:
+            return marker_poses, frame_poses, inlier_mask, pair_consensus, (), recovered
+        return (
+            marker_poses,
+            frame_poses,
+            inlier_mask,
+            pair_consensus,
+            (),
+            CalibrationResult(
+                None,
+                _refinement_failure_quality(
+                    pair_consensus,
+                    expected_ids=expected_ids,
+                    reference_marker_id=reference_marker_id,
+                    input_frame_count=input_frame_count,
+                    rejected_frame_count=rejected_frame_count,
+                    accepted_frame_count=_covisible_frame_count(corner_observations, inlier_mask),
+                    observation_count=int(np.count_nonzero(inlier_mask)),
+                    assignment_rejection_summary=assignment_rejection_summary,
+                    assignment_rejection_records=assignment_rejection_records,
+                    dropped_pair_edges=tuple(dropped_edges),
+                    restored_pair_edges=restored_edges,
+                    anchor_core=anchor_core_diagnostics,
+                ),
+                prune_failure,
+            ),
+        )
+
+    _record_optimization_checkpoint(
+        checkpoints,
+        "post_pruning_refit",
+        marker_poses,
+        frame_poses,
+        inlier_mask,
+        pair_consensus,
+        expected_ids=expected_ids,
+        reference_marker_id=reference_marker_id,
+        corner_observations=corner_observations,
+        object_points_by_marker=object_points_by_marker,
+    )
+    return marker_poses, frame_poses, inlier_mask, pair_consensus, pruning_drops, None
 
 
 def _accepted_calibration_result(

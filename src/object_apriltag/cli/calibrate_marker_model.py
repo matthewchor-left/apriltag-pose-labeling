@@ -521,7 +521,13 @@ def print_refusal(result: CalibrationResult) -> None:
 
 def print_success(result: CalibrationResult, output: Path) -> None:
     if result.outcome == "provisional":
-        print("WARNING: Saved provisional marker model (strict quality gates failed).")
+        if result.failed_refinement_stage is not None:
+            print(
+                "WARNING: Saved provisional marker model from optimization checkpoint "
+                f"'{result.selected_checkpoint_stage}' after '{result.failed_refinement_stage}' failed."
+            )
+        else:
+            print("WARNING: Saved provisional marker model (strict quality gates failed).")
         for gate in result.failed_quality_gates:
             print(f"  failed gate: {gate}")
     print(f"Saved marker model: {output}")

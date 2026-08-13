@@ -1198,6 +1198,119 @@ class PairGraphFilteringTests(unittest.TestCase):
         )
 
 
+class OptimizationCheckpointRecoveryTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.marker_size_m = 0.07
+        self.camera_matrix, self.dist_coeffs = _default_camera()
+        self.settings = CalibrationSettings(min_inliers_per_edge=20)
+
+    def _prune_failure_observations(self) -> list[FrameObservation]:
+        observations = synthesize_observations(
+            _two_marker_poses(self.marker_size_m),
+            frame_count=25,
+            marker_size_m=self.marker_size_m,
+            seed=1,
+        )
+        _apply_constant_marker_noise(observations, marker_id=1, noise_std_px=3.0, seed=0)
+        return observations
+
+    def test_strict_mode_still_refuses_when_pruning_fails(self) -> None:
+        result = calibrate_marker_layout(
+            self._prune_failure_observations(),
+            self.camera_matrix,
+            self.dist_coeffs,
+            expected_marker_ids=[0, 1],
+            reference_marker_id=0,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+        )
+        self.assertIsNone(result.layout)
+        self.assertEqual(result.outcome, "refused")
+        self.assertIsNone(result.selected_checkpoint_stage)
+        self.assertIsNone(result.failed_refinement_stage)
+
+    def test_best_effort_recovers_pre_pruning_checkpoint_when_pruning_fails(self) -> None:
+        result = calibrate_marker_layout(
+            self._prune_failure_observations(),
+            self.camera_matrix,
+            self.dist_coeffs,
+            expected_marker_ids=[0, 1],
+            reference_marker_id=0,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+            best_effort=True,
+        )
+        self.assertIsNotNone(result.layout)
+        self.assertIsNone(result.failure_reason)
+        self.assertEqual(result.outcome, "provisional")
+        self.assertEqual(result.calibration_policy, "best_effort")
+        self.assertEqual(result.selected_checkpoint_stage, "initial_bundle_adjustment")
+        self.assertEqual(result.failed_refinement_stage, "post_pruning_refit")
+        assert result.quality is not None
+        self.assertEqual(result.quality.connected_marker_ids, frozenset({0, 1}))
+        self.assertEqual(result.quality.missing_expected_ids, frozenset())
+
+    def test_best_effort_refuses_when_no_valid_complete_checkpoint_exists(self) -> None:
+        with mock.patch(
+            "object_apriltag.marker_layout_calibration._record_optimization_checkpoint",
+            return_value=None,
+        ):
+            result = calibrate_marker_layout(
+                self._prune_failure_observations(),
+                self.camera_matrix,
+                self.dist_coeffs,
+                expected_marker_ids=[0, 1],
+                reference_marker_id=0,
+                marker_size_m=self.marker_size_m,
+                settings=self.settings,
+                best_effort=True,
+            )
+
+        self.assertIsNone(result.layout)
+        self.assertEqual(result.outcome, "refused")
+        self.assertIsNotNone(result.failure_reason)
+        self.assertTrue(
+            "supported frames after pruning" in (result.failure_reason or "")
+            or "not connected after pruning" in (result.failure_reason or "")
+            or "Too few inlier" in (result.failure_reason or "")
+        )
+
+    @mock.patch("object_apriltag.marker_layout_calibration.least_squares")
+    def test_best_effort_rejects_incomplete_checkpoint(
+        self,
+        least_squares_mock: mock.Mock,
+    ) -> None:
+        from scipy.optimize import OptimizeResult, least_squares
+
+        observations = self._prune_failure_observations()
+        call_count = {"n": 0}
+
+        def _ba_once_then_real(fun, x0, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                bad = np.asarray(x0, dtype=np.float64).copy()
+                bad[-1] = -1.0
+                return OptimizeResult(x=bad, success=True, status=1)
+            return least_squares(fun, x0, **kwargs)
+
+        least_squares_mock.side_effect = _ba_once_then_real
+
+        result = calibrate_marker_layout(
+            observations,
+            self.camera_matrix,
+            self.dist_coeffs,
+            expected_marker_ids=[0, 1],
+            reference_marker_id=0,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+            best_effort=True,
+        )
+
+        self.assertIsNotNone(result.layout)
+        self.assertEqual(result.selected_checkpoint_stage, "graph_initialization")
+        self.assertEqual(result.failed_refinement_stage, "initial_bundle_adjustment")
+
+
 class WeakPairConnectivityRecoveryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.marker_size_m = 0.07

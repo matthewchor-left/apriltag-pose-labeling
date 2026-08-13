@@ -25,7 +25,7 @@ from object_apriltag.marker_layout_calibration import (
     RestoredPairEdge,
 )
 
-CALIBRATION_DIAGNOSTICS_VERSION = 4
+CALIBRATION_DIAGNOSTICS_VERSION = 5
 
 
 def format_reprojection_rms_px(value: float) -> str:
@@ -390,6 +390,8 @@ def build_calibration_diagnostics_document(
     calibration_policy: str = "strict",
     outcome: str = "refused",
     failed_quality_gates: tuple[str, ...] | list[str] = (),
+    selected_checkpoint_stage: str | None = None,
+    failed_refinement_stage: str | None = None,
 ) -> dict[str, Any]:
     return {
         "version": CALIBRATION_DIAGNOSTICS_VERSION,
@@ -398,6 +400,8 @@ def build_calibration_diagnostics_document(
         "calibration_policy": calibration_policy,
         "outcome": outcome,
         "failed_quality_gates": list(failed_quality_gates),
+        "selected_checkpoint_stage": selected_checkpoint_stage,
+        "failed_refinement_stage": failed_refinement_stage,
         "quality": _quality_report_to_dict(quality),
         "assignment_rejections": _assignment_rejection_summary_to_dict(
             quality.assignment_rejections
@@ -432,6 +436,8 @@ def save_calibration_diagnostics(
         calibration_policy=result.calibration_policy,
         outcome=result.outcome or "refused",
         failed_quality_gates=result.failed_quality_gates,
+        selected_checkpoint_stage=result.selected_checkpoint_stage,
+        failed_refinement_stage=result.failed_refinement_stage,
     )
     serialize = serialize_fn or serialize_calibration_diagnostics_document
     try:

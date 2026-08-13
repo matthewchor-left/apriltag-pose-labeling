@@ -350,6 +350,8 @@ class CalibrationDiagnosticsDocumentTests(unittest.TestCase):
         "calibration_policy",
         "outcome",
         "failed_quality_gates",
+        "selected_checkpoint_stage",
+        "failed_refinement_stage",
         "quality",
         "assignment_rejections",
         "assignment_rejection_records",
@@ -493,7 +495,7 @@ class CalibrationDiagnosticsDocumentTests(unittest.TestCase):
         self.assertEqual(list(payload["quality"].keys()), list(self.QUALITY_KEYS))
         self.assertEqual(list(payload["assignment_rejection_records"][0].keys()), list(self.RECORD_KEYS))
         self.assertEqual(list(payload["dropped_pair_edges"][0].keys()), list(self.DROPPED_EDGE_KEYS))
-        self.assertEqual(payload["version"], 4)
+        self.assertEqual(payload["version"], 5)
         self.assertFalse(payload["succeeded"])
         self.assertEqual(payload["failure_reason"], "refused")
         self.assertIsNone(payload["quality"]["reprojection_rms_px"])
@@ -561,6 +563,23 @@ class CalibrationDiagnosticsDocumentTests(unittest.TestCase):
         self.assertEqual(payload["calibration_policy"], "best_effort")
         self.assertEqual(payload["outcome"], "provisional")
         self.assertEqual(payload["failed_quality_gates"], list(failed_gates))
+
+    def test_checkpoint_recovery_records_selected_and_failed_stages(self) -> None:
+        result = CalibrationResult(
+            layout=mock.Mock(),
+            quality=_quality_report(),
+            failure_reason=None,
+            outcome="provisional",
+            calibration_policy="best_effort",
+            selected_checkpoint_stage="initial_bundle_adjustment",
+            failed_refinement_stage="post_pruning_refit",
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "diagnostics.json"
+            save_calibration_diagnostics(path, result)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["selected_checkpoint_stage"], "initial_bundle_adjustment")
+        self.assertEqual(payload["failed_refinement_stage"], "post_pruning_refit")
 
 
 if __name__ == "__main__":
