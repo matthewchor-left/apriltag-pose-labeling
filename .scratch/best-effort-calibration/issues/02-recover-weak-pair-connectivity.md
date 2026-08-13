@@ -4,12 +4,12 @@
 
 **Blocked by:** 01 — Emit a provisional model after completed optimization.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Each pair retains at most one dominant IPPE consensus mode with no more than one hypothesis per frame.
-- [ ] Weak edges are ranked using distinct-frame support, support fraction, rotation disagreement, and translation disagreement.
-- [ ] Best-effort mode restores only enough ranked weak edges to connect all expected markers to the reference marker.
-- [ ] Diagnostics identify every restored edge, its original rejection reason, and its confidence measurements.
-- [ ] Strict mode retains its current minimum-inlier and RMS rejection behavior.
-- [ ] Observations whose raw pair graph cannot connect all expected markers still produce a hard refusal.
-- [ ] Regression coverage demonstrates recovery of a weak bridge pair without combining opposite IPPE modes.
+- [x] Each pair retains at most one dominant IPPE consensus mode with no more than one hypothesis per frame.
+- [x] Weak edges are ranked using distinct-frame support, support fraction, rotation disagreement, and translation disagreement.
+- [x] Best-effort mode restores only enough ranked weak edges to connect all expected markers to the reference marker.
+- [x] Diagnostics identify every restored edge, its original rejection reason, and its confidence measurements.
+- [x] Strict mode retains its current minimum-inlier and RMS rejection behavior.
+- [x] Observations whose raw pair graph cannot connect all expected markers still produce a hard refusal.
+- [x] Regression coverage demonstrates recovery of a weak bridge pair without combining opposite IPPE modes.

@@ -14,6 +14,7 @@ from object_apriltag.cli.calibration_diagnostics import (
     format_dropped_pair_edge,
     format_quality_diagnostics_lines,
     format_reprojection_rms_px,
+    format_restored_pair_edge,
     save_calibration_diagnostics,
     serialize_calibration_diagnostics_document,
 )
@@ -27,6 +28,7 @@ from object_apriltag.marker_layout_calibration import (
     EdgeDiagnostics,
     FrameAssignmentRejectionRecord,
     MeasurementDistribution,
+    RestoredPairEdge,
 )
 
 
@@ -285,6 +287,61 @@ class DroppedPairEdgeFormattingTests(unittest.TestCase):
         self.assertEqual(len(dropped_lines), 2)
 
 
+class RestoredPairEdgeFormattingTests(unittest.TestCase):
+    def test_restored_edge_line_includes_reason_and_confidence(self) -> None:
+        edge = RestoredPairEdge(
+            marker_a=0,
+            marker_b=1,
+            stage="initial_consensus",
+            original_stage="initial_consensus",
+            original_reason="insufficient_observed_frames",
+            observed_count=10,
+            supported_count=10,
+            required_count=20,
+            support_fraction=1.0,
+            translation_rms_m=0.004,
+            rotation_rms_deg=1.2,
+            translation_gate_m=0.007,
+            rotation_gate_deg=5.0,
+        )
+        line = format_restored_pair_edge(edge)
+        self.assertIn("restored pair (0,1)", line)
+        self.assertIn("original_stage=initial_consensus", line)
+        self.assertIn("reason=insufficient_observed_frames", line)
+        self.assertIn("support_fraction=1.000", line)
+        self.assertIn("tr_rms=0.004m", line)
+        self.assertIn("rot_rms=1.2deg", line)
+
+    def test_document_serializes_restored_pair_edges(self) -> None:
+        quality = _quality_report(
+            restored_pair_edges=(
+                RestoredPairEdge(
+                    marker_a=0,
+                    marker_b=1,
+                    stage="assignment_support",
+                    original_stage="assignment_support",
+                    original_reason="insufficient_support",
+                    observed_count=20,
+                    supported_count=10,
+                    required_count=20,
+                    support_fraction=0.5,
+                ),
+            )
+        )
+        document = build_calibration_diagnostics_document(
+            quality,
+            succeeded=True,
+            failure_reason=None,
+            calibration_policy="best_effort",
+            outcome="accepted",
+        )
+        restored = document["restored_pair_edges"]
+        assert restored is not None
+        self.assertEqual(len(restored), 1)
+        self.assertEqual(restored[0]["marker_a"], 0)
+        self.assertEqual(restored[0]["support_fraction"], 0.5)
+
+
 class CalibrationDiagnosticsDocumentTests(unittest.TestCase):
     TOP_LEVEL_KEYS = (
         "version",
@@ -297,6 +354,7 @@ class CalibrationDiagnosticsDocumentTests(unittest.TestCase):
         "assignment_rejections",
         "assignment_rejection_records",
         "dropped_pair_edges",
+        "restored_pair_edges",
         "anchor_core",
     )
     QUALITY_KEYS = (
@@ -435,7 +493,7 @@ class CalibrationDiagnosticsDocumentTests(unittest.TestCase):
         self.assertEqual(list(payload["quality"].keys()), list(self.QUALITY_KEYS))
         self.assertEqual(list(payload["assignment_rejection_records"][0].keys()), list(self.RECORD_KEYS))
         self.assertEqual(list(payload["dropped_pair_edges"][0].keys()), list(self.DROPPED_EDGE_KEYS))
-        self.assertEqual(payload["version"], 3)
+        self.assertEqual(payload["version"], 4)
         self.assertFalse(payload["succeeded"])
         self.assertEqual(payload["failure_reason"], "refused")
         self.assertIsNone(payload["quality"]["reprojection_rms_px"])

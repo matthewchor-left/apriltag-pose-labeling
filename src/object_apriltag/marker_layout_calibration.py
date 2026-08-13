@@ -73,6 +73,7 @@ class CalibrationQualityReport:
     assignment_rejections: AssignmentRejectionSummary | None = None
     assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None = None
     dropped_pair_edges: tuple[DroppedPairEdge, ...] | None = None
+    restored_pair_edges: tuple[RestoredPairEdge, ...] | None = None
     anchor_core: "AnchorCoreDiagnostics | None" = None
 
 
@@ -227,6 +228,27 @@ class DroppedPairEdge:
     observed_count: int
     supported_count: int
     required_count: int
+    translation_rms_m: float | None = None
+    rotation_rms_deg: float | None = None
+    translation_gate_m: float | None = None
+    rotation_gate_deg: float | None = None
+
+    @property
+    def marker_pair(self) -> MarkerPair:
+        return (self.marker_a, self.marker_b)
+
+
+@dataclass(frozen=True)
+class RestoredPairEdge:
+    marker_a: int
+    marker_b: int
+    stage: str
+    original_stage: str
+    original_reason: str
+    observed_count: int
+    supported_count: int
+    required_count: int
+    support_fraction: float
     translation_rms_m: float | None = None
     rotation_rms_deg: float | None = None
     translation_gate_m: float | None = None
@@ -674,6 +696,29 @@ def calibrate_marker_layout(
         )
 
     pair_hypotheses = _collect_pair_hypotheses(frame_candidates, expected_ids)
+    raw_pair_counts = _raw_covisible_pair_counts(normalized_observations)
+    raw_connected = _connected_marker_ids_from_pairs(raw_pair_counts.keys(), reference_marker_id)
+    raw_missing = sorted(set(expected_ids) - raw_connected)
+    if raw_missing:
+        return CalibrationResult(
+            None,
+            _quality_from_pairs(
+                {},
+                expected_ids,
+                reference_marker_id,
+                frozenset(raw_missing),
+                input_frame_count=len(normalized_observations),
+                rejected_frame_count=0,
+                accepted_frame_count=0,
+                observation_count=0,
+            ),
+            (
+                f"Expected marker IDs are not connected in raw observations; "
+                f"missing {raw_missing}."
+            ),
+        )
+
+    restored_pair_edges: list[RestoredPairEdge] = []
     use_legacy_assignment = anchor_ids is None or set(anchor_ids) == set(expected_ids)
     anchor_core_diagnostics: AnchorCoreDiagnostics | None = None
     preinitialized_marker_poses: dict[int, tuple[np.ndarray, np.ndarray]] | None = None
@@ -685,6 +730,8 @@ def calibrate_marker_layout(
             reference_marker_id,
             marker_sizes_m,
             settings,
+            best_effort=best_effort,
+            restored_pair_edges=restored_pair_edges,
         )
     else:
         assert anchor_ids is not None
@@ -710,6 +757,8 @@ def calibrate_marker_layout(
             camera_matrix,
             dist_coeffs,
             stop_after_expansion=anchor_stop_after_expansion,
+            best_effort=best_effort,
+            restored_pair_edges=restored_pair_edges,
         )
         dropped_edges = list(anchor_drops)
         if anchor_failure is not None or pair_consensus is None or anchor_assigned is None:
@@ -733,6 +782,7 @@ def calibrate_marker_layout(
                 assignment_rejections=assignment_rejection_summary,
                 assignment_rejection_records=assignment_rejection_records,
                 dropped_pair_edges=tuple(dropped_edges),
+                restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
                 anchor_core=anchor_core_diagnostics,
             )
             return CalibrationResult(None, quality, anchor_failure)
@@ -772,6 +822,7 @@ def calibrate_marker_layout(
                         assignment_rejections=assignment_rejection_summary,
                         assignment_rejection_records=assignment_rejection_records,
                         dropped_pair_edges=tuple(dropped_edges),
+                        restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
                         anchor_core=anchor_core_diagnostics,
                     ),
                     (
@@ -803,6 +854,7 @@ def calibrate_marker_layout(
                 assignment_rejections=assignment_rejection_summary,
                 assignment_rejection_records=assignment_rejection_records,
                 dropped_pair_edges=tuple(dropped_edges),
+                restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
                 anchor_core=anchor_core_diagnostics,
             )
             return CalibrationResult(layout, quality, None)
@@ -822,6 +874,8 @@ def calibrate_marker_layout(
                 reference_marker_id,
                 settings,
                 marker_sizes_m=marker_sizes_m,
+                best_effort=best_effort,
+                restored_pair_edges=restored_pair_edges,
             )
         )
         dropped_edges.extend(assignment_drops)
@@ -840,6 +894,7 @@ def calibrate_marker_layout(
                     assignment_rejections=assignment_rejection_summary,
                     assignment_rejection_records=assignment_rejection_records,
                     dropped_pair_edges=tuple(dropped_edges),
+                    restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
                     anchor_core=anchor_core_diagnostics,
                 ),
                 assignment_support_failure,
@@ -864,6 +919,7 @@ def calibrate_marker_layout(
                     assignment_rejections=assignment_rejection_summary,
                     assignment_rejection_records=assignment_rejection_records,
                     dropped_pair_edges=tuple(dropped_edges),
+                    restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
                     anchor_core=anchor_core_diagnostics,
                 ),
                 (
@@ -911,6 +967,7 @@ def calibrate_marker_layout(
                     assignment_rejections=assignment_rejection_summary,
                     assignment_rejection_records=assignment_rejection_records,
                     dropped_pair_edges=tuple(dropped_edges),
+                    restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
                     anchor_core=anchor_core_diagnostics,
                 ),
                 ba_failure,
@@ -942,6 +999,8 @@ def calibrate_marker_layout(
                 dist_coeffs,
                 settings,
                 marker_sizes_m,
+                best_effort=best_effort,
+                restored_pair_edges=restored_pair_edges,
             )
         )
         dropped_edges.extend(pruning_drops)
@@ -961,6 +1020,7 @@ def calibrate_marker_layout(
                     assignment_rejections=assignment_rejection_summary,
                     assignment_rejection_records=assignment_rejection_records,
                     dropped_pair_edges=tuple(dropped_edges),
+                    restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
                     anchor_core=anchor_core_diagnostics,
                 ),
                 prune_failure,
@@ -986,6 +1046,7 @@ def calibrate_marker_layout(
             assignment_rejections=assignment_rejection_summary,
             assignment_rejection_records=assignment_rejection_records,
             dropped_pair_edges=tuple(dropped_edges),
+            restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
             anchor_core=anchor_core_diagnostics,
         )
         gate_failure = _check_quality_gates(quality, settings, marker_sizes_m, expected_ids)
@@ -1027,6 +1088,7 @@ def calibrate_marker_layout(
                 accepted_frame_count=0,
                 observation_count=0,
                 dropped_pair_edges=tuple(dropped_edges),
+                restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
             ),
             pair_failure,
         )
@@ -1062,6 +1124,7 @@ def calibrate_marker_layout(
                 assignment_rejections=assignment_rejection_summary,
                 assignment_rejection_records=assignment_rejection_records,
                 dropped_pair_edges=tuple(dropped_edges),
+                restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
             ),
             "No frames with assignable IPPE candidates remain after rejecting inconsistent samples.",
         )
@@ -1073,6 +1136,8 @@ def calibrate_marker_layout(
         reference_marker_id,
         settings,
         marker_sizes_m=marker_sizes_m,
+        best_effort=best_effort,
+        restored_pair_edges=restored_pair_edges,
     )
     dropped_edges.extend(assignment_drops)
     if assignment_support_failure is not None:
@@ -1090,6 +1155,7 @@ def calibrate_marker_layout(
                 assignment_rejections=assignment_rejection_summary,
                 assignment_rejection_records=assignment_rejection_records,
                 dropped_pair_edges=tuple(dropped_edges),
+                restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
             ),
             assignment_support_failure,
         )
@@ -1111,6 +1177,7 @@ def calibrate_marker_layout(
                 assignment_rejections=assignment_rejection_summary,
                 assignment_rejection_records=assignment_rejection_records,
                 dropped_pair_edges=tuple(dropped_edges),
+                restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
             ),
             f"Expected marker IDs have no accepted-frame observations after rejection: {missing_after_rejection}.",
         )
@@ -1161,6 +1228,7 @@ def calibrate_marker_layout(
                 assignment_rejections=assignment_rejection_summary,
                 assignment_rejection_records=assignment_rejection_records,
                 dropped_pair_edges=tuple(dropped_edges),
+                restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
             ),
             ba_failure,
         )
@@ -1180,6 +1248,8 @@ def calibrate_marker_layout(
         dist_coeffs,
         settings,
         marker_sizes_m,
+        best_effort=best_effort,
+        restored_pair_edges=restored_pair_edges,
     )
     dropped_edges.extend(pruning_drops)
     if prune_failure is not None:
@@ -1198,6 +1268,7 @@ def calibrate_marker_layout(
                 assignment_rejections=assignment_rejection_summary,
                 assignment_rejection_records=assignment_rejection_records,
                 dropped_pair_edges=tuple(dropped_edges),
+                restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
             ),
             prune_failure,
         )
@@ -1223,6 +1294,7 @@ def calibrate_marker_layout(
         assignment_rejections=assignment_rejection_summary,
         assignment_rejection_records=assignment_rejection_records,
         dropped_pair_edges=tuple(dropped_edges),
+        restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
     )
 
     gate_failure = _check_quality_gates(quality, settings, marker_sizes_m, expected_ids)
@@ -1721,15 +1793,21 @@ def _estimate_pair_consensus(
     settings: CalibrationSettings,
     *,
     connectivity_ids: Sequence[int] | None = None,
+    best_effort: bool = False,
+    restored_pair_edges: list[RestoredPairEdge] | None = None,
 ) -> tuple[dict[MarkerPair, _PairConsensus], str | None, tuple[DroppedPairEdge, ...]]:
     rotation_gate = settings.pair_rotation_rms_gate_deg
     consensus: dict[MarkerPair, _PairConsensus] = {}
+    weak_pool: dict[MarkerPair, _PairConsensus] = {}
     dropped: list[DroppedPairEdge] = []
 
     for pair, hypotheses in pair_hypotheses.items():
         translation_gate = _pair_translation_gate(settings, marker_sizes_m, pair)
         unique_frames = {frame_index for _, _, frame_index in hypotheses}
         observed_count = len(unique_frames)
+        edge = _best_pair_consensus(pair, hypotheses, translation_gate, rotation_gate)
+        if edge is not None:
+            weak_pool[pair] = edge
         if observed_count < settings.min_inliers_per_edge:
             dropped.append(
                 _make_dropped_pair_edge(
@@ -1741,11 +1819,11 @@ def _estimate_pair_consensus(
                     required_count=settings.min_inliers_per_edge,
                     translation_gate=translation_gate,
                     rotation_gate=rotation_gate,
+                    edge=edge,
                 )
             )
             continue
 
-        edge = _best_pair_consensus(pair, hypotheses, translation_gate, rotation_gate)
         if edge is None or len(edge.inlier_frames) < settings.min_inliers_per_edge:
             supported_count = len(edge.inlier_frames) if edge is not None else 0
             dropped.append(
@@ -1815,14 +1893,19 @@ def _estimate_pair_consensus(
             continue
         filtered[pair] = edge
 
-    connected = _connected_marker_ids(filtered, reference_marker_id)
     required_ids = list(connectivity_ids) if connectivity_ids is not None else expected_ids
-    missing = sorted(set(required_ids) - connected)
-    if missing:
-        return filtered, (
-            f"Expected marker IDs are not connected to reference {reference_marker_id}; "
-            f"missing {missing}."
-        ), tuple(dropped)
+    failure = _maybe_restore_weak_connectivity(
+        filtered,
+        weak_pool,
+        dropped,
+        required_ids,
+        reference_marker_id,
+        "initial_consensus",
+        best_effort=best_effort,
+        restored_pair_edges=restored_pair_edges,
+    )
+    if failure is not None:
+        return filtered, failure, tuple(dropped)
 
     return filtered, None, tuple(dropped)
 
@@ -2327,6 +2410,136 @@ def _make_dropped_pair_edge(
     )
 
 
+def _make_restored_pair_edge(dropped: DroppedPairEdge, stage: str) -> RestoredPairEdge:
+    return RestoredPairEdge(
+        marker_a=dropped.marker_a,
+        marker_b=dropped.marker_b,
+        stage=stage,
+        original_stage=dropped.stage,
+        original_reason=dropped.reason,
+        observed_count=dropped.observed_count,
+        supported_count=dropped.supported_count,
+        required_count=dropped.required_count,
+        support_fraction=dropped.supported_count / max(dropped.observed_count, 1),
+        translation_rms_m=dropped.translation_rms_m,
+        rotation_rms_deg=dropped.rotation_rms_deg,
+        translation_gate_m=dropped.translation_gate_m,
+        rotation_gate_deg=dropped.rotation_gate_deg,
+    )
+
+
+def _weak_edge_rank_key(
+    supported_count: int,
+    observed_count: int,
+    rotation_rms_deg: float | None,
+    translation_rms_m: float | None,
+) -> tuple[float, float, float, float]:
+    fraction = supported_count / max(observed_count, 1)
+    rotation = rotation_rms_deg if rotation_rms_deg is not None else float("inf")
+    translation = translation_rms_m if translation_rms_m is not None else float("inf")
+    return (-supported_count, -fraction, rotation, translation)
+
+
+def _connectivity_failure_message(
+    stage: str,
+    reference_marker_id: int,
+    missing: list[int],
+) -> str:
+    if stage == "initial_consensus":
+        return (
+            f"Expected marker IDs are not connected to reference {reference_marker_id}; "
+            f"missing {missing}."
+        )
+    if stage == "assignment_support":
+        return (
+            f"Expected marker IDs are not connected after rejecting assignment frames; "
+            f"missing {missing}."
+        )
+    if stage == "post_pruning":
+        return f"Expected marker IDs are not connected after pruning; missing {missing}."
+    return f"Expected marker IDs are not connected; missing {missing}."
+
+
+def _weak_restore_candidates(
+    pair_consensus: dict[MarkerPair, _PairConsensus],
+    weak_pool: dict[MarkerPair, _PairConsensus],
+    dropped: Sequence[DroppedPairEdge],
+) -> list[tuple[_PairConsensus, DroppedPairEdge]]:
+    candidates: list[tuple[_PairConsensus, DroppedPairEdge]] = []
+    seen: set[MarkerPair] = set()
+    for drop in dropped:
+        pair = drop.marker_pair
+        if pair in pair_consensus or pair in seen:
+            continue
+        edge = weak_pool.get(pair)
+        if edge is None or not edge.inlier_frames:
+            continue
+        candidates.append((edge, drop))
+        seen.add(pair)
+    return candidates
+
+
+def _maybe_restore_weak_connectivity(
+    pair_consensus: dict[MarkerPair, _PairConsensus],
+    weak_pool: dict[MarkerPair, _PairConsensus],
+    dropped: list[DroppedPairEdge],
+    required_ids: list[int],
+    reference_marker_id: int,
+    stage: str,
+    *,
+    best_effort: bool,
+    restored_pair_edges: list[RestoredPairEdge] | None,
+) -> str | None:
+    connected = _connected_marker_ids(pair_consensus, reference_marker_id)
+    missing = sorted(set(required_ids) - connected)
+    if not missing:
+        return None
+    if not best_effort:
+        return _connectivity_failure_message(stage, reference_marker_id, missing)
+    if not pair_consensus:
+        return _connectivity_failure_message(stage, reference_marker_id, missing)
+
+    restore_candidates = _weak_restore_candidates(pair_consensus, weak_pool, dropped)
+    sorted_candidates = sorted(
+        restore_candidates,
+        key=lambda item: _weak_edge_rank_key(
+            item[1].supported_count,
+            item[1].observed_count,
+            item[1].rotation_rms_deg,
+            item[1].translation_rms_m,
+        ),
+    )
+    remaining = list(sorted_candidates)
+    restored_records: list[RestoredPairEdge] = []
+
+    # ponytail: greedy first-ranked bridging edge per iteration; upgrade path is
+    # union-find + global min-cost bridge set if multi-component graphs get larger.
+    while not set(required_ids).issubset(_connected_marker_ids(pair_consensus, reference_marker_id)):
+        connected = _connected_marker_ids(pair_consensus, reference_marker_id)
+        chosen_index: int | None = None
+        for index, (edge, drop) in enumerate(remaining):
+            marker_a, marker_b = drop.marker_pair
+            if marker_a in connected and marker_b in connected:
+                continue
+            if marker_a not in connected and marker_b not in connected:
+                continue
+            chosen_index = index
+            break
+        if chosen_index is None:
+            break
+        edge, drop = remaining.pop(chosen_index)
+        pair_consensus[drop.marker_pair] = edge
+        restored_records.append(_make_restored_pair_edge(drop, stage))
+
+    if restored_pair_edges is not None:
+        restored_pair_edges.extend(restored_records)
+
+    missing = sorted(set(required_ids) - _connected_marker_ids(pair_consensus, reference_marker_id))
+    if missing:
+        return _connectivity_failure_message(stage, reference_marker_id, missing)
+    return None
+
+
 @dataclass(frozen=True)
 class _MarkerPoseHypothesis:
     rotation: np.ndarray
@@ -2660,6 +2873,8 @@ def _assign_and_initialize_anchor_core(
     dist_coeffs: np.ndarray,
     *,
     stop_after_expansion: bool = False,
+    best_effort: bool = False,
+    restored_pair_edges: list[RestoredPairEdge] | None = None,
 ) -> tuple[
     dict[int, dict[int, _MarkerCandidate]] | None,
     tuple[int, ...],
@@ -2680,6 +2895,8 @@ def _assign_and_initialize_anchor_core(
         marker_sizes_m,
         settings,
         connectivity_ids=anchor_ids,
+        best_effort=best_effort,
+        restored_pair_edges=restored_pair_edges,
     )
     dropped_edges.extend(anchor_drops)
     bootstrap = AnchorCoreBootstrapDiagnostics(
@@ -2868,6 +3085,8 @@ def _assign_and_initialize_anchor_core(
         reference_marker_id,
         marker_sizes_m,
         settings,
+        best_effort=best_effort,
+        restored_pair_edges=restored_pair_edges,
     )
     dropped_edges.extend(seed_drops)
     if seed_failure is not None:
@@ -2894,6 +3113,8 @@ def _assign_and_initialize_anchor_core(
         reference_marker_id,
         marker_sizes_m,
         settings,
+        best_effort=best_effort,
+        restored_pair_edges=restored_pair_edges,
     )
     dropped_edges.extend(post_drops)
     if pair_failure is not None:
@@ -2964,9 +3185,12 @@ def _restrict_pair_consensus_to_frames(
     settings: CalibrationSettings,
     *,
     marker_sizes_m: Mapping[int, float],
+    best_effort: bool = False,
+    restored_pair_edges: list[RestoredPairEdge] | None = None,
 ) -> tuple[dict[MarkerPair, _PairConsensus], str | None, tuple[DroppedPairEdge, ...]]:
     rotation_gate = settings.pair_rotation_rms_gate_deg
     updated: dict[MarkerPair, _PairConsensus] = {}
+    weak_pool: dict[MarkerPair, _PairConsensus] = {}
     dropped: list[DroppedPairEdge] = []
     for pair, edge in pair_consensus.items():
         translation_gate = _pair_translation_gate(settings, marker_sizes_m, pair)
@@ -2974,6 +3198,18 @@ def _restrict_pair_consensus_to_frames(
             sorted(frame_index for frame_index in edge.inlier_frames if frame_index in allowed_frames)
         )
         if len(supported_frames) < settings.min_inliers_per_edge:
+            if supported_frames:
+                weak_pool[pair] = _PairConsensus(
+                    marker_a=edge.marker_a,
+                    marker_b=edge.marker_b,
+                    rotation_ba=edge.rotation_ba,
+                    translation_ba=edge.translation_ba,
+                    inlier_frames=supported_frames,
+                    inlier_hypotheses={
+                        frame_index: edge.inlier_hypotheses[frame_index]
+                        for frame_index in supported_frames
+                    },
+                )
             dropped.append(
                 _make_dropped_pair_edge(
                     pair,
@@ -2999,12 +3235,18 @@ def _restrict_pair_consensus_to_frames(
             },
         )
 
-    connected = _connected_marker_ids(updated, reference_marker_id)
-    missing = sorted(set(expected_ids) - connected)
-    if missing:
-        return updated, (
-            f"Expected marker IDs are not connected after rejecting assignment frames; missing {missing}."
-        ), tuple(dropped)
+    failure = _maybe_restore_weak_connectivity(
+        updated,
+        weak_pool,
+        dropped,
+        expected_ids,
+        reference_marker_id,
+        "assignment_support",
+        best_effort=best_effort,
+        restored_pair_edges=restored_pair_edges,
+    )
+    if failure is not None:
+        return updated, failure, tuple(dropped)
     return updated, None, tuple(dropped)
 
 
@@ -3347,6 +3589,9 @@ def _prune_and_refit(
     dist_coeffs: np.ndarray,
     settings: CalibrationSettings,
     marker_sizes_m: Mapping[int, float],
+    *,
+    best_effort: bool = False,
+    restored_pair_edges: list[RestoredPairEdge] | None = None,
 ) -> tuple[
     dict[int, tuple[np.ndarray, np.ndarray]],
     list[tuple[np.ndarray, np.ndarray] | None],
@@ -3382,6 +3627,8 @@ def _prune_and_refit(
         settings,
         allowed_frames=remaining_frames,
         marker_sizes_m=marker_sizes_m,
+        best_effort=best_effort,
+        restored_pair_edges=restored_pair_edges,
     )
     if support_failure is not None:
         return marker_poses, frame_poses, pruned, updated_consensus, support_failure, dropped_edges
@@ -3452,10 +3699,13 @@ def _recheck_pair_support(
     allowed_frames: frozenset[int] | None = None,
     *,
     marker_sizes_m: Mapping[int, float],
+    best_effort: bool = False,
+    restored_pair_edges: list[RestoredPairEdge] | None = None,
 ) -> tuple[dict[MarkerPair, _PairConsensus], str | None, tuple[DroppedPairEdge, ...]]:
     rotation_gate = settings.pair_rotation_rms_gate_deg
     complete = _complete_markers_per_frame(corner_observations, inlier_mask)
     updated: dict[MarkerPair, _PairConsensus] = {}
+    weak_pool: dict[MarkerPair, _PairConsensus] = {}
     dropped: list[DroppedPairEdge] = []
     for pair, edge in pair_consensus.items():
         translation_gate = _pair_translation_gate(settings, marker_sizes_m, pair)
@@ -3471,6 +3721,19 @@ def _recheck_pair_support(
             )
         )
         if len(supported_frames) < settings.min_inliers_per_edge:
+            if supported_frames:
+                selected_hypotheses = {
+                    frame_index: edge.inlier_hypotheses[frame_index]
+                    for frame_index in supported_frames
+                }
+                weak_pool[pair] = _PairConsensus(
+                    marker_a=marker_low,
+                    marker_b=marker_high,
+                    rotation_ba=edge.rotation_ba,
+                    translation_ba=edge.translation_ba,
+                    inlier_frames=supported_frames,
+                    inlier_hypotheses=selected_hypotheses,
+                )
             dropped.append(
                 _make_dropped_pair_edge(
                     pair,
@@ -3498,12 +3761,18 @@ def _recheck_pair_support(
             inlier_hypotheses=selected_hypotheses,
         )
 
-    connected = _connected_marker_ids(updated, reference_marker_id)
-    missing = sorted(set(expected_ids) - connected)
-    if missing:
-        return updated, (
-            f"Expected marker IDs are not connected after pruning; missing {missing}."
-        ), tuple(dropped)
+    failure = _maybe_restore_weak_connectivity(
+        updated,
+        weak_pool,
+        dropped,
+        expected_ids,
+        reference_marker_id,
+        "post_pruning",
+        best_effort=best_effort,
+        restored_pair_edges=restored_pair_edges,
+    )
+    if failure is not None:
+        return updated, failure, tuple(dropped)
     return updated, None, tuple(dropped)
 
 
@@ -3723,6 +3992,7 @@ def _build_quality_report(
     assignment_rejections: AssignmentRejectionSummary | None = None,
     assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None = None,
     dropped_pair_edges: tuple[DroppedPairEdge, ...] | None = None,
+    restored_pair_edges: tuple[RestoredPairEdge, ...] | None = None,
     anchor_core: AnchorCoreDiagnostics | None = None,
 ) -> CalibrationQualityReport:
     errors = _corner_errors(
@@ -3770,6 +4040,7 @@ def _build_quality_report(
         assignment_rejections=assignment_rejections,
         assignment_rejection_records=assignment_rejection_records,
         dropped_pair_edges=dropped_pair_edges,
+        restored_pair_edges=restored_pair_edges,
         anchor_core=anchor_core,
     )
 
@@ -3891,6 +4162,7 @@ def _quality_from_pairs(
     assignment_rejections: AssignmentRejectionSummary | None = None,
     assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None = None,
     dropped_pair_edges: tuple[DroppedPairEdge, ...] | None = None,
+    restored_pair_edges: tuple[RestoredPairEdge, ...] | None = None,
     anchor_core: AnchorCoreDiagnostics | None = None,
 ) -> CalibrationQualityReport:
     edge_reports = [_edge_diagnostics(pair, edge) for pair, edge in sorted(pair_consensus.items())]
@@ -3912,6 +4184,7 @@ def _quality_from_pairs(
         assignment_rejections=assignment_rejections,
         assignment_rejection_records=assignment_rejection_records,
         dropped_pair_edges=dropped_pair_edges,
+        restored_pair_edges=restored_pair_edges,
         anchor_core=anchor_core,
     )
 

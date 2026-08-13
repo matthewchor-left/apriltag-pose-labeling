@@ -1198,6 +1198,167 @@ class PairGraphFilteringTests(unittest.TestCase):
         )
 
 
+class WeakPairConnectivityRecoveryTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.marker_size_m = 0.07
+        self.settings = CalibrationSettings(min_inliers_per_edge=20)
+        self.expected_ids = [0, 1, 2]
+        self.reference_marker_id = 0
+
+    def _bridge_observations(
+        self,
+        *,
+        bridge_frames: int,
+        tail_frames: int,
+        rotate_opposite_ippe_frames: Iterable[int] | None = None,
+    ) -> list[FrameObservation]:
+        marker_poses = _triangle_marker_poses(self.marker_size_m)
+        observations: list[FrameObservation] = []
+        for frame_index in range(bridge_frames + tail_frames):
+            visible = (0, 1) if frame_index < bridge_frames else (1, 2)
+            frame_observation = synthesize_observations(
+                marker_poses,
+                frame_count=1,
+                marker_size_m=self.marker_size_m,
+                visible_markers=lambda _, visible=visible: visible,
+                seed=frame_index,
+            )[0]
+            observations.append(
+                FrameObservation(frame_id=frame_index, markers=frame_observation.markers)
+            )
+        if rotate_opposite_ippe_frames is not None:
+            _rotate_marker_corners(observations, rotate_opposite_ippe_frames, 1)
+        return observations
+
+    def test_strict_mode_refuses_weak_bridge_pair(self) -> None:
+        observations = self._bridge_observations(bridge_frames=10, tail_frames=20)
+        result = calibrate_marker_layout(
+            observations,
+            *_default_camera(),
+            expected_marker_ids=self.expected_ids,
+            reference_marker_id=self.reference_marker_id,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+        )
+        self.assertIsNone(result.layout)
+        self.assertIsNotNone(result.failure_reason)
+        self.assertEqual(result.outcome, "refused")
+
+    def test_best_effort_recovers_weak_bridge_pair(self) -> None:
+        observations = self._bridge_observations(bridge_frames=10, tail_frames=20)
+        result = calibrate_marker_layout(
+            observations,
+            *_default_camera(),
+            expected_marker_ids=self.expected_ids,
+            reference_marker_id=self.reference_marker_id,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+            best_effort=True,
+        )
+        self.assertIsNone(result.failure_reason)
+        self.assertIsNotNone(result.layout)
+        assert result.quality is not None
+        self.assertEqual(result.quality.connected_marker_ids, frozenset({0, 1, 2}))
+        assert result.quality.restored_pair_edges is not None
+        restored_pairs = {edge.marker_pair for edge in result.quality.restored_pair_edges}
+        self.assertIn((0, 1), restored_pairs)
+        restored = next(
+            edge for edge in result.quality.restored_pair_edges if edge.marker_pair == (0, 1)
+        )
+        self.assertEqual(restored.original_reason, "insufficient_observed_frames")
+        self.assertEqual(restored.supported_count, 10)
+        self.assertEqual(restored.observed_count, 10)
+        self.assertAlmostEqual(restored.support_fraction, 1.0)
+        self.assertIsNotNone(restored.translation_rms_m)
+        self.assertIsNotNone(restored.rotation_rms_deg)
+
+    def test_weak_bridge_recovery_uses_dominant_ippe_mode(self) -> None:
+        observations = self._bridge_observations(
+            bridge_frames=20,
+            tail_frames=20,
+            rotate_opposite_ippe_frames=range(10, 20),
+        )
+        result = calibrate_marker_layout(
+            observations,
+            *_default_camera(),
+            expected_marker_ids=self.expected_ids,
+            reference_marker_id=self.reference_marker_id,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+            best_effort=True,
+        )
+        self.assertIsNone(result.failure_reason)
+        assert result.layout is not None and result.quality is not None
+        ground_truth = _ground_truth_footprints(_triangle_marker_poses(self.marker_size_m), self.marker_size_m)
+        for marker_id in self.expected_ids:
+            for corner_name in CORNER_NAMES:
+                expected = getattr(ground_truth[marker_id], corner_name)
+                actual = getattr(result.layout.footprints[marker_id], corner_name)
+                self.assertLess(
+                    float(np.linalg.norm(actual - expected)),
+                    0.02,
+                    msg=f"marker {marker_id} {corner_name}",
+                )
+        assert result.quality.restored_pair_edges is not None
+        restored = next(
+            edge for edge in result.quality.restored_pair_edges if edge.marker_pair == (0, 1)
+        )
+        self.assertLess(restored.supported_count, 20)
+
+    def test_best_effort_refuses_when_raw_graph_disconnected(self) -> None:
+        marker_poses = {
+            **_triangle_marker_poses(self.marker_size_m),
+            3: (
+                _triangle_marker_poses(self.marker_size_m)[2][0],
+                _triangle_marker_poses(self.marker_size_m)[2][1] + np.array([0.12, 0.0, 0.0], dtype=np.float64),
+            ),
+        }
+        observations: list[FrameObservation] = []
+        for frame_index in range(20):
+            visible = (0, 1) if frame_index < 10 else (2, 3)
+            frame_observation = synthesize_observations(
+                marker_poses,
+                frame_count=1,
+                marker_size_m=self.marker_size_m,
+                visible_markers=lambda _, visible=visible: visible,
+                seed=frame_index,
+            )[0]
+            observations.append(
+                FrameObservation(frame_id=frame_index, markers=frame_observation.markers)
+            )
+        result = calibrate_marker_layout(
+            observations,
+            *_default_camera(),
+            expected_marker_ids=[0, 1, 2, 3],
+            reference_marker_id=self.reference_marker_id,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+            best_effort=True,
+        )
+        self.assertIsNone(result.layout)
+        self.assertIn("raw observations", result.failure_reason or "")
+        assert result.quality is not None
+        self.assertTrue({2, 3}.issubset(result.quality.missing_expected_ids))
+
+    def test_restrict_best_effort_recovers_weak_bridge(self) -> None:
+        pair_consensus = {
+            (0, 1): _make_pair_consensus(0, 1, range(10)),
+            (1, 2): _make_pair_consensus(1, 2, range(20)),
+        }
+        filtered, failure, dropped = _restrict_pair_consensus_to_frames(
+            pair_consensus,
+            frozenset(range(20)),
+            self.expected_ids,
+            self.reference_marker_id,
+            self.settings,
+            marker_sizes_m=_uniform_marker_sizes(self.expected_ids, self.marker_size_m),
+            best_effort=True,
+        )
+        self.assertIsNone(failure)
+        self.assertIn((0, 1), filtered)
+        self.assertEqual(len(dropped), 1)
+
+
 class SaveMarkerModelTests(unittest.TestCase):
     def test_roundtrip_matches_in_memory_layout(self) -> None:
         marker_size_m = 0.07
