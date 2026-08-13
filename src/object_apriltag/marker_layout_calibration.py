@@ -759,6 +759,12 @@ def _emit_partial_calibration_result(
             merged_omitted[marker_id] = "not_connected_to_reference"
 
     emitted_sizes = {marker_id: marker_sizes_m[marker_id] for marker_id in emitted_ids}
+    filtered_anchors: tuple[int, ...] | None = None
+    if anchor_marker_ids is not None:
+        emitted_set = set(emitted_ids)
+        filtered_anchors = tuple(marker_id for marker_id in anchor_marker_ids if marker_id in emitted_set)
+        if not filtered_anchors:
+            filtered_anchors = None
     subset_result = calibrate_marker_layout(
         observations,
         camera_matrix,
@@ -767,7 +773,7 @@ def _emit_partial_calibration_result(
         reference_marker_id=reference_marker_id,
         marker_size_m=marker_size_m,
         settings=settings,
-        anchor_marker_ids=anchor_marker_ids,
+        anchor_marker_ids=filtered_anchors,
         marker_sizes_m=emitted_sizes,
         best_effort=best_effort,
         partial_output=False,
@@ -819,6 +825,48 @@ def _partial_from_pair_consensus_or_refuse(
         for marker_id in requested_marker_ids:
             if marker_id not in connected and marker_id not in merged:
                 merged[marker_id] = _connectivity_omission_reason(connectivity_stage)
+        return _emit_partial_calibration_result(
+            observations,
+            camera_matrix,
+            dist_coeffs,
+            requested_marker_ids=requested_marker_ids,
+            connected_ids=connected,
+            omitted=merged,
+            reference_marker_id=reference_marker_id,
+            marker_size_m=marker_size_m,
+            marker_sizes_m=marker_sizes_m,
+            settings=settings,
+            best_effort=best_effort,
+            anchor_marker_ids=anchor_marker_ids,
+        )
+    return CalibrationResult(None, quality, failure_message)
+
+
+def _partial_after_missing_accepted_frames_or_refuse(
+    observations: Sequence[FrameObservation],
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+    pair_consensus: dict[MarkerPair, _PairConsensus],
+    quality: CalibrationQualityReport,
+    failure_message: str,
+    *,
+    requested_marker_ids: Sequence[int],
+    omitted_markers: Mapping[int, str],
+    markers_in_accepted_frames: set[int],
+    missing_after_rejection: Sequence[int],
+    reference_marker_id: int,
+    marker_size_m: float,
+    marker_sizes_m: Mapping[int, float],
+    settings: CalibrationSettings,
+    best_effort: bool,
+    partial_output: bool,
+    anchor_marker_ids: Sequence[int] | None,
+) -> CalibrationResult:
+    if partial_output and best_effort:
+        connected = _connected_marker_ids(pair_consensus, reference_marker_id) & markers_in_accepted_frames
+        merged = dict(omitted_markers)
+        for marker_id in missing_after_rejection:
+            merged.setdefault(marker_id, "no_accepted_frame_observations")
         return _emit_partial_calibration_result(
             observations,
             camera_matrix,
@@ -1272,8 +1320,11 @@ def calibrate_marker_layout(
         )
         missing_after_rejection = sorted(set(expected_ids) - markers_in_accepted_frames)
         if missing_after_rejection:
-            return CalibrationResult(
-                None,
+            return _partial_after_missing_accepted_frames_or_refuse(
+                observations,
+                camera_matrix,
+                dist_coeffs,
+                pair_consensus,
                 _quality_from_pairs(
                     pair_consensus,
                     expected_ids,
@@ -1294,6 +1345,17 @@ def calibrate_marker_layout(
                     "Expected marker IDs have no accepted-frame observations after "
                     f"anchor-core expansion: {missing_after_rejection}."
                 ),
+                requested_marker_ids=requested_marker_ids,
+                omitted_markers=omitted_markers,
+                markers_in_accepted_frames=markers_in_accepted_frames,
+                missing_after_rejection=missing_after_rejection,
+                reference_marker_id=reference_marker_id,
+                marker_size_m=marker_size_m,
+                marker_sizes_m=marker_sizes_m,
+                settings=settings,
+                best_effort=best_effort,
+                partial_output=partial_output,
+                anchor_marker_ids=anchor_ids,
             )
         assert preinitialized_marker_poses is not None
         marker_poses = preinitialized_marker_poses
@@ -1548,8 +1610,11 @@ def calibrate_marker_layout(
     markers_in_accepted_frames = _markers_in_frame_indices(normalized_observations, accepted_frames)
     missing_after_rejection = sorted(set(expected_ids) - markers_in_accepted_frames)
     if missing_after_rejection:
-        return CalibrationResult(
-            None,
+        return _partial_after_missing_accepted_frames_or_refuse(
+            observations,
+            camera_matrix,
+            dist_coeffs,
+            pair_consensus,
             _quality_from_pairs(
                 pair_consensus,
                 expected_ids,
@@ -1566,6 +1631,17 @@ def calibrate_marker_layout(
                 restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
             ),
             f"Expected marker IDs have no accepted-frame observations after rejection: {missing_after_rejection}.",
+            requested_marker_ids=requested_marker_ids,
+            omitted_markers=omitted_markers,
+            markers_in_accepted_frames=markers_in_accepted_frames,
+            missing_after_rejection=missing_after_rejection,
+            reference_marker_id=reference_marker_id,
+            marker_size_m=marker_size_m,
+            marker_sizes_m=marker_sizes_m,
+            settings=settings,
+            best_effort=best_effort,
+            partial_output=partial_output,
+            anchor_marker_ids=anchor_ids,
         )
 
     ref_rotation, ref_translation = _reference_gauge_pose(marker_sizes_m[reference_marker_id])

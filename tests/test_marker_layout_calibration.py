@@ -33,6 +33,7 @@ from object_apriltag.marker_layout_calibration import (
     _recheck_pair_support,
     _reference_gauge_pose,
     _restrict_pair_consensus_to_frames,
+    _quality_from_pairs,
     _synth_pair_observations,
     calibrate_marker_layout,
     uniform_marker_sizes,
@@ -218,6 +219,22 @@ def _chain_marker_poses(marker_size_m: float = 0.07) -> dict[int, tuple[np.ndarr
             reference_rotation @ side_rotation,
             reference_translation + np.array([0.24, 0.0, -0.12], dtype=np.float64),
         ),
+    }
+
+
+def _line_marker_poses(
+    marker_count: int,
+    *,
+    marker_size_m: float = 0.07,
+    spacing_m: float = 0.12,
+) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+    reference_rotation, reference_translation = _reference_gauge_pose(marker_size_m)
+    return {
+        marker_id: (
+            reference_rotation,
+            reference_translation + np.array([spacing_m * marker_id, 0.0, -0.05 * marker_id], dtype=np.float64),
+        )
+        for marker_id in range(marker_count)
     }
 
 
@@ -1471,6 +1488,62 @@ class WeakPairConnectivityRecoveryTests(unittest.TestCase):
         self.assertIn((0, 1), filtered)
         self.assertEqual(len(dropped), 1)
 
+    def test_weak_recovery_restores_only_required_ranked_bridges(self) -> None:
+        marker_poses = _line_marker_poses(5, marker_size_m=self.marker_size_m)
+        observations: list[FrameObservation] = []
+        for frame_index in range(25):
+            frame_observation = synthesize_observations(
+                marker_poses,
+                frame_count=1,
+                marker_size_m=self.marker_size_m,
+                visible_markers=lambda _, visible=(0, 1): visible,
+                seed=frame_index,
+            )[0]
+            observations.append(FrameObservation(frame_id=frame_index, markers=frame_observation.markers))
+        for frame_index in range(25, 35):
+            frame_observation = synthesize_observations(
+                marker_poses,
+                frame_count=1,
+                marker_size_m=self.marker_size_m,
+                visible_markers=lambda _, visible=(1, 2): visible,
+                seed=frame_index,
+            )[0]
+            observations.append(FrameObservation(frame_id=frame_index, markers=frame_observation.markers))
+        for frame_index in range(35, 45):
+            frame_observation = synthesize_observations(
+                marker_poses,
+                frame_count=1,
+                marker_size_m=self.marker_size_m,
+                visible_markers=lambda _, visible=(2, 3): visible,
+                seed=frame_index,
+            )[0]
+            observations.append(FrameObservation(frame_id=frame_index, markers=frame_observation.markers))
+        for frame_index in range(45, 70):
+            frame_observation = synthesize_observations(
+                marker_poses,
+                frame_count=1,
+                marker_size_m=self.marker_size_m,
+                visible_markers=lambda _, visible=(3, 4): visible,
+                seed=frame_index,
+            )[0]
+            observations.append(FrameObservation(frame_id=frame_index, markers=frame_observation.markers))
+        result = calibrate_marker_layout(
+            observations,
+            *_default_camera(),
+            expected_marker_ids=[0, 1, 2, 3, 4],
+            reference_marker_id=self.reference_marker_id,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+            best_effort=True,
+        )
+        self.assertIsNone(result.failure_reason)
+        assert result.quality is not None and result.quality.restored_pair_edges is not None
+        restored_pairs = {edge.marker_pair for edge in result.quality.restored_pair_edges}
+        self.assertEqual(restored_pairs, {(1, 2), (2, 3)})
+        bridge_12 = next(edge for edge in result.quality.restored_pair_edges if edge.marker_pair == (1, 2))
+        bridge_23 = next(edge for edge in result.quality.restored_pair_edges if edge.marker_pair == (2, 3))
+        self.assertGreaterEqual(bridge_23.supported_count, bridge_12.supported_count)
+
 
 class FrameAssignmentFallbackRecoveryTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -1743,6 +1816,135 @@ class PartialOutputCalibrationTests(unittest.TestCase):
         self.assertAlmostEqual(result.layout.marker_sizes_m[1], marker_sizes_m[1])
         self.assertNotIn(2, result.layout.marker_sizes_m)
         self.assertNotIn(3, result.layout.marker_sizes_m)
+
+    def _observations_with_marker_only_in_rejected_frames(
+        self,
+        *,
+        rejected_marker_id: int,
+        rejected_frames: int = 8,
+    ) -> list[FrameObservation]:
+        marker_poses = _triangle_marker_poses(self.marker_size_m)
+        observations: list[FrameObservation] = []
+        for frame_index in range(30):
+            frame_observation = synthesize_observations(
+                marker_poses,
+                frame_count=1,
+                marker_size_m=self.marker_size_m,
+                visible_markers=lambda _, visible=(0, 1): visible,
+                seed=frame_index,
+            )[0]
+            observations.append(FrameObservation(frame_id=frame_index, markers=frame_observation.markers))
+        for frame_index in range(30, 30 + rejected_frames):
+            frame_observation = synthesize_observations(
+                marker_poses,
+                frame_count=1,
+                marker_size_m=self.marker_size_m,
+                visible_markers=lambda _, visible=(1, rejected_marker_id): visible,
+                seed=frame_index,
+            )[0]
+            observations.append(
+                FrameObservation(frame_id=frame_index, markers=frame_observation.markers)
+            )
+        _rotate_marker_corners(observations, range(30, 30 + rejected_frames), rejected_marker_id)
+        return observations
+
+    def test_strict_refuses_when_marker_missing_from_accepted_frames(self) -> None:
+        observations = self._observations_with_marker_only_in_rejected_frames(rejected_marker_id=2)
+        result = calibrate_marker_layout(
+            observations,
+            *_default_camera(),
+            expected_marker_ids=[0, 1, 2],
+            reference_marker_id=self.reference_marker_id,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+        )
+        self.assertIsNone(result.layout)
+        self.assertEqual(result.outcome, "refused")
+
+    def test_partial_after_missing_accepted_frames_emits_subset(self) -> None:
+        from object_apriltag.marker_layout_calibration import _partial_after_missing_accepted_frames_or_refuse
+
+        observations = synthesize_observations(
+            _two_marker_poses(self.marker_size_m),
+            frame_count=25,
+            marker_size_m=self.marker_size_m,
+        )
+        pair_consensus = {
+            (0, 1): _make_pair_consensus(0, 1, range(25)),
+        }
+        quality = calibrate_marker_layout(
+            observations,
+            *_default_camera(),
+            expected_marker_ids=[0, 1],
+            reference_marker_id=self.reference_marker_id,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+        ).quality
+        assert quality is not None
+        result = _partial_after_missing_accepted_frames_or_refuse(
+            observations,
+            *_default_camera(),
+            pair_consensus,
+            quality,
+            "Expected marker IDs have no accepted-frame observations after rejection: [2].",
+            requested_marker_ids=[0, 1, 2],
+            omitted_markers={},
+            markers_in_accepted_frames={0, 1},
+            missing_after_rejection=[2],
+            reference_marker_id=self.reference_marker_id,
+            marker_size_m=self.marker_size_m,
+            marker_sizes_m=uniform_marker_sizes([0, 1, 2], self.marker_size_m),
+            settings=self.settings,
+            best_effort=True,
+            partial_output=True,
+            anchor_marker_ids=(0, 1),
+        )
+        self.assertIsNone(result.failure_reason)
+        self.assertEqual(result.outcome, "partial")
+        assert result.layout is not None
+        self.assertEqual(set(result.layout.marker_ids), {0, 1})
+        omitted = {record.marker_id: record.reason for record in result.omitted_markers}
+        self.assertEqual(omitted, {2: "no_accepted_frame_observations"})
+
+    def test_partial_after_missing_accepted_frames_refuses_without_partial_output(self) -> None:
+        from object_apriltag.marker_layout_calibration import _partial_after_missing_accepted_frames_or_refuse
+
+        observations = synthesize_observations(
+            _two_marker_poses(self.marker_size_m),
+            frame_count=25,
+            marker_size_m=self.marker_size_m,
+        )
+        pair_consensus = {(0, 1): _make_pair_consensus(0, 1, range(25))}
+        failure_message = "Expected marker IDs have no accepted-frame observations after rejection: [2]."
+        result = _partial_after_missing_accepted_frames_or_refuse(
+            observations,
+            *_default_camera(),
+            pair_consensus,
+            _quality_from_pairs(
+                pair_consensus,
+                [0, 1, 2],
+                self.reference_marker_id,
+                frozenset({2}),
+                input_frame_count=25,
+                rejected_frame_count=0,
+                accepted_frame_count=25,
+                observation_count=0,
+            ),
+            failure_message,
+            requested_marker_ids=[0, 1, 2],
+            omitted_markers={},
+            markers_in_accepted_frames={0, 1},
+            missing_after_rejection=[2],
+            reference_marker_id=self.reference_marker_id,
+            marker_size_m=self.marker_size_m,
+            marker_sizes_m=uniform_marker_sizes([0, 1, 2], self.marker_size_m),
+            settings=self.settings,
+            best_effort=True,
+            partial_output=False,
+            anchor_marker_ids=(0, 1),
+        )
+        self.assertIsNone(result.layout)
+        self.assertEqual(result.failure_reason, failure_message)
 
 
 class SaveMarkerModelTests(unittest.TestCase):

@@ -781,6 +781,43 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
         capture.release.assert_called_once()
         destroy_mock.assert_called_once()
 
+    def test_solve_partial_writes_model_and_prints_omitted_markers(self) -> None:
+        from object_apriltag.marker_layout_calibration import OmittedMarkerDiagnostic
+
+        partial_layout = mock.Mock()
+        partial_layout.marker_ids = {0, 1}
+        partial = mock.Mock(
+            layout=partial_layout,
+            failure_reason=None,
+            outcome="partial",
+            calibration_policy="best_effort",
+            partial_output=True,
+            omitted_markers=(
+                OmittedMarkerDiagnostic(2, "no_accepted_frame_observations"),
+                OmittedMarkerDiagnostic(3, "not_connected_in_raw_observations"),
+            ),
+            quality=_quality_report_mock(),
+        )
+        visible = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 2
+        monotonic = [0.0, 0.0, 0.6]
+
+        with mock.patch("builtins.print") as print_mock:
+            calibrate_calls, output_path, save_mock, capture, destroy_mock, saved = self._run_capture(
+                wait_keys=[ord("S")],
+                monotonic_values=monotonic,
+                visible_by_frame=visible,
+                calibrate_result=partial,
+            )
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(len(calibrate_calls), 1)
+        save_mock.assert_called_once()
+        self.assertTrue(saved)
+        self.assertIn("partial", printed.lower())
+        self.assertIn("omitted marker 2: no_accepted_frame_observations", printed)
+        self.assertIn("omitted marker 3: not_connected_in_raw_observations", printed)
+        capture.release.assert_called_once()
+        destroy_mock.assert_called_once()
+
     def test_q_cancels_without_writing(self) -> None:
         visible = [{0: _marker_corners(0), 1: _marker_corners(1)}]
         calibrate_calls, output_path, _, capture, destroy_mock, saved = self._run_capture(

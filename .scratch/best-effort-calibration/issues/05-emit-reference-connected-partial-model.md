@@ -13,3 +13,7 @@
 - [x] Strict mode and best-effort mode without partial output continue to refuse incomplete requested layouts.
 - [x] A partial model uses the existing marker-model format and loads successfully in object detection and model inspection.
 - [x] Calibration still refuses when no non-reference marker can be connected to the reference marker or the retained geometry is invalid.
+
+## Maintainability notes
+
+- Partial-output refusal/success paths in `calibrate_marker_layout` still repeat emitted-footprint and partial-emission tails; a shared helper would shrink the diff but was deferred during the correctness follow-up.

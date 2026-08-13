@@ -117,6 +117,8 @@ class AnchorCoreCalibrationTests(unittest.TestCase):
         *,
         anchor_marker_ids: tuple[int, ...] | None,
         anchor_stop_after_expansion: bool = False,
+        best_effort: bool = False,
+        partial_output: bool = False,
     ):
         return calibrate_marker_layout(
             observations,
@@ -128,6 +130,8 @@ class AnchorCoreCalibrationTests(unittest.TestCase):
             settings=self.settings,
             anchor_marker_ids=anchor_marker_ids,
             anchor_stop_after_expansion=anchor_stop_after_expansion,
+            best_effort=best_effort,
+            partial_output=partial_output,
         )
 
     def test_anchors_equal_expected_matches_legacy_success(self) -> None:
