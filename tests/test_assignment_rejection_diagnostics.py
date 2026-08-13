@@ -392,7 +392,7 @@ class AssignmentSearchTraversalTests(unittest.TestCase):
         )
         self.assertIsNone(pair_failure)
 
-        _, rejected_frames, rejections = _assign_ippe_candidates(
+        _, rejected_frames, rejections, _ = _assign_ippe_candidates(
             frame_candidates,
             pair_consensus,
             self.settings,

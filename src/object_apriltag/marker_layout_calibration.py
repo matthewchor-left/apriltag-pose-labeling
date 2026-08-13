@@ -72,6 +72,7 @@ class CalibrationQualityReport:
     unused_expected_ids: frozenset[int]
     assignment_rejections: AssignmentRejectionSummary | None = None
     assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None = None
+    fallback_assignment_records: tuple["FrameFallbackAssignmentRecord", ...] | None = None
     dropped_pair_edges: tuple[DroppedPairEdge, ...] | None = None
     restored_pair_edges: tuple[RestoredPairEdge, ...] | None = None
     anchor_core: "AnchorCoreDiagnostics | None" = None
@@ -198,6 +199,26 @@ class FrameAssignmentRejectionRecord:
     rotation_error_deg: float | None = None
     translation_gate_m: float | None = None
     rotation_gate_deg: float | None = None
+
+
+@dataclass(frozen=True)
+class FrameFallbackAssignmentRecord:
+    frame_index: int
+    frame_id: str | int
+    visible_marker_ids: tuple[int, ...]
+    disagreement_cost: float
+    marker_pair: MarkerPair | None = None
+    translation_error_m: float | None = None
+    rotation_error_deg: float | None = None
+
+
+@dataclass(frozen=True)
+class _FrameFallbackAssignment:
+    frame_index: int
+    disagreement_cost: float
+    marker_pair: MarkerPair | None
+    translation_error_m: float
+    rotation_error_deg: float
 
 
 @dataclass(frozen=True)
@@ -743,6 +764,7 @@ def calibrate_marker_layout(
             anchor_assigned,
             rejected_frames,
             assignment_rejections,
+            fallback_assignments,
             pair_consensus,
             preinitialized_marker_poses,
             anchor_drops,
@@ -771,6 +793,10 @@ def calibrate_marker_layout(
                 rejected_frames,
                 assignment_rejections,
             )
+            fallback_assignment_records = build_fallback_assignment_records(
+                normalized_observations,
+                fallback_assignments,
+            )
             assignment_rejection_summary = summarize_assignment_rejection_records(
                 assignment_rejection_records
             )
@@ -785,6 +811,7 @@ def calibrate_marker_layout(
                 observation_count=0,
                 assignment_rejections=assignment_rejection_summary,
                 assignment_rejection_records=assignment_rejection_records,
+                fallback_assignment_records=fallback_assignment_records or None,
                 dropped_pair_edges=tuple(dropped_edges),
                 restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
                 anchor_core=anchor_core_diagnostics,
@@ -796,6 +823,11 @@ def calibrate_marker_layout(
             rejected_frames,
             assignment_rejections,
         )
+        fallback_assignment_records = build_fallback_assignment_records(
+            normalized_observations,
+            fallback_assignments,
+        )
+        serialized_fallback_records = fallback_assignment_records or None
         assignment_rejection_summary = summarize_assignment_rejection_records(
             assignment_rejection_records
         )
@@ -897,6 +929,7 @@ def calibrate_marker_layout(
                     observation_count=0,
                     assignment_rejections=assignment_rejection_summary,
                     assignment_rejection_records=assignment_rejection_records,
+                    fallback_assignment_records=serialized_fallback_records,
                     dropped_pair_edges=tuple(dropped_edges),
                     restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
                     anchor_core=anchor_core_diagnostics,
@@ -922,6 +955,7 @@ def calibrate_marker_layout(
                     observation_count=0,
                     assignment_rejections=assignment_rejection_summary,
                     assignment_rejection_records=assignment_rejection_records,
+                    fallback_assignment_records=serialized_fallback_records,
                     dropped_pair_edges=tuple(dropped_edges),
                     restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
                     anchor_core=anchor_core_diagnostics,
@@ -973,6 +1007,7 @@ def calibrate_marker_layout(
             accepted_frame_count=accepted_frame_count,
             assignment_rejection_summary=assignment_rejection_summary,
             assignment_rejection_records=assignment_rejection_records,
+            fallback_assignment_records=serialized_fallback_records,
             dropped_edges=dropped_edges,
             anchor_core_diagnostics=anchor_core_diagnostics,
             frame_candidates=frame_candidates,
@@ -1001,6 +1036,7 @@ def calibrate_marker_layout(
             dist_coeffs,
             assignment_rejections=assignment_rejection_summary,
             assignment_rejection_records=assignment_rejection_records,
+            fallback_assignment_records=serialized_fallback_records,
             dropped_pair_edges=tuple(dropped_edges),
             restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
             anchor_core=anchor_core_diagnostics,
@@ -1049,18 +1085,26 @@ def calibrate_marker_layout(
             pair_failure,
         )
 
-    assigned_candidates, rejected_frames, assignment_rejections = _assign_ippe_candidates(
-        frame_candidates,
-        pair_consensus,
-        settings,
-        marker_sizes_m,
+    assigned_candidates, rejected_frames, assignment_rejections, fallback_assignments = (
+        _assign_ippe_candidates(
+            frame_candidates,
+            pair_consensus,
+            settings,
+            marker_sizes_m,
+            best_effort=best_effort,
+        )
     )
     assignment_rejection_records = build_assignment_rejection_records(
         normalized_observations,
         rejected_frames,
         assignment_rejections,
     )
+    fallback_assignment_records = build_fallback_assignment_records(
+        normalized_observations,
+        fallback_assignments,
+    )
     assignment_rejection_summary = summarize_assignment_rejection_records(assignment_rejection_records)
+    serialized_fallback_records = fallback_assignment_records or None
     input_frame_count = len(normalized_observations)
     rejected_frame_count = len(rejected_frames)
     accepted_frames = frozenset(assigned_candidates)
@@ -1079,6 +1123,7 @@ def calibrate_marker_layout(
                 observation_count=0,
                 assignment_rejections=assignment_rejection_summary,
                 assignment_rejection_records=assignment_rejection_records,
+                fallback_assignment_records=serialized_fallback_records,
                 dropped_pair_edges=tuple(dropped_edges),
                 restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
             ),
@@ -1110,6 +1155,7 @@ def calibrate_marker_layout(
                 observation_count=0,
                 assignment_rejections=assignment_rejection_summary,
                 assignment_rejection_records=assignment_rejection_records,
+                fallback_assignment_records=serialized_fallback_records,
                 dropped_pair_edges=tuple(dropped_edges),
                 restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
             ),
@@ -1132,6 +1178,7 @@ def calibrate_marker_layout(
                 observation_count=0,
                 assignment_rejections=assignment_rejection_summary,
                 assignment_rejection_records=assignment_rejection_records,
+                fallback_assignment_records=serialized_fallback_records,
                 dropped_pair_edges=tuple(dropped_edges),
                 restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
             ),
@@ -1186,6 +1233,7 @@ def calibrate_marker_layout(
         accepted_frame_count=accepted_frame_count,
         assignment_rejection_summary=assignment_rejection_summary,
         assignment_rejection_records=assignment_rejection_records,
+        fallback_assignment_records=serialized_fallback_records,
         dropped_edges=dropped_edges,
         anchor_core_diagnostics=None,
         frame_candidates=None,
@@ -1215,6 +1263,7 @@ def calibrate_marker_layout(
         dist_coeffs,
         assignment_rejections=assignment_rejection_summary,
         assignment_rejection_records=assignment_rejection_records,
+        fallback_assignment_records=serialized_fallback_records,
         dropped_pair_edges=tuple(dropped_edges),
         restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
     )
@@ -1407,6 +1456,7 @@ def _provisional_result_from_checkpoint(
     rejected_frame_count: int,
     assignment_rejection_summary: AssignmentRejectionSummary | None,
     assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None,
+    fallback_assignment_records: tuple[FrameFallbackAssignmentRecord, ...] | None,
     dropped_pair_edges: tuple[DroppedPairEdge, ...],
     restored_pair_edges: tuple[RestoredPairEdge, ...] | None,
     anchor_core: AnchorCoreDiagnostics | None,
@@ -1435,6 +1485,7 @@ def _provisional_result_from_checkpoint(
         dist_coeffs,
         assignment_rejections=assignment_rejection_summary,
         assignment_rejection_records=assignment_rejection_records,
+        fallback_assignment_records=fallback_assignment_records,
         dropped_pair_edges=dropped_pair_edges,
         restored_pair_edges=restored_pair_edges,
         anchor_core=anchor_core,
@@ -1482,6 +1533,7 @@ def _maybe_recover_from_checkpoints(
     rejected_frame_count: int,
     assignment_rejection_summary: AssignmentRejectionSummary | None,
     assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None,
+    fallback_assignment_records: tuple[FrameFallbackAssignmentRecord, ...] | None,
     dropped_pair_edges: tuple[DroppedPairEdge, ...],
     restored_pair_edges: tuple[RestoredPairEdge, ...] | None,
     anchor_core: AnchorCoreDiagnostics | None,
@@ -1513,6 +1565,7 @@ def _maybe_recover_from_checkpoints(
         rejected_frame_count=rejected_frame_count,
         assignment_rejection_summary=assignment_rejection_summary,
         assignment_rejection_records=assignment_rejection_records,
+        fallback_assignment_records=fallback_assignment_records,
         dropped_pair_edges=dropped_pair_edges,
         restored_pair_edges=restored_pair_edges,
         anchor_core=anchor_core,
@@ -1530,6 +1583,7 @@ def _refinement_failure_quality(
     observation_count: int,
     assignment_rejection_summary: AssignmentRejectionSummary | None,
     assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None,
+    fallback_assignment_records: tuple[FrameFallbackAssignmentRecord, ...] | None,
     dropped_pair_edges: tuple[DroppedPairEdge, ...],
     restored_pair_edges: tuple[RestoredPairEdge, ...] | None,
     anchor_core: AnchorCoreDiagnostics | None,
@@ -1545,6 +1599,7 @@ def _refinement_failure_quality(
         observation_count=observation_count,
         assignment_rejections=assignment_rejection_summary,
         assignment_rejection_records=assignment_rejection_records,
+        fallback_assignment_records=fallback_assignment_records,
         dropped_pair_edges=dropped_pair_edges,
         restored_pair_edges=restored_pair_edges,
         anchor_core=anchor_core,
@@ -1575,6 +1630,7 @@ def _refine_layout_with_checkpoints(
     accepted_frame_count: int,
     assignment_rejection_summary: AssignmentRejectionSummary | None,
     assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None,
+    fallback_assignment_records: tuple[FrameFallbackAssignmentRecord, ...] | None,
     dropped_edges: list[DroppedPairEdge],
     anchor_core_diagnostics: AnchorCoreDiagnostics | None,
     frame_candidates: list[tuple[int, dict[int, list[_MarkerCandidate]]]] | None,
@@ -1633,6 +1689,7 @@ def _refine_layout_with_checkpoints(
             rejected_frame_count=rejected_frame_count,
             assignment_rejection_summary=assignment_rejection_summary,
             assignment_rejection_records=assignment_rejection_records,
+            fallback_assignment_records=fallback_assignment_records,
             dropped_pair_edges=tuple(dropped_edges),
             restored_pair_edges=restored_edges,
             anchor_core=anchor_core_diagnostics,
@@ -1657,6 +1714,7 @@ def _refine_layout_with_checkpoints(
                     observation_count=len(corner_observations),
                     assignment_rejection_summary=assignment_rejection_summary,
                     assignment_rejection_records=assignment_rejection_records,
+                    fallback_assignment_records=fallback_assignment_records,
                     dropped_pair_edges=tuple(dropped_edges),
                     restored_pair_edges=restored_edges,
                     anchor_core=anchor_core_diagnostics,
@@ -1726,6 +1784,7 @@ def _refine_layout_with_checkpoints(
             rejected_frame_count=rejected_frame_count,
             assignment_rejection_summary=assignment_rejection_summary,
             assignment_rejection_records=assignment_rejection_records,
+            fallback_assignment_records=fallback_assignment_records,
             dropped_pair_edges=tuple(dropped_edges),
             restored_pair_edges=restored_edges,
             anchor_core=anchor_core_diagnostics,
@@ -1750,6 +1809,7 @@ def _refine_layout_with_checkpoints(
                     observation_count=int(np.count_nonzero(inlier_mask)),
                     assignment_rejection_summary=assignment_rejection_summary,
                     assignment_rejection_records=assignment_rejection_records,
+                    fallback_assignment_records=fallback_assignment_records,
                     dropped_pair_edges=tuple(dropped_edges),
                     restored_pair_edges=restored_edges,
                     anchor_core=anchor_core_diagnostics,
@@ -2430,14 +2490,17 @@ def _assign_ippe_candidates(
     marker_sizes_m: Mapping[int, float],
     *,
     search_marker_ids: frozenset[int] | None = None,
+    best_effort: bool = False,
 ) -> tuple[
     dict[int, dict[int, _MarkerCandidate]],
     tuple[int, ...],
     tuple[FrameAssignmentRejection, ...],
+    tuple[_FrameFallbackAssignment, ...],
 ]:
     assigned: dict[int, dict[int, _MarkerCandidate]] = {}
     rejected_frames: list[int] = []
     rejections: list[FrameAssignmentRejection] = []
+    fallback_assignments: list[_FrameFallbackAssignment] = []
     for frame_index, candidates in frame_candidates:
         result = resolve_frame_ippe_assignment(
             candidates,
@@ -2446,15 +2509,92 @@ def _assign_ippe_candidates(
             marker_sizes_m,
             search_marker_ids=search_marker_ids,
         )
-        if result.assignment is None:
-            rejected_frames.append(frame_index)
-            rejections.append(
-                result.rejection
-                or FrameAssignmentRejection(reason="no_constrained_pair")
-            )
+        if result.assignment is not None:
+            assigned[frame_index] = result.assignment
             continue
-        assigned[frame_index] = result.assignment
-    return assigned, tuple(rejected_frames), tuple(rejections)
+        if best_effort:
+            fallback = resolve_frame_ippe_fallback_assignment(
+                candidates,
+                pair_consensus,
+                settings,
+                marker_sizes_m,
+                search_marker_ids=search_marker_ids,
+            )
+            if fallback.assignment is not None:
+                assigned[frame_index] = fallback.assignment
+                fallback_assignments.append(
+                    _FrameFallbackAssignment(
+                        frame_index=frame_index,
+                        disagreement_cost=fallback.disagreement_cost,
+                        marker_pair=fallback.worst_pair,
+                        translation_error_m=fallback.worst_translation_error_m,
+                        rotation_error_deg=fallback.worst_rotation_error_deg,
+                    )
+                )
+                continue
+        rejected_frames.append(frame_index)
+        rejections.append(
+            result.rejection
+            or FrameAssignmentRejection(reason="no_constrained_pair")
+        )
+    return assigned, tuple(rejected_frames), tuple(rejections), tuple(fallback_assignments)
+
+
+@dataclass(frozen=True)
+class FrameFallbackAssignmentResult:
+    assignment: dict[int, _MarkerCandidate] | None
+    disagreement_cost: float
+    worst_pair: MarkerPair | None
+    worst_translation_error_m: float
+    worst_rotation_error_deg: float
+
+
+def resolve_frame_ippe_fallback_assignment(
+    candidates: dict[int, list[_MarkerCandidate]],
+    pair_consensus: dict[MarkerPair, _PairConsensus],
+    settings: CalibrationSettings,
+    marker_sizes_m: Mapping[int, float],
+    *,
+    search_marker_ids: frozenset[int] | None = None,
+) -> FrameFallbackAssignmentResult:
+    if search_marker_ids is not None:
+        marker_ids = sorted(marker_id for marker_id in candidates if marker_id in search_marker_ids)
+    else:
+        marker_ids = sorted(candidates)
+    if len(marker_ids) < 2:
+        return FrameFallbackAssignmentResult(
+            assignment=None,
+            disagreement_cost=float("inf"),
+            worst_pair=None,
+            worst_translation_error_m=0.0,
+            worst_rotation_error_deg=0.0,
+        )
+    holder = _new_fallback_assignment_search_holder(settings, marker_sizes_m)
+    _search_assignments(
+        marker_ids,
+        candidates,
+        pair_consensus,
+        {},
+        0,
+        holder,
+        assignment_mode="fallback",
+    )
+    assignment = holder.get("assignment")
+    if assignment is None:
+        return FrameFallbackAssignmentResult(
+            assignment=None,
+            disagreement_cost=float("inf"),
+            worst_pair=None,
+            worst_translation_error_m=0.0,
+            worst_rotation_error_deg=0.0,
+        )
+    return FrameFallbackAssignmentResult(
+        assignment=dict(assignment),  # type: ignore[arg-type]
+        disagreement_cost=float(holder["best_cost"]),
+        worst_pair=holder.get("worst_pair"),  # type: ignore[arg-type]
+        worst_translation_error_m=float(holder["worst_translation_error"]),
+        worst_rotation_error_deg=float(holder["worst_rotation_error"]),
+    )
 
 
 def resolve_frame_ippe_assignment(
@@ -2483,6 +2623,22 @@ def resolve_frame_ippe_assignment(
         assignment=None,
         rejection=_rejection_from_assignment_search_holder(holder),
     )
+
+
+def _new_fallback_assignment_search_holder(
+    settings: CalibrationSettings,
+    marker_sizes_m: Mapping[int, float],
+) -> dict[str, object]:
+    return {
+        "best_cost": float("inf"),
+        "assignment": None,
+        "worst_pair": None,
+        "worst_translation_error": 0.0,
+        "worst_rotation_error": 0.0,
+        "marker_sizes_m": dict(marker_sizes_m),
+        "settings": settings,
+        "rotation_gate": settings.pair_rotation_rms_gate_deg,
+    }
 
 
 def _new_assignment_search_holder(
@@ -2541,6 +2697,54 @@ def _rejection_from_assignment_search_holder(holder: dict[str, object]) -> Frame
         translation_gate_m=translation_gate,
         rotation_gate_deg=rotation_gate,
     )
+
+
+def _evaluate_fallback_assignment(
+    assignment: dict[int, _MarkerCandidate],
+    marker_ids: list[int],
+    pair_consensus: dict[MarkerPair, _PairConsensus],
+    marker_sizes_m: Mapping[int, float],
+    settings: CalibrationSettings,
+    rotation_gate: float,
+) -> tuple[float | None, MarkerPair | None, float, float]:
+    constrained_edges = 0
+    total_cost = 0.0
+    worst_exceedance = -1.0
+    worst_pair: MarkerPair | None = None
+    worst_translation_error = 0.0
+    worst_rotation_error = 0.0
+
+    for index_a, marker_low in enumerate(marker_ids):
+        for marker_high in marker_ids[index_a + 1 :]:
+            pair = (marker_low, marker_high)
+            edge = pair_consensus.get(pair)
+            if edge is None:
+                continue
+            translation_gate = _pair_translation_gate(settings, marker_sizes_m, pair)
+            constrained_edges += 1
+            rotation_ba, translation_ba = _transform_high_in_low(
+                assignment[marker_low],
+                assignment[marker_high],
+            )
+            translation_error = float(np.linalg.norm(translation_ba - edge.translation_ba))
+            rotation_error = _rotation_geodesic_deg(rotation_ba, edge.rotation_ba)
+            if not np.isfinite(translation_error) or not np.isfinite(rotation_error):
+                return None, None, 0.0, 0.0
+            if translation_gate <= 0.0 or rotation_gate <= 0.0:
+                return None, None, 0.0, 0.0
+            total_cost += (translation_error / translation_gate) ** 2 + (
+                rotation_error / rotation_gate
+            ) ** 2
+            exceedance = max(translation_error / translation_gate, rotation_error / rotation_gate)
+            if exceedance > worst_exceedance:
+                worst_exceedance = exceedance
+                worst_pair = pair
+                worst_translation_error = translation_error
+                worst_rotation_error = rotation_error
+
+    if constrained_edges == 0:
+        return None, None, 0.0, 0.0
+    return total_cost, worst_pair, worst_translation_error, worst_rotation_error
 
 
 def _evaluate_complete_assignment(
@@ -2778,6 +2982,28 @@ def summarize_assignment_rejection_records(
 
 
 _ASSIGNMENT_REJECTION_SAMPLE_FRAME_IDS = 10
+
+
+def build_fallback_assignment_records(
+    normalized_observations: Sequence[tuple[str | int, dict[int, np.ndarray]]],
+    fallback_assignments: Sequence[_FrameFallbackAssignment],
+) -> tuple[FrameFallbackAssignmentRecord, ...]:
+    records: list[FrameFallbackAssignmentRecord] = []
+    for fallback in fallback_assignments:
+        frame_id, markers = normalized_observations[fallback.frame_index]
+        visible_marker_ids = tuple(sorted(int(marker_id) for marker_id in markers))
+        records.append(
+            FrameFallbackAssignmentRecord(
+                frame_index=fallback.frame_index,
+                frame_id=frame_id,
+                visible_marker_ids=visible_marker_ids,
+                disagreement_cost=_json_safe_float(fallback.disagreement_cost) or float("inf"),
+                marker_pair=fallback.marker_pair,
+                translation_error_m=_json_safe_float(fallback.translation_error_m),
+                rotation_error_deg=_json_safe_float(fallback.rotation_error_deg),
+            )
+        )
+    return tuple(records)
 
 
 def build_assignment_rejection_records(
@@ -3331,6 +3557,7 @@ def _assign_and_initialize_anchor_core(
     dict[int, dict[int, _MarkerCandidate]] | None,
     tuple[int, ...],
     tuple[FrameAssignmentRejection, ...],
+    tuple[_FrameFallbackAssignment, ...],
     dict[MarkerPair, _PairConsensus] | None,
     dict[int, tuple[np.ndarray, np.ndarray]] | None,
     list[DroppedPairEdge],
@@ -3366,16 +3593,19 @@ def _assign_and_initialize_anchor_core(
         unresolved_ids=frozenset(expected_ids),
     )
     if anchor_pair_failure is not None:
-        return None, (), (), None, None, dropped_edges, anchor_core, (
+        return None, (), (), (), None, None, dropped_edges, anchor_core, (
             f"Anchor core bootstrap failed: {anchor_pair_failure}"
         )
 
-    assigned_candidates, rejected_frames, assignment_rejections = _assign_ippe_candidates(
-        frame_candidates,
-        anchor_consensus,
-        settings,
-        marker_sizes_m,
-        search_marker_ids=anchor_set,
+    assigned_candidates, rejected_frames, assignment_rejections, bootstrap_fallback = (
+        _assign_ippe_candidates(
+            frame_candidates,
+            anchor_consensus,
+            settings,
+            marker_sizes_m,
+            search_marker_ids=anchor_set,
+            best_effort=best_effort,
+        )
     )
     accepted_frames = frozenset(assigned_candidates)
     bootstrap = AnchorCoreBootstrapDiagnostics(
@@ -3397,6 +3627,7 @@ def _assign_and_initialize_anchor_core(
             assigned_candidates,
             rejected_frames,
             assignment_rejections,
+            bootstrap_fallback,
             anchor_consensus,
             None,
             dropped_edges,
@@ -3456,6 +3687,7 @@ def _assign_and_initialize_anchor_core(
             assigned_candidates,
             rejected_frames,
             assignment_rejections,
+            bootstrap_fallback,
             anchor_consensus,
             marker_poses,
             dropped_edges,
@@ -3489,6 +3721,7 @@ def _assign_and_initialize_anchor_core(
             assignments,
             rejected_frames,
             assignment_rejections,
+            bootstrap_fallback,
             None,
             marker_poses,
             dropped_edges,
@@ -3521,6 +3754,7 @@ def _assign_and_initialize_anchor_core(
             assignments,
             rejected_frames,
             assignment_rejections,
+            bootstrap_fallback,
             pair_consensus,
             marker_poses,
             dropped_edges,
@@ -3549,12 +3783,15 @@ def _assign_and_initialize_anchor_core(
             marker_poses=marker_poses,
         )
 
-    assignments, rejected_frames, assignment_rejections = _assign_ippe_candidates(
-        frame_candidates,
-        seed_consensus,
-        settings,
-        marker_sizes_m,
-        search_marker_ids=expected_set,
+    assignments, rejected_frames, assignment_rejections, fallback_assignments = (
+        _assign_ippe_candidates(
+            frame_candidates,
+            seed_consensus,
+            settings,
+            marker_sizes_m,
+            search_marker_ids=expected_set,
+            best_effort=best_effort,
+        )
     )
 
     frozen_frames = _freeze_assigned_frame_candidates(frame_candidates, assignments)
@@ -3595,6 +3832,7 @@ def _assign_and_initialize_anchor_core(
                 assignments,
                 rejected_frames,
                 assignment_rejections,
+                fallback_assignments,
                 pair_consensus,
                 marker_poses,
                 dropped_edges,
@@ -3621,6 +3859,7 @@ def _assign_and_initialize_anchor_core(
         assignments,
         rejected_frames,
         assignment_rejections,
+        fallback_assignments,
         pair_consensus,
         marker_poses,
         dropped_edges,
@@ -3749,8 +3988,28 @@ def _search_assignments(
     current: dict[int, _MarkerCandidate],
     index: int,
     holder: dict[str, object],
+    *,
+    assignment_mode: Literal["strict", "fallback"] = "strict",
 ) -> None:
     if index == len(marker_ids):
+        if assignment_mode == "fallback":
+            cost, worst_pair, worst_translation_error, worst_rotation_error = (
+                _evaluate_fallback_assignment(
+                    current,
+                    marker_ids,
+                    pair_consensus,
+                    holder["marker_sizes_m"],  # type: ignore[arg-type]
+                    holder["settings"],  # type: ignore[arg-type]
+                    float(holder["rotation_gate"]),
+                )
+            )
+            if cost is not None and cost < float(holder["best_cost"]):
+                holder["best_cost"] = cost
+                holder["assignment"] = dict(current)
+                holder["worst_pair"] = worst_pair
+                holder["worst_translation_error"] = worst_translation_error
+                holder["worst_rotation_error"] = worst_rotation_error
+            return
         (
             score,
             has_constrained_pair,
@@ -3795,6 +4054,7 @@ def _search_assignments(
             current,
             index + 1,
             holder,
+            assignment_mode=assignment_mode,
         )
     current.pop(marker_id, None)
 
@@ -4443,6 +4703,7 @@ def _build_quality_report(
     dist_coeffs: np.ndarray,
     assignment_rejections: AssignmentRejectionSummary | None = None,
     assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None = None,
+    fallback_assignment_records: tuple[FrameFallbackAssignmentRecord, ...] | None = None,
     dropped_pair_edges: tuple[DroppedPairEdge, ...] | None = None,
     restored_pair_edges: tuple[RestoredPairEdge, ...] | None = None,
     anchor_core: AnchorCoreDiagnostics | None = None,
@@ -4491,6 +4752,7 @@ def _build_quality_report(
         unused_expected_ids=frozenset(set(expected_ids) - observed_ids),
         assignment_rejections=assignment_rejections,
         assignment_rejection_records=assignment_rejection_records,
+        fallback_assignment_records=fallback_assignment_records,
         dropped_pair_edges=dropped_pair_edges,
         restored_pair_edges=restored_pair_edges,
         anchor_core=anchor_core,
@@ -4613,6 +4875,7 @@ def _quality_from_pairs(
     observation_count: int,
     assignment_rejections: AssignmentRejectionSummary | None = None,
     assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None = None,
+    fallback_assignment_records: tuple[FrameFallbackAssignmentRecord, ...] | None = None,
     dropped_pair_edges: tuple[DroppedPairEdge, ...] | None = None,
     restored_pair_edges: tuple[RestoredPairEdge, ...] | None = None,
     anchor_core: AnchorCoreDiagnostics | None = None,
@@ -4635,6 +4898,7 @@ def _quality_from_pairs(
         unused_expected_ids=frozenset(set(expected_ids) - _connected_marker_ids(pair_consensus, reference_marker_id)),
         assignment_rejections=assignment_rejections,
         assignment_rejection_records=assignment_rejection_records,
+        fallback_assignment_records=fallback_assignment_records,
         dropped_pair_edges=dropped_pair_edges,
         restored_pair_edges=restored_pair_edges,
         anchor_core=anchor_core,

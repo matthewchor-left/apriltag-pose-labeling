@@ -1472,6 +1472,117 @@ class WeakPairConnectivityRecoveryTests(unittest.TestCase):
         self.assertEqual(len(dropped), 1)
 
 
+class FrameAssignmentFallbackRecoveryTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.marker_size_m = 0.07
+        self.camera_matrix, self.dist_coeffs = _default_camera()
+        self.settings = CalibrationSettings(min_inliers_per_edge=20)
+
+    def _minority_flip_observations(
+        self,
+        *,
+        frame_count: int,
+        flip_start: int,
+    ) -> list[FrameObservation]:
+        observations = synthesize_observations(
+            _two_marker_poses(self.marker_size_m),
+            frame_count=frame_count,
+            marker_size_m=self.marker_size_m,
+            seed=4,
+        )
+        _rotate_marker_corners(observations, range(flip_start, frame_count), marker_id=1)
+        return observations
+
+    def test_strict_assignment_pass_unchanged_without_best_effort(self) -> None:
+        observations = self._minority_flip_observations(frame_count=30, flip_start=20)
+        result = calibrate_marker_layout(
+            observations,
+            self.camera_matrix,
+            self.dist_coeffs,
+            expected_marker_ids=[0, 1],
+            reference_marker_id=0,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+        )
+        assert result.quality is not None
+        self.assertEqual(result.quality.accepted_frame_count, 20)
+        self.assertEqual(result.quality.rejected_frame_count, 10)
+        self.assertIsNone(result.quality.fallback_assignment_records)
+
+    def test_best_effort_recovers_minority_ippe_flip_frames(self) -> None:
+        observations = self._minority_flip_observations(frame_count=30, flip_start=20)
+        result = calibrate_marker_layout(
+            observations,
+            self.camera_matrix,
+            self.dist_coeffs,
+            expected_marker_ids=[0, 1],
+            reference_marker_id=0,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+            best_effort=True,
+        )
+        self.assertIsNone(result.failure_reason)
+        assert result.layout is not None and result.quality is not None
+        self.assertEqual(result.quality.input_frame_count, 30)
+        self.assertEqual(result.quality.rejected_frame_count, 0)
+        assert result.quality.fallback_assignment_records is not None
+        self.assertEqual(len(result.quality.fallback_assignment_records), 10)
+        fallback_frame_ids = {
+            record.frame_id for record in result.quality.fallback_assignment_records
+        }
+        self.assertEqual(fallback_frame_ids, set(range(20, 30)))
+        for record in result.quality.fallback_assignment_records:
+            self.assertGreater(record.disagreement_cost, 0.0)
+            self.assertIsNotNone(record.translation_error_m)
+            self.assertIsNotNone(record.rotation_error_deg)
+
+    def test_fallback_assignment_follows_consistent_global_branch(self) -> None:
+        observations = self._minority_flip_observations(frame_count=30, flip_start=20)
+        result = calibrate_marker_layout(
+            observations,
+            self.camera_matrix,
+            self.dist_coeffs,
+            expected_marker_ids=[0, 1],
+            reference_marker_id=0,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+            best_effort=True,
+        )
+        assert result.layout is not None
+        marker_poses = _two_marker_poses(self.marker_size_m)
+        ground_truth = _ground_truth_footprints(marker_poses, self.marker_size_m)
+        for marker_id in (0, 1):
+            for corner_name in CORNER_NAMES:
+                expected = getattr(ground_truth[marker_id], corner_name)
+                actual = getattr(result.layout.footprints[marker_id], corner_name)
+                self.assertLess(
+                    float(np.linalg.norm(actual - expected)),
+                    0.02,
+                    msg=f"marker {marker_id} {corner_name}",
+                )
+
+    def test_best_effort_still_rejects_frames_without_valid_assignment(self) -> None:
+        observations = _synth_pair_with_corrupt_frames(
+            25,
+            frozenset(range(25)),
+            varying_corrupt=True,
+        )
+        result = calibrate_marker_layout(
+            observations,
+            self.camera_matrix,
+            self.dist_coeffs,
+            expected_marker_ids=[0, 1],
+            reference_marker_id=0,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+            best_effort=True,
+        )
+        self.assertIsNone(result.layout)
+        assert result.quality is not None
+        self.assertEqual(result.quality.accepted_frame_count, 0)
+        self.assertIsNone(result.quality.fallback_assignment_records)
+
+
 class SaveMarkerModelTests(unittest.TestCase):
     def test_roundtrip_matches_in_memory_layout(self) -> None:
         marker_size_m = 0.07

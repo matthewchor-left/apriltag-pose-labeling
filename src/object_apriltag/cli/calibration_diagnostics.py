@@ -20,12 +20,13 @@ from object_apriltag.marker_layout_calibration import (
     DroppedPairEdge,
     EdgeDiagnostics,
     FrameAssignmentRejectionRecord,
+    FrameFallbackAssignmentRecord,
     MarkerExpansionRecord,
     MeasurementDistribution,
     RestoredPairEdge,
 )
 
-CALIBRATION_DIAGNOSTICS_VERSION = 5
+CALIBRATION_DIAGNOSTICS_VERSION = 6
 
 
 def format_reprojection_rms_px(value: float) -> str:
@@ -110,6 +111,21 @@ def format_restored_pair_edge(edge: RestoredPairEdge) -> str:
     )
 
 
+def format_fallback_assignment_record(record: FrameFallbackAssignmentRecord) -> str:
+    pair_text = ""
+    if record.marker_pair is not None:
+        pair_text = f" pair=({record.marker_pair[0]},{record.marker_pair[1]})"
+    return " ".join(
+        [
+            f"fallback assignment frame={record.frame_id}",
+            f"cost={_format_optional_float(record.disagreement_cost, precision=4)}",
+            pair_text.strip(),
+            f"tr_err_m={_format_optional_float(record.translation_error_m)}",
+            f"rot_err_deg={_format_optional_float(record.rotation_error_deg, precision=1)}",
+        ]
+    ).strip()
+
+
 def format_anchor_core_lines(anchor_core: AnchorCoreDiagnostics) -> list[str]:
     lines = [
         f"anchor core mode={anchor_core.mode} anchors={list(anchor_core.configured_anchor_ids)}",
@@ -167,6 +183,9 @@ def format_quality_diagnostics_lines(quality: CalibrationQualityReport) -> list[
     if isinstance(quality.restored_pair_edges, tuple):
         for edge in quality.restored_pair_edges:
             lines.append(format_restored_pair_edge(edge))
+    if isinstance(quality.fallback_assignment_records, tuple):
+        for record in quality.fallback_assignment_records:
+            lines.append(format_fallback_assignment_record(record))
     if quality.anchor_core is not None and isinstance(quality.anchor_core, AnchorCoreDiagnostics):
         lines.extend(format_anchor_core_lines(quality.anchor_core))
     return lines
@@ -345,6 +364,28 @@ def _serialize_restored_pair_edges(
     return [_restored_pair_edge_to_dict(edge) for edge in edges]
 
 
+def _fallback_assignment_record_to_dict(
+    record: FrameFallbackAssignmentRecord,
+) -> dict[str, Any]:
+    return {
+        "frame_index": record.frame_index,
+        "frame_id": record.frame_id,
+        "visible_marker_ids": list(record.visible_marker_ids),
+        "disagreement_cost": _json_safe_float(record.disagreement_cost),
+        "marker_pair": _marker_pair_to_list(record.marker_pair),
+        "translation_error_m": _json_safe_float(record.translation_error_m),
+        "rotation_error_deg": _json_safe_float(record.rotation_error_deg),
+    }
+
+
+def _serialize_fallback_assignment_records(
+    records: tuple[FrameFallbackAssignmentRecord, ...] | None,
+) -> list[dict[str, Any]] | None:
+    if records is None:
+        return None
+    return [_fallback_assignment_record_to_dict(record) for record in records]
+
+
 def _anchor_core_bootstrap_to_dict(
     bootstrap: AnchorCoreBootstrapDiagnostics,
 ) -> dict[str, Any]:
@@ -411,6 +452,9 @@ def build_calibration_diagnostics_document(
         ),
         "dropped_pair_edges": _serialize_dropped_pair_edges(quality.dropped_pair_edges),
         "restored_pair_edges": _serialize_restored_pair_edges(quality.restored_pair_edges),
+        "fallback_assignment_records": _serialize_fallback_assignment_records(
+            quality.fallback_assignment_records
+        ),
         "anchor_core": _anchor_core_to_dict(quality.anchor_core),
     }
 

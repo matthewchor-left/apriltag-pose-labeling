@@ -357,6 +357,7 @@ class CalibrationDiagnosticsDocumentTests(unittest.TestCase):
         "assignment_rejection_records",
         "dropped_pair_edges",
         "restored_pair_edges",
+        "fallback_assignment_records",
         "anchor_core",
     )
     QUALITY_KEYS = (
@@ -495,7 +496,7 @@ class CalibrationDiagnosticsDocumentTests(unittest.TestCase):
         self.assertEqual(list(payload["quality"].keys()), list(self.QUALITY_KEYS))
         self.assertEqual(list(payload["assignment_rejection_records"][0].keys()), list(self.RECORD_KEYS))
         self.assertEqual(list(payload["dropped_pair_edges"][0].keys()), list(self.DROPPED_EDGE_KEYS))
-        self.assertEqual(payload["version"], 5)
+        self.assertEqual(payload["version"], 6)
         self.assertFalse(payload["succeeded"])
         self.assertEqual(payload["failure_reason"], "refused")
         self.assertIsNone(payload["quality"]["reprojection_rms_px"])

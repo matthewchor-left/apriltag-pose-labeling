@@ -4,12 +4,12 @@
 
 **Blocked by:** 02 — Recover connectivity through weak pair consensus.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The existing strict assignment pass always runs before fallback assignment.
-- [ ] Fallback assignment scores complete candidate combinations by normalized rotation and translation disagreement against the recovered pair graph.
-- [ ] Each recovered frame uses one finite, globally consistent candidate per visible marker.
-- [ ] Diagnostics distinguish strictly accepted frames from fallback-assigned frames and report their disagreement costs.
-- [ ] Strict mode retains its current assignment rejection behavior.
-- [ ] Frames with no finite or geometrically valid complete assignment remain rejected.
-- [ ] Regression coverage includes minority IPPE flips and verifies that fallback assignment follows one consistent global branch.
+- [x] The existing strict assignment pass always runs before fallback assignment.
+- [x] Fallback assignment scores complete candidate combinations by normalized rotation and translation disagreement against the recovered pair graph.
+- [x] Each recovered frame uses one finite, globally consistent candidate per visible marker.
+- [x] Diagnostics distinguish strictly accepted frames from fallback-assigned frames and report their disagreement costs.
+- [x] Strict mode retains its current assignment rejection behavior.
+- [x] Frames with no finite or geometrically valid complete assignment remain rejected.
+- [x] Regression coverage includes minority IPPE flips and verifies that fallback assignment follows one consistent global branch.
