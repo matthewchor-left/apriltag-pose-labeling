@@ -718,12 +718,45 @@ class BestEffortCalibrationTests(unittest.TestCase):
         self.assertEqual(result.outcome, "refused")
         self.assertEqual(result.calibration_policy, "strict")
 
-    def test_best_effort_still_refuses_hard_failures(self) -> None:
+    def test_best_effort_still_refuses_when_marker_never_observed(self) -> None:
+        observations = synthesize_observations(
+            _two_marker_poses(self.marker_size_m),
+            frame_count=25,
+            marker_size_m=self.marker_size_m,
+        )
+        result = calibrate_marker_layout(
+            observations,
+            self.camera_matrix,
+            self.dist_coeffs,
+            expected_marker_ids=[0, 1, 2],
+            reference_marker_id=0,
+            marker_size_m=self.marker_size_m,
+            settings=CalibrationSettings(min_inliers_per_edge=20),
+            best_effort=True,
+        )
+        self.assertIsNone(result.layout)
+        self.assertIn("never observed", result.failure_reason or "")
+        self.assertEqual(result.outcome, "refused")
+
+    def test_best_effort_recovers_all_weak_two_marker_graph_below_min_inliers(self) -> None:
         observations = synthesize_observations(
             _two_marker_poses(self.marker_size_m),
             frame_count=19,
             marker_size_m=self.marker_size_m,
         )
+        settings = CalibrationSettings(min_inliers_per_edge=20)
+        strict = calibrate_marker_layout(
+            observations,
+            self.camera_matrix,
+            self.dist_coeffs,
+            expected_marker_ids=[0, 1],
+            reference_marker_id=0,
+            marker_size_m=self.marker_size_m,
+            settings=settings,
+        )
+        self.assertIsNone(strict.layout)
+        self.assertEqual(strict.outcome, "refused")
+
         result = calibrate_marker_layout(
             observations,
             self.camera_matrix,
@@ -731,12 +764,22 @@ class BestEffortCalibrationTests(unittest.TestCase):
             expected_marker_ids=[0, 1],
             reference_marker_id=0,
             marker_size_m=self.marker_size_m,
-            settings=CalibrationSettings(min_inliers_per_edge=20),
+            settings=settings,
             best_effort=True,
         )
-        self.assertIsNone(result.layout)
-        self.assertIsNotNone(result.failure_reason)
-        self.assertEqual(result.outcome, "refused")
+        self.assertIsNotNone(result.layout)
+        self.assertIsNone(result.failure_reason)
+        self.assertEqual(result.calibration_policy, "best_effort")
+        self.assertIn(result.outcome, ("accepted", "provisional"))
+        assert result.quality is not None
+        self.assertEqual(result.quality.connected_marker_ids, frozenset({0, 1}))
+        assert result.quality.restored_pair_edges is not None
+        restored = next(
+            edge for edge in result.quality.restored_pair_edges if edge.marker_pair == (0, 1)
+        )
+        self.assertEqual(restored.original_reason, "insufficient_observed_frames")
+        self.assertEqual(restored.supported_count, 19)
+        self.assertEqual(restored.observed_count, 19)
 
     def test_provisional_marker_model_roundtrips_and_loads(self) -> None:
         observations = synthesize_observations(

@@ -3658,8 +3658,6 @@ def _maybe_restore_weak_connectivity(
         return None
     if not best_effort:
         return _connectivity_failure_message(stage, reference_marker_id, missing)
-    if not pair_consensus:
-        return _connectivity_failure_message(stage, reference_marker_id, missing)
 
     restore_candidates = _weak_restore_candidates(pair_consensus, weak_pool, dropped)
     sorted_candidates = sorted(
