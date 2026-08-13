@@ -64,6 +64,7 @@ def _quality_report_mock(**overrides: object) -> mock.Mock:
         "rejected_frame_count": 5,
         "assignment_rejections": None,
         "dropped_pair_edges": None,
+        "anchor_core": None,
     }
     values.update(overrides)
     return mock.Mock(**values)
@@ -73,7 +74,7 @@ class CliHelpTests(unittest.TestCase):
     def test_calibrate_marker_model_help_lists_controls_and_sampling(self) -> None:
         help_text = _run_cli_help("object-calibrate-marker-model")
         self.assertIn("--marker-ids", help_text)
-        self.assertIn("--reference-marker-id", help_text)
+        self.assertIn("--anchor-marker-ids", help_text)
         self.assertIn("--sample-rate-hz", help_text)
         self.assertIn("--diagnostics-output", help_text)
         self.assertIn("S  solve", help_text)
@@ -101,7 +102,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 calibration=calibration,
                 output=output,
                 force=False,
-                marker_ids=[0, 1],
+                marker_ids=["0", "1"],
                 reference_marker_id=0,
                 marker_size=0.07,
                 sample_rate_hz=2.0,
@@ -110,6 +111,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 pair_translation_rms_gate_ratio=0.10,
                 pair_rotation_rms_gate_deg=5.0,
                 diagnostics_output=None,
+                anchor_marker_ids=None,
             )
             with self.assertRaises(RuntimeError) as ctx:
                 validate_args(args)
@@ -125,7 +127,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 calibration=calibration,
                 output=Path(tmp_dir) / "out.json",
                 force=True,
-                marker_ids=[0, 0, 1],
+                marker_ids=["0", "0", "1"],
                 reference_marker_id=0,
                 marker_size=0.07,
                 sample_rate_hz=2.0,
@@ -134,10 +136,61 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 pair_translation_rms_gate_ratio=0.10,
                 pair_rotation_rms_gate_deg=5.0,
                 diagnostics_output=None,
+                anchor_marker_ids=None,
             )
             with self.assertRaises(RuntimeError) as ctx:
                 validate_args(args)
-            self.assertIn("unique", str(ctx.exception))
+            self.assertIn("duplicates", str(ctx.exception))
+
+    def test_marker_id_ranges_expand_in_validation(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import validate_args
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            calibration = Path(tmp_dir) / "intrinsics.json"
+            _write_intrinsics(calibration)
+            args = mock.Mock(
+                calibration=calibration,
+                output=Path(tmp_dir) / "out.json",
+                force=True,
+                marker_ids=["0", "1", "3-5"],
+                reference_marker_id=0,
+                marker_size=0.07,
+                sample_rate_hz=2.0,
+                min_pair_inliers=20,
+                reprojection_rms_gate_px=2.0,
+                pair_translation_rms_gate_ratio=0.10,
+                pair_rotation_rms_gate_deg=5.0,
+                diagnostics_output=None,
+                anchor_marker_ids=["0", "3-4"],
+            )
+            expected_ids, _, anchor_ids = validate_args(args)
+            self.assertEqual(expected_ids, [0, 1, 3, 4, 5])
+            self.assertEqual(anchor_ids, (0, 3, 4))
+
+    def test_anchor_marker_ids_must_include_reference(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import validate_args
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            calibration = Path(tmp_dir) / "intrinsics.json"
+            _write_intrinsics(calibration)
+            args = mock.Mock(
+                calibration=calibration,
+                output=Path(tmp_dir) / "out.json",
+                force=True,
+                marker_ids=["0", "1", "2"],
+                reference_marker_id=0,
+                marker_size=0.07,
+                sample_rate_hz=2.0,
+                min_pair_inliers=20,
+                reprojection_rms_gate_px=2.0,
+                pair_translation_rms_gate_ratio=0.10,
+                pair_rotation_rms_gate_deg=5.0,
+                diagnostics_output=None,
+                anchor_marker_ids=["1", "2"],
+            )
+            with self.assertRaises(RuntimeError) as ctx:
+                validate_args(args)
+            self.assertIn("reference_marker_id", str(ctx.exception))
 
 
 class CalibrateMarkerModelCaptureTests(unittest.TestCase):
@@ -167,7 +220,7 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
                 dictionary="36h11",
                 detection_sensitivity="default",
                 marker_size=0.07,
-                marker_ids=[0, 1],
+                marker_ids=["0", "1"],
                 reference_marker_id=0,
                 output=output,
                 force=True,
@@ -177,6 +230,7 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
                 pair_translation_rms_gate_ratio=0.10,
                 pair_rotation_rms_gate_deg=5.0,
                 diagnostics_output=diagnostics_output,
+                anchor_marker_ids=None,
             )
 
             frame = np.zeros((height, width, 3), dtype=np.uint8)

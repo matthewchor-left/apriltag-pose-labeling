@@ -95,3 +95,7 @@ _Avoid_: marker-to-marker pose, inter-marker offset
 **Marker Pose Graph**:
 The graph of expected markers connected by relative transforms with sufficient co-visibility support, anchored at the reference marker.
 _Avoid_: marker graph, connectivity graph
+
+**Anchor Core**:
+A small explicit subset of markers (including the reference marker) used to bootstrap IPPE assignment with `2^k` exhaustive search, then expand the remaining markers hierarchically from conditioned pose hypotheses before final corner bundle adjustment.
+_Avoid_: anchor set, bootstrap markers

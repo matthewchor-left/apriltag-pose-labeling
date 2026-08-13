@@ -71,6 +71,34 @@ class CalibrationQualityReport:
     assignment_rejections: AssignmentRejectionSummary | None = None
     assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None = None
     dropped_pair_edges: tuple[DroppedPairEdge, ...] | None = None
+    anchor_core: "AnchorCoreDiagnostics | None" = None
+
+
+@dataclass(frozen=True)
+class MarkerExpansionRecord:
+    marker_id: int
+    status: str
+    support_frames: int = 0
+    reason: str | None = None
+    stage: str = "expand"
+
+
+@dataclass(frozen=True)
+class AnchorCoreBootstrapDiagnostics:
+    status: str
+    frames_considered: int
+    frames_accepted: int
+    failure_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class AnchorCoreDiagnostics:
+    mode: str
+    configured_anchor_ids: tuple[int, ...]
+    bootstrap: AnchorCoreBootstrapDiagnostics
+    expansion: tuple[MarkerExpansionRecord, ...]
+    final_solved_ids: frozenset[int]
+    unresolved_ids: frozenset[int]
 
 
 @dataclass(frozen=True)
@@ -230,6 +258,46 @@ def _validate_settings(settings: CalibrationSettings) -> str | None:
     return None
 
 
+def parse_marker_id_spec(tokens: Sequence[str]) -> tuple[list[int] | None, str | None]:
+    """Parse marker ID CLI tokens, expanding inclusive ranges such as ``3-10``."""
+    if not tokens:
+        return None, "must not be empty."
+
+    marker_ids: list[int] = []
+    seen: set[int] = set()
+    duplicates: set[int] = set()
+    for token in tokens:
+        token = str(token).strip()
+        if not token:
+            return None, "must not contain empty tokens."
+        if "-" in token:
+            start_text, end_text = token.split("-", 1)
+            if not start_text or not end_text:
+                return None, f"invalid range token {token!r}."
+            try:
+                start = int(start_text)
+                end = int(end_text)
+            except ValueError:
+                return None, f"range token must use integers: {token!r}."
+            if start > end:
+                return None, f"range token must be ascending: {token!r}."
+            values = range(start, end + 1)
+        else:
+            try:
+                values = [int(token)]
+            except ValueError:
+                return None, f"token must be an integer or range: {token!r}."
+        for marker_id in values:
+            if marker_id in seen:
+                duplicates.add(marker_id)
+            seen.add(marker_id)
+            marker_ids.append(marker_id)
+
+    if duplicates:
+        return None, f"contains duplicates: {sorted(duplicates)}."
+    return sorted(marker_ids), None
+
+
 def _parse_expected_marker_ids(
     expected_marker_ids: Sequence[int],
     reference_marker_id: int,
@@ -254,6 +322,32 @@ def _parse_expected_marker_ids(
     if int(reference_marker_id) not in seen:
         return None, f"reference_marker_id {reference_marker_id} is not in expected_marker_ids."
     return expected_ids, None
+
+
+def parse_anchor_marker_ids(
+    anchor_marker_ids: Sequence[int] | None,
+    expected_ids: Sequence[int],
+    reference_marker_id: int,
+) -> tuple[tuple[int, ...] | None, str | None]:
+    """Validate explicit anchor-core marker IDs against the expected layout."""
+    if anchor_marker_ids is None:
+        return None, None
+    try:
+        anchors = [int(marker_id) for marker_id in anchor_marker_ids]
+    except (TypeError, ValueError):
+        return None, "anchor_marker_ids must contain integer marker IDs."
+    if len(anchors) < 2:
+        return None, "anchor_marker_ids must contain at least two marker IDs."
+    if len(anchors) != len(set(anchors)):
+        duplicates = sorted({marker_id for marker_id in anchors if anchors.count(marker_id) > 1})
+        return None, f"anchor_marker_ids contains duplicates: {duplicates}."
+    expected_set = set(int(marker_id) for marker_id in expected_ids)
+    missing = sorted(set(anchors) - expected_set)
+    if missing:
+        return None, f"anchor_marker_ids are not subset of expected_marker_ids; extra {missing}."
+    if int(reference_marker_id) not in anchors:
+        return None, f"reference_marker_id {reference_marker_id} must appear in anchor_marker_ids."
+    return tuple(sorted(anchors)), None
 
 
 def _validate_marker_size(marker_size_m: float) -> str | None:
@@ -340,6 +434,7 @@ def calibrate_marker_layout(
     reference_marker_id: int,
     marker_size_m: float,
     settings: CalibrationSettings | None = None,
+    anchor_marker_ids: Sequence[int] | None = None,
 ) -> CalibrationResult:
     """Estimate a connected marker layout or refuse with a structured reason."""
     settings = settings or CalibrationSettings()
@@ -353,6 +448,14 @@ def calibrate_marker_layout(
     )
     if expected_failure is not None:
         return CalibrationResult(None, None, expected_failure)
+
+    anchor_ids, anchor_failure = parse_anchor_marker_ids(
+        anchor_marker_ids,
+        expected_ids,
+        reference_marker_id,
+    )
+    if anchor_failure is not None:
+        return CalibrationResult(None, None, anchor_failure)
 
     marker_size_failure = _validate_marker_size(marker_size_m)
     if marker_size_failure is not None:
@@ -415,14 +518,284 @@ def calibrate_marker_layout(
         )
 
     pair_hypotheses = _collect_pair_hypotheses(frame_candidates, expected_ids)
-    pair_consensus, pair_failure, dropped_pair_edges = _estimate_pair_consensus(
-        pair_hypotheses,
-        expected_ids,
-        reference_marker_id,
-        marker_size_m,
-        settings,
-    )
+    use_legacy_assignment = anchor_ids is None or set(anchor_ids) == set(expected_ids)
+    anchor_core_diagnostics: AnchorCoreDiagnostics | None = None
+    preinitialized_marker_poses: dict[int, tuple[np.ndarray, np.ndarray]] | None = None
+
+    if use_legacy_assignment:
+        pair_consensus, pair_failure, dropped_pair_edges = _estimate_pair_consensus(
+            pair_hypotheses,
+            expected_ids,
+            reference_marker_id,
+            marker_size_m,
+            settings,
+        )
+    else:
+        assert anchor_ids is not None
+        (
+            anchor_assigned,
+            rejected_frames,
+            assignment_rejections,
+            pair_consensus,
+            preinitialized_marker_poses,
+            anchor_drops,
+            anchor_core_diagnostics,
+            anchor_failure,
+        ) = _assign_and_initialize_anchor_core(
+            frame_candidates,
+            pair_hypotheses,
+            normalized_observations,
+            expected_ids,
+            anchor_ids,
+            reference_marker_id,
+            marker_size_m,
+            settings,
+            object_points,
+            camera_matrix,
+            dist_coeffs,
+        )
+        dropped_edges = list(anchor_drops)
+        if anchor_failure is not None or pair_consensus is None or anchor_assigned is None:
+            assignment_rejection_records = build_assignment_rejection_records(
+                normalized_observations,
+                rejected_frames,
+                assignment_rejections,
+            )
+            assignment_rejection_summary = summarize_assignment_rejection_records(
+                assignment_rejection_records
+            )
+            quality = _quality_from_pairs(
+                pair_consensus or {},
+                expected_ids,
+                reference_marker_id,
+                _missing_from_graph(pair_consensus or {}, expected_ids, reference_marker_id),
+                input_frame_count=len(normalized_observations),
+                rejected_frame_count=len(rejected_frames),
+                accepted_frame_count=len(anchor_assigned or {}),
+                observation_count=0,
+                assignment_rejections=assignment_rejection_summary,
+                assignment_rejection_records=assignment_rejection_records,
+                dropped_pair_edges=tuple(dropped_edges),
+                anchor_core=anchor_core_diagnostics,
+            )
+            return CalibrationResult(None, quality, anchor_failure)
+        assigned_candidates = anchor_assigned
+        assignment_rejection_records = build_assignment_rejection_records(
+            normalized_observations,
+            rejected_frames,
+            assignment_rejections,
+        )
+        assignment_rejection_summary = summarize_assignment_rejection_records(
+            assignment_rejection_records
+        )
+        input_frame_count = len(normalized_observations)
+        rejected_frame_count = len(rejected_frames)
+        accepted_frames = frozenset(
+            frame_index
+            for frame_index, assignment in assigned_candidates.items()
+            if len(assignment) >= 2
+        )
+        accepted_frame_count = len(accepted_frames)
+        pair_consensus, assignment_support_failure, assignment_drops = (
+            _restrict_pair_consensus_to_frames(
+                pair_consensus,
+                accepted_frames,
+                expected_ids,
+                reference_marker_id,
+                settings,
+                marker_size_m=marker_size_m,
+            )
+        )
+        dropped_edges.extend(assignment_drops)
+        if assignment_support_failure is not None:
+            return CalibrationResult(
+                None,
+                _quality_from_pairs(
+                    pair_consensus,
+                    expected_ids,
+                    reference_marker_id,
+                    _missing_from_graph(pair_consensus, expected_ids, reference_marker_id),
+                    input_frame_count=input_frame_count,
+                    rejected_frame_count=rejected_frame_count,
+                    accepted_frame_count=accepted_frame_count,
+                    observation_count=0,
+                    assignment_rejections=assignment_rejection_summary,
+                    assignment_rejection_records=assignment_rejection_records,
+                    dropped_pair_edges=tuple(dropped_edges),
+                    anchor_core=anchor_core_diagnostics,
+                ),
+                assignment_support_failure,
+            )
+        markers_in_accepted_frames = _markers_in_frame_indices(
+            normalized_observations,
+            accepted_frames,
+        )
+        missing_after_rejection = sorted(set(expected_ids) - markers_in_accepted_frames)
+        if missing_after_rejection:
+            return CalibrationResult(
+                None,
+                _quality_from_pairs(
+                    pair_consensus,
+                    expected_ids,
+                    reference_marker_id,
+                    frozenset(missing_after_rejection),
+                    input_frame_count=input_frame_count,
+                    rejected_frame_count=rejected_frame_count,
+                    accepted_frame_count=accepted_frame_count,
+                    observation_count=0,
+                    assignment_rejections=assignment_rejection_summary,
+                    assignment_rejection_records=assignment_rejection_records,
+                    dropped_pair_edges=tuple(dropped_edges),
+                    anchor_core=anchor_core_diagnostics,
+                ),
+                (
+                    "Expected marker IDs have no accepted-frame observations after "
+                    f"anchor-core expansion: {missing_after_rejection}."
+                ),
+            )
+        assert preinitialized_marker_poses is not None
+        marker_poses = preinitialized_marker_poses
+        frame_poses = _initialize_frame_poses(
+            assigned_candidates,
+            marker_poses,
+            len(normalized_observations),
+        )
+        corner_observations = _build_corner_observations(normalized_observations, expected_ids)
+        inlier_mask = _mask_corner_observations_for_frames(corner_observations, accepted_frames)
+        non_reference_ids = [
+            marker_id for marker_id in expected_ids if marker_id != reference_marker_id
+        ]
+        marker_poses, frame_poses, inlier_mask, ba_failure = _run_bundle_adjustment(
+            corner_observations,
+            inlier_mask,
+            marker_poses,
+            frame_poses,
+            reference_marker_id,
+            non_reference_ids,
+            object_points,
+            camera_matrix,
+            dist_coeffs,
+            settings,
+        )
+        if ba_failure is not None:
+            missing = _missing_from_graph(pair_consensus, expected_ids, reference_marker_id)
+            return CalibrationResult(
+                None,
+                _quality_from_pairs(
+                    pair_consensus,
+                    expected_ids,
+                    reference_marker_id,
+                    missing,
+                    input_frame_count=input_frame_count,
+                    rejected_frame_count=rejected_frame_count,
+                    accepted_frame_count=accepted_frame_count,
+                    observation_count=len(corner_observations),
+                    assignment_rejections=assignment_rejection_summary,
+                    assignment_rejection_records=assignment_rejection_records,
+                    dropped_pair_edges=tuple(dropped_edges),
+                    anchor_core=anchor_core_diagnostics,
+                ),
+                ba_failure,
+            )
+        assignment_hypotheses = _collect_assignment_pair_hypotheses(
+            assigned_candidates,
+            frozenset(expected_ids),
+        )
+        frozen_frames = _freeze_assigned_frame_candidates(frame_candidates, assigned_candidates)
+        pair_consensus = _pair_consensus_from_assignment_hypotheses(
+            _collect_pair_hypotheses(frozen_frames, expected_ids),
+            settings,
+            marker_size_m,
+            marker_poses=marker_poses,
+        )
+        marker_poses, frame_poses, inlier_mask, pair_consensus, prune_failure, pruning_drops = (
+            _prune_and_refit(
+                corner_observations,
+                inlier_mask,
+                marker_poses,
+                frame_poses,
+                reference_marker_id,
+                non_reference_ids,
+                expected_ids,
+                pair_consensus,
+                accepted_frames,
+                object_points,
+                camera_matrix,
+                dist_coeffs,
+                settings,
+                marker_size_m,
+            )
+        )
+        dropped_edges.extend(pruning_drops)
+        if prune_failure is not None:
+            missing = _missing_from_graph(pair_consensus, expected_ids, reference_marker_id)
+            return CalibrationResult(
+                None,
+                _quality_from_pairs(
+                    pair_consensus,
+                    expected_ids,
+                    reference_marker_id,
+                    missing,
+                    input_frame_count=input_frame_count,
+                    rejected_frame_count=rejected_frame_count,
+                    accepted_frame_count=_covisible_frame_count(corner_observations, inlier_mask),
+                    observation_count=int(np.count_nonzero(inlier_mask)),
+                    assignment_rejections=assignment_rejection_summary,
+                    assignment_rejection_records=assignment_rejection_records,
+                    dropped_pair_edges=tuple(dropped_edges),
+                    anchor_core=anchor_core_diagnostics,
+                ),
+                prune_failure,
+            )
+        connected_ids = _connected_marker_ids(pair_consensus, reference_marker_id)
+        missing_ids = frozenset(set(expected_ids) - connected_ids)
+        final_accepted_frame_count = _covisible_frame_count(corner_observations, inlier_mask)
+        quality = _build_quality_report(
+            corner_observations,
+            inlier_mask,
+            marker_poses,
+            frame_poses,
+            pair_consensus,
+            expected_ids,
+            reference_marker_id,
+            missing_ids,
+            input_frame_count,
+            rejected_frame_count,
+            final_accepted_frame_count,
+            object_points,
+            camera_matrix,
+            dist_coeffs,
+            assignment_rejections=assignment_rejection_summary,
+            assignment_rejection_records=assignment_rejection_records,
+            dropped_pair_edges=tuple(dropped_edges),
+            anchor_core=anchor_core_diagnostics,
+        )
+        gate_failure = _check_quality_gates(quality, settings, marker_size_m, expected_ids)
+        if gate_failure is not None:
+            return CalibrationResult(None, quality, gate_failure)
+        if missing_ids:
+            return CalibrationResult(
+                None,
+                quality,
+                f"Expected marker IDs are not connected to reference: {sorted(missing_ids)}.",
+            )
+        footprints = _footprints_from_poses(marker_poses, marker_size_m)
+        if set(footprints) != set(expected_ids):
+            absent = sorted(set(expected_ids) - set(footprints))
+            return CalibrationResult(
+                None,
+                quality,
+                f"Calibration did not produce all expected marker footprints; missing {absent}.",
+            )
+        layout = build_marker_layout(
+            reference_marker_id=reference_marker_id,
+            marker_size_m=marker_size_m,
+            footprints=footprints,
+        )
+        return CalibrationResult(layout, quality, None)
+
     dropped_edges = list(dropped_pair_edges)
+    pair_failure = pair_failure if use_legacy_assignment else None
     if pair_failure is not None:
         missing = _missing_from_graph(pair_consensus, expected_ids, reference_marker_id)
         return CalibrationResult(
@@ -1035,6 +1408,8 @@ def _estimate_pair_consensus(
     reference_marker_id: int,
     marker_size_m: float,
     settings: CalibrationSettings,
+    *,
+    connectivity_ids: Sequence[int] | None = None,
 ) -> tuple[dict[MarkerPair, _PairConsensus], str | None, tuple[DroppedPairEdge, ...]]:
     translation_gate = _pair_translation_gate(settings, marker_size_m)
     rotation_gate = settings.pair_rotation_rms_gate_deg
@@ -1129,7 +1504,8 @@ def _estimate_pair_consensus(
         filtered[pair] = edge
 
     connected = _connected_marker_ids(filtered, reference_marker_id)
-    missing = sorted(set(expected_ids) - connected)
+    required_ids = list(connectivity_ids) if connectivity_ids is not None else expected_ids
+    missing = sorted(set(required_ids) - connected)
     if missing:
         return filtered, (
             f"Expected marker IDs are not connected to reference {reference_marker_id}; "
@@ -1205,6 +1581,8 @@ def _assign_ippe_candidates(
     pair_consensus: dict[MarkerPair, _PairConsensus],
     settings: CalibrationSettings,
     marker_size_m: float,
+    *,
+    search_marker_ids: frozenset[int] | None = None,
 ) -> tuple[
     dict[int, dict[int, _MarkerCandidate]],
     tuple[int, ...],
@@ -1219,6 +1597,7 @@ def _assign_ippe_candidates(
             pair_consensus,
             settings,
             marker_size_m,
+            search_marker_ids=search_marker_ids,
         )
         if result.assignment is None:
             rejected_frames.append(frame_index)
@@ -1236,8 +1615,18 @@ def resolve_frame_ippe_assignment(
     pair_consensus: dict[MarkerPair, _PairConsensus],
     settings: CalibrationSettings,
     marker_size_m: float,
+    *,
+    search_marker_ids: frozenset[int] | None = None,
 ) -> FrameAssignmentResult:
-    marker_ids = sorted(candidates)
+    if search_marker_ids is not None:
+        marker_ids = sorted(marker_id for marker_id in candidates if marker_id in search_marker_ids)
+    else:
+        marker_ids = sorted(candidates)
+    if len(marker_ids) < 2:
+        return FrameAssignmentResult(
+            assignment=None,
+            rejection=FrameAssignmentRejection(reason="insufficient_anchors_visible"),
+        )
     holder = _new_assignment_search_holder(settings, marker_size_m)
     _search_assignments(marker_ids, candidates, pair_consensus, {}, 0, holder)
     assignment = holder["assignment"]
@@ -1610,6 +1999,599 @@ def _make_dropped_pair_edge(
         rotation_rms_deg=rotation_rms_deg,
         translation_gate_m=_json_safe_float(translation_gate),
         rotation_gate_deg=_json_safe_float(rotation_gate),
+    )
+
+
+@dataclass(frozen=True)
+class _MarkerPoseHypothesis:
+    rotation: np.ndarray
+    translation: np.ndarray
+    frame_index: int
+    candidate: _MarkerCandidate
+
+
+def _filter_pair_hypotheses_to_markers(
+    pair_hypotheses: dict[MarkerPair, list[tuple[np.ndarray, np.ndarray, int]]],
+    marker_ids: frozenset[int],
+) -> dict[MarkerPair, list[tuple[np.ndarray, np.ndarray, int]]]:
+    return {
+        pair: hypotheses
+        for pair, hypotheses in pair_hypotheses.items()
+        if pair[0] in marker_ids and pair[1] in marker_ids
+    }
+
+
+def _relative_pose_high_in_low(
+    low_rotation: np.ndarray,
+    low_translation: np.ndarray,
+    high_rotation: np.ndarray,
+    high_translation: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    rotation = low_rotation.T @ high_rotation
+    translation = low_rotation.T @ (high_translation - low_translation)
+    return rotation, translation
+
+
+def _pair_consensus_from_assignment_hypotheses(
+    pair_hypotheses: dict[MarkerPair, list[tuple[np.ndarray, np.ndarray, int]]],
+    settings: CalibrationSettings,
+    marker_size_m: float,
+    *,
+    marker_poses: dict[int, tuple[np.ndarray, np.ndarray]] | None = None,
+) -> dict[MarkerPair, _PairConsensus]:
+    translation_gate = _pair_translation_gate(settings, marker_size_m)
+    rotation_gate = settings.pair_rotation_rms_gate_deg
+    consensus: dict[MarkerPair, _PairConsensus] = {}
+    for pair, hypotheses in pair_hypotheses.items():
+        edge = _best_pair_consensus(pair, hypotheses, translation_gate, rotation_gate)
+        if edge is not None and len(edge.inlier_frames) >= settings.min_inliers_per_edge:
+            diagnostics = _edge_diagnostics(pair, edge)
+            if diagnostics.translation_rms_m <= translation_gate and diagnostics.rotation_rms_deg <= rotation_gate:
+                consensus[pair] = edge
+                continue
+        if marker_poses is None:
+            continue
+        marker_low, marker_high = pair
+        if marker_low not in marker_poses or marker_high not in marker_poses:
+            continue
+        inlier_frames = tuple(sorted({frame_index for _, _, frame_index in hypotheses}))
+        if len(inlier_frames) < settings.min_inliers_per_edge:
+            continue
+        low_rotation, low_translation = marker_poses[marker_low]
+        high_rotation, high_translation = marker_poses[marker_high]
+        rotation_ba, translation_ba = _relative_pose_high_in_low(
+            low_rotation,
+            low_translation,
+            high_rotation,
+            high_translation,
+        )
+        hypotheses_by_frame = {
+            frame_index: (rotation, translation)
+            for rotation, translation, frame_index in hypotheses
+        }
+        consensus[pair] = _PairConsensus(
+            marker_a=marker_low,
+            marker_b=marker_high,
+            rotation_ba=rotation_ba,
+            translation_ba=translation_ba,
+            inlier_frames=inlier_frames,
+            inlier_hypotheses={
+                frame_index: hypotheses_by_frame[frame_index]
+                for frame_index in inlier_frames
+                if frame_index in hypotheses_by_frame
+            },
+        )
+    return consensus
+
+
+def _collect_assignment_pair_hypotheses(
+    assigned_candidates: dict[int, dict[int, _MarkerCandidate]],
+    marker_ids: frozenset[int],
+) -> dict[MarkerPair, list[tuple[np.ndarray, np.ndarray, int]]]:
+    hypotheses: dict[MarkerPair, list[tuple[np.ndarray, np.ndarray, int]]] = {}
+    for frame_index, assignment in assigned_candidates.items():
+        visible = sorted(marker_id for marker_id in assignment if marker_id in marker_ids)
+        for index_a, marker_low in enumerate(visible):
+            for marker_high in visible[index_a + 1 :]:
+                pair = (marker_low, marker_high)
+                rotation_ba, translation_ba = _transform_high_in_low(
+                    assignment[marker_low],
+                    assignment[marker_high],
+                )
+                hypotheses.setdefault(pair, []).append(
+                    (rotation_ba, translation_ba, frame_index)
+                )
+    return hypotheses
+
+
+def _marker_pose_from_frame_and_candidate(
+    layout_rotation: np.ndarray,
+    layout_translation: np.ndarray,
+    candidate: _MarkerCandidate,
+) -> tuple[np.ndarray, np.ndarray]:
+    marker_rotation = layout_rotation.T @ candidate.rotation
+    marker_translation = layout_rotation.T @ (candidate.tvec.reshape(3) - layout_translation)
+    return marker_rotation, marker_translation
+
+
+def _frame_pose_from_solved_assignment(
+    assignment: dict[int, _MarkerCandidate],
+    marker_poses: dict[int, tuple[np.ndarray, np.ndarray]],
+    solved_ids: frozenset[int],
+) -> tuple[np.ndarray, np.ndarray] | None:
+    estimates: list[tuple[np.ndarray, np.ndarray]] = []
+    for marker_id, candidate in assignment.items():
+        if marker_id not in solved_ids or marker_id not in marker_poses:
+            continue
+        marker_rotation, marker_translation = marker_poses[marker_id]
+        layout_rotation = candidate.rotation @ marker_rotation.T
+        layout_translation = candidate.tvec.reshape(3) - layout_rotation @ marker_translation
+        estimates.append((layout_rotation, layout_translation))
+    if len(estimates) < 1:
+        return None
+    return _average_poses(estimates)
+
+
+def _frame_pose_from_known_marker_candidates(
+    candidates: dict[int, list[_MarkerCandidate]],
+    marker_poses: dict[int, tuple[np.ndarray, np.ndarray]],
+    solved_ids: frozenset[int],
+) -> tuple[tuple[np.ndarray, np.ndarray], dict[int, _MarkerCandidate]] | None:
+    selected: dict[int, _MarkerCandidate] = {}
+    estimates: list[tuple[np.ndarray, np.ndarray]] = []
+    for marker_id in sorted(candidates):
+        if marker_id not in solved_ids or marker_id not in marker_poses:
+            continue
+        marker_rotation, marker_translation = marker_poses[marker_id]
+        best_candidate = min(candidates[marker_id], key=lambda candidate: candidate.reprojection_rms_px)
+        layout_rotation = best_candidate.rotation @ marker_rotation.T
+        layout_translation = best_candidate.tvec.reshape(3) - layout_rotation @ marker_translation
+        selected[marker_id] = best_candidate
+        estimates.append((layout_rotation, layout_translation))
+    if not estimates:
+        return None
+    return _average_poses(estimates), selected
+
+
+def _expand_markers_hierarchically(
+    frame_candidates: list[tuple[int, dict[int, list[_MarkerCandidate]]]],
+    assigned_candidates: dict[int, dict[int, _MarkerCandidate]],
+    marker_poses: dict[int, tuple[np.ndarray, np.ndarray]],
+    solved_ids: frozenset[int],
+    expected_ids: list[int],
+    settings: CalibrationSettings,
+    marker_size_m: float,
+) -> tuple[
+    dict[int, tuple[np.ndarray, np.ndarray]],
+    dict[int, dict[int, _MarkerCandidate]],
+    tuple[MarkerExpansionRecord, ...],
+    frozenset[int],
+]:
+    translation_gate = _pair_translation_gate(settings, marker_size_m)
+    rotation_gate = settings.pair_rotation_rms_gate_deg
+    poses = dict(marker_poses)
+    assignments = {
+        frame_index: dict(assignment)
+        for frame_index, assignment in assigned_candidates.items()
+    }
+    expansion_records: list[MarkerExpansionRecord] = []
+    solved = set(solved_ids)
+    expected_set = set(expected_ids)
+
+    while True:
+        unsolved = sorted(
+            marker_id
+            for marker_id in (expected_set - solved)
+            if not any(
+                record.marker_id == marker_id and record.status == "rejected"
+                for record in expansion_records
+            )
+        )
+        if not unsolved:
+            break
+        progress = False
+        candidates_by_frame = {frame_index: candidates for frame_index, candidates in frame_candidates}
+        for marker_id in unsolved:
+            hypotheses: list[_MarkerPoseHypothesis] = []
+            for frame_index, candidates in candidates_by_frame.items():
+                if marker_id not in candidates:
+                    continue
+                frame_pose_result = _frame_pose_from_known_marker_candidates(
+                    candidates,
+                    poses,
+                    frozenset(solved),
+                )
+                if frame_pose_result is None:
+                    continue
+                layout_rotation, layout_translation = frame_pose_result[0]
+                selected_solved = frame_pose_result[1]
+                assignments.setdefault(frame_index, {}).update(selected_solved)
+                for candidate in candidates[marker_id]:
+                    rotation, translation = _marker_pose_from_frame_and_candidate(
+                        layout_rotation,
+                        layout_translation,
+                        candidate,
+                    )
+                    hypotheses.append(
+                        _MarkerPoseHypothesis(
+                            rotation=rotation,
+                            translation=translation,
+                            frame_index=frame_index,
+                            candidate=candidate,
+                        )
+                    )
+            if not hypotheses:
+                continue
+            relative_hypotheses = [
+                (hypothesis.rotation, hypothesis.translation, hypothesis.frame_index)
+                for hypothesis in hypotheses
+            ]
+            edge = _best_pair_consensus(
+                (marker_id, marker_id),
+                relative_hypotheses,
+                translation_gate,
+                rotation_gate,
+            )
+            if edge is None or len(edge.inlier_frames) < settings.min_inliers_per_edge:
+                expansion_records.append(
+                    MarkerExpansionRecord(
+                        marker_id=marker_id,
+                        status="rejected",
+                        support_frames=len(edge.inlier_frames) if edge is not None else 0,
+                        reason="insufficient_support",
+                    )
+                )
+                continue
+            diagnostics = _edge_diagnostics((marker_id, marker_id), edge)
+            if diagnostics.translation_rms_m > translation_gate:
+                expansion_records.append(
+                    MarkerExpansionRecord(
+                        marker_id=marker_id,
+                        status="rejected",
+                        support_frames=diagnostics.inlier_count,
+                        reason="translation_rms_gate",
+                    )
+                )
+                continue
+            if diagnostics.rotation_rms_deg > rotation_gate:
+                expansion_records.append(
+                    MarkerExpansionRecord(
+                        marker_id=marker_id,
+                        status="rejected",
+                        support_frames=diagnostics.inlier_count,
+                        reason="rotation_rms_gate",
+                    )
+                )
+                continue
+            poses[marker_id] = (edge.rotation_ba.copy(), edge.translation_ba.copy())
+            solved.add(marker_id)
+            progress = True
+            expansion_records.append(
+                MarkerExpansionRecord(
+                    marker_id=marker_id,
+                    status="accepted",
+                    support_frames=diagnostics.inlier_count,
+                )
+            )
+            hypotheses_by_frame = {
+                hypothesis.frame_index: hypothesis for hypothesis in hypotheses
+            }
+            for frame_index in edge.inlier_frames:
+                hypothesis = hypotheses_by_frame.get(frame_index)
+                if hypothesis is None:
+                    continue
+                assignments.setdefault(frame_index, {})[marker_id] = hypothesis.candidate
+        if not progress:
+            break
+
+    unresolved = frozenset(expected_set - solved)
+    for marker_id in sorted(unresolved):
+        if not any(record.marker_id == marker_id for record in expansion_records):
+            expansion_records.append(
+                MarkerExpansionRecord(
+                    marker_id=marker_id,
+                    status="rejected",
+                    support_frames=0,
+                    reason="unreachable_from_anchor_core",
+                )
+            )
+    return poses, assignments, tuple(expansion_records), unresolved
+
+
+def _freeze_assigned_frame_candidates(
+    frame_candidates: list[tuple[int, dict[int, list[_MarkerCandidate]]]],
+    assigned_candidates: dict[int, dict[int, _MarkerCandidate]],
+) -> list[tuple[int, dict[int, list[_MarkerCandidate]]]]:
+    frozen: list[tuple[int, dict[int, list[_MarkerCandidate]]]] = []
+    for frame_index, candidates in frame_candidates:
+        assignment = assigned_candidates.get(frame_index)
+        if assignment is None:
+            continue
+        frozen_candidates = {
+            marker_id: [assignment[marker_id]]
+            for marker_id in assignment
+            if marker_id in candidates
+        }
+        if len(frozen_candidates) >= 2:
+            frozen.append((frame_index, frozen_candidates))
+    return frozen
+
+
+def _assign_and_initialize_anchor_core(
+    frame_candidates: list[tuple[int, dict[int, list[_MarkerCandidate]]]],
+    pair_hypotheses: dict[MarkerPair, list[tuple[np.ndarray, np.ndarray, int]]],
+    normalized_observations: list[tuple[str | int, dict[int, np.ndarray]]],
+    expected_ids: list[int],
+    anchor_ids: tuple[int, ...],
+    reference_marker_id: int,
+    marker_size_m: float,
+    settings: CalibrationSettings,
+    object_points: np.ndarray,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+) -> tuple[
+    dict[int, dict[int, _MarkerCandidate]] | None,
+    tuple[int, ...],
+    tuple[FrameAssignmentRejection, ...],
+    dict[MarkerPair, _PairConsensus] | None,
+    dict[int, tuple[np.ndarray, np.ndarray]] | None,
+    list[DroppedPairEdge],
+    AnchorCoreDiagnostics,
+    str | None,
+]:
+    anchor_set = frozenset(anchor_ids)
+    dropped_edges: list[DroppedPairEdge] = []
+    anchor_hypotheses = _filter_pair_hypotheses_to_markers(pair_hypotheses, anchor_set)
+    anchor_consensus, anchor_pair_failure, anchor_drops = _estimate_pair_consensus(
+        anchor_hypotheses,
+        expected_ids,
+        reference_marker_id,
+        marker_size_m,
+        settings,
+        connectivity_ids=anchor_ids,
+    )
+    dropped_edges.extend(anchor_drops)
+    bootstrap = AnchorCoreBootstrapDiagnostics(
+        status="failed",
+        frames_considered=len(frame_candidates),
+        frames_accepted=0,
+        failure_reason=anchor_pair_failure,
+    )
+    anchor_core = AnchorCoreDiagnostics(
+        mode="anchor_core",
+        configured_anchor_ids=anchor_ids,
+        bootstrap=bootstrap,
+        expansion=(),
+        final_solved_ids=frozenset(),
+        unresolved_ids=frozenset(expected_ids),
+    )
+    if anchor_pair_failure is not None:
+        return None, (), (), None, None, dropped_edges, anchor_core, (
+            f"Anchor core bootstrap failed: {anchor_pair_failure}"
+        )
+
+    assigned_candidates, rejected_frames, assignment_rejections = _assign_ippe_candidates(
+        frame_candidates,
+        anchor_consensus,
+        settings,
+        marker_size_m,
+        search_marker_ids=anchor_set,
+    )
+    accepted_frames = frozenset(assigned_candidates)
+    bootstrap = AnchorCoreBootstrapDiagnostics(
+        status="failed" if not accepted_frames else "ok",
+        frames_considered=len(frame_candidates),
+        frames_accepted=len(accepted_frames),
+        failure_reason=None if accepted_frames else "no_anchor_assignable_frames",
+    )
+    anchor_core = AnchorCoreDiagnostics(
+        mode="anchor_core",
+        configured_anchor_ids=anchor_ids,
+        bootstrap=bootstrap,
+        expansion=(),
+        final_solved_ids=frozenset(anchor_set) if accepted_frames else frozenset(),
+        unresolved_ids=frozenset(set(expected_ids) - anchor_set),
+    )
+    if not accepted_frames:
+        return (
+            assigned_candidates,
+            rejected_frames,
+            assignment_rejections,
+            anchor_consensus,
+            None,
+            dropped_edges,
+            anchor_core,
+            "No frames with assignable anchor IPPE candidates remain after bootstrap.",
+        )
+
+    ref_rotation, ref_translation = _reference_gauge_pose(marker_size_m)
+    marker_poses = _initialize_marker_poses(
+        reference_marker_id,
+        ref_rotation,
+        ref_translation,
+        list(anchor_ids),
+        anchor_consensus,
+    )
+    frame_poses = _initialize_frame_poses(
+        assigned_candidates,
+        marker_poses,
+        len(normalized_observations),
+    )
+    anchor_corner_observations = _build_corner_observations(
+        normalized_observations,
+        list(anchor_ids),
+    )
+    inlier_mask = _mask_corner_observations_for_frames(anchor_corner_observations, accepted_frames)
+    non_reference_anchors = [
+        marker_id for marker_id in anchor_ids if marker_id != reference_marker_id
+    ]
+    marker_poses, frame_poses, inlier_mask, ba_failure = _run_bundle_adjustment(
+        anchor_corner_observations,
+        inlier_mask,
+        marker_poses,
+        frame_poses,
+        reference_marker_id,
+        non_reference_anchors,
+        object_points,
+        camera_matrix,
+        dist_coeffs,
+        settings,
+    )
+    if ba_failure is not None:
+        bootstrap = AnchorCoreBootstrapDiagnostics(
+            status="failed",
+            frames_considered=len(frame_candidates),
+            frames_accepted=len(accepted_frames),
+            failure_reason=ba_failure,
+        )
+        anchor_core = AnchorCoreDiagnostics(
+            mode="anchor_core",
+            configured_anchor_ids=anchor_ids,
+            bootstrap=bootstrap,
+            expansion=(),
+            final_solved_ids=frozenset(anchor_set),
+            unresolved_ids=frozenset(set(expected_ids) - anchor_set),
+        )
+        return (
+            assigned_candidates,
+            rejected_frames,
+            assignment_rejections,
+            anchor_consensus,
+            marker_poses,
+            dropped_edges,
+            anchor_core,
+            f"Anchor core mini bundle adjustment failed: {ba_failure}",
+        )
+
+    marker_poses, assignments, expansion_records, unresolved = _expand_markers_hierarchically(
+        frame_candidates,
+        assigned_candidates,
+        marker_poses,
+        anchor_set,
+        expected_ids,
+        settings,
+        marker_size_m,
+    )
+    if unresolved:
+        anchor_core = AnchorCoreDiagnostics(
+            mode="anchor_core",
+            configured_anchor_ids=anchor_ids,
+            bootstrap=AnchorCoreBootstrapDiagnostics(
+                status="ok",
+                frames_considered=len(frame_candidates),
+                frames_accepted=len(accepted_frames),
+            ),
+            expansion=expansion_records,
+            final_solved_ids=frozenset(marker_poses),
+            unresolved_ids=unresolved,
+        )
+        return (
+            assignments,
+            rejected_frames,
+            assignment_rejections,
+            None,
+            marker_poses,
+            dropped_edges,
+            anchor_core,
+            f"Anchor core expansion could not solve all expected markers; missing {sorted(unresolved)}.",
+        )
+
+    expected_set = frozenset(expected_ids)
+    seed_frames = _freeze_assigned_frame_candidates(frame_candidates, assignments)
+    seed_hypotheses = _collect_pair_hypotheses(seed_frames, expected_ids)
+    seed_consensus, seed_failure, seed_drops = _estimate_pair_consensus(
+        seed_hypotheses,
+        expected_ids,
+        reference_marker_id,
+        marker_size_m,
+        settings,
+    )
+    dropped_edges.extend(seed_drops)
+    if seed_failure is not None:
+        seed_consensus = _pair_consensus_from_assignment_hypotheses(
+            _collect_assignment_pair_hypotheses(assignments, expected_set),
+            settings,
+            marker_size_m,
+            marker_poses=marker_poses,
+        )
+
+    assignments, reassign_rejected, reassign_rejections = _assign_ippe_candidates(
+        frame_candidates,
+        seed_consensus,
+        settings,
+        marker_size_m,
+        search_marker_ids=expected_set,
+    )
+    rejected_frames = tuple(sorted(set(rejected_frames) | set(reassign_rejected)))
+    assignment_rejections = assignment_rejections + reassign_rejections
+
+    frozen_frames = _freeze_assigned_frame_candidates(frame_candidates, assignments)
+    frozen_hypotheses = _collect_pair_hypotheses(frozen_frames, expected_ids)
+    pair_consensus, pair_failure, post_drops = _estimate_pair_consensus(
+        frozen_hypotheses,
+        expected_ids,
+        reference_marker_id,
+        marker_size_m,
+        settings,
+    )
+    dropped_edges.extend(post_drops)
+    if pair_failure is not None:
+        pair_consensus = _pair_consensus_from_assignment_hypotheses(
+            _collect_assignment_pair_hypotheses(assignments, expected_set),
+            settings,
+            marker_size_m,
+            marker_poses=marker_poses,
+        )
+        connected = _connected_marker_ids(pair_consensus, reference_marker_id)
+        missing = sorted(set(expected_ids) - connected)
+        if missing:
+            anchor_core = AnchorCoreDiagnostics(
+                mode="anchor_core",
+                configured_anchor_ids=anchor_ids,
+                bootstrap=AnchorCoreBootstrapDiagnostics(
+                    status="ok",
+                    frames_considered=len(frame_candidates),
+                    frames_accepted=len(accepted_frames),
+                ),
+                expansion=expansion_records,
+                final_solved_ids=frozenset(marker_poses),
+                unresolved_ids=frozenset(missing),
+            )
+            return (
+                assignments,
+                rejected_frames,
+                assignment_rejections,
+                pair_consensus,
+                marker_poses,
+                dropped_edges,
+                anchor_core,
+                (
+                    f"Expected marker IDs are not connected after anchor-core expansion; "
+                    f"missing {missing}."
+                ),
+            )
+
+    anchor_core = AnchorCoreDiagnostics(
+        mode="anchor_core",
+        configured_anchor_ids=anchor_ids,
+        bootstrap=AnchorCoreBootstrapDiagnostics(
+            status="ok",
+            frames_considered=len(frame_candidates),
+            frames_accepted=len(accepted_frames),
+        ),
+        expansion=expansion_records,
+        final_solved_ids=frozenset(marker_poses),
+        unresolved_ids=frozenset(),
+    )
+    return (
+        assignments,
+        rejected_frames,
+        assignment_rejections,
+        pair_consensus,
+        marker_poses,
+        dropped_edges,
+        anchor_core,
+        None,
     )
 
 
@@ -2371,6 +3353,7 @@ def _build_quality_report(
     assignment_rejections: AssignmentRejectionSummary | None = None,
     assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None = None,
     dropped_pair_edges: tuple[DroppedPairEdge, ...] | None = None,
+    anchor_core: AnchorCoreDiagnostics | None = None,
 ) -> CalibrationQualityReport:
     errors = _corner_errors(
         corner_observations,
@@ -2417,6 +3400,7 @@ def _build_quality_report(
         assignment_rejections=assignment_rejections,
         assignment_rejection_records=assignment_rejection_records,
         dropped_pair_edges=dropped_pair_edges,
+        anchor_core=anchor_core,
     )
 
 
@@ -2493,6 +3477,7 @@ def _quality_from_pairs(
     assignment_rejections: AssignmentRejectionSummary | None = None,
     assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None = None,
     dropped_pair_edges: tuple[DroppedPairEdge, ...] | None = None,
+    anchor_core: AnchorCoreDiagnostics | None = None,
 ) -> CalibrationQualityReport:
     edge_reports = [_edge_diagnostics(pair, edge) for pair, edge in sorted(pair_consensus.items())]
     return CalibrationQualityReport(
@@ -2513,6 +3498,7 @@ def _quality_from_pairs(
         assignment_rejections=assignment_rejections,
         assignment_rejection_records=assignment_rejection_records,
         dropped_pair_edges=dropped_pair_edges,
+        anchor_core=anchor_core,
     )
 
 

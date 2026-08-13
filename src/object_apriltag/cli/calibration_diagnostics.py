@@ -11,6 +11,8 @@ from typing import Any, Callable
 import numpy as np
 
 from object_apriltag.marker_layout_calibration import (
+    AnchorCoreBootstrapDiagnostics,
+    AnchorCoreDiagnostics,
     AssignmentRejectionCauseStats,
     AssignmentRejectionSummary,
     CalibrationQualityReport,
@@ -18,10 +20,11 @@ from object_apriltag.marker_layout_calibration import (
     DroppedPairEdge,
     EdgeDiagnostics,
     FrameAssignmentRejectionRecord,
+    MarkerExpansionRecord,
     MeasurementDistribution,
 )
 
-CALIBRATION_DIAGNOSTICS_VERSION = 1
+CALIBRATION_DIAGNOSTICS_VERSION = 2
 
 
 def format_reprojection_rms_px(value: float) -> str:
@@ -88,6 +91,31 @@ def format_dropped_pair_edge(edge: DroppedPairEdge) -> str:
     )
 
 
+def format_anchor_core_lines(anchor_core: AnchorCoreDiagnostics) -> list[str]:
+    lines = [
+        f"anchor core mode={anchor_core.mode} anchors={list(anchor_core.configured_anchor_ids)}",
+        (
+            "anchor bootstrap: "
+            f"status={anchor_core.bootstrap.status} "
+            f"frames={anchor_core.bootstrap.frames_accepted}/"
+            f"{anchor_core.bootstrap.frames_considered}"
+        ),
+    ]
+    if anchor_core.bootstrap.failure_reason:
+        lines.append(f"anchor bootstrap failure: {anchor_core.bootstrap.failure_reason}")
+    for record in anchor_core.expansion:
+        detail = (
+            f"expansion marker {record.marker_id} {record.status} "
+            f"support={record.support_frames}"
+        )
+        if record.reason:
+            detail += f" reason={record.reason}"
+        lines.append(detail)
+    if anchor_core.unresolved_ids:
+        lines.append(f"anchor unresolved: {sorted(anchor_core.unresolved_ids)}")
+    return lines
+
+
 def format_quality_diagnostics_lines(quality: CalibrationQualityReport) -> list[str]:
     lines = [
         f"reprojection RMS: {format_reprojection_rms_px(quality.reprojection_rms_px)}",
@@ -115,6 +143,8 @@ def format_quality_diagnostics_lines(quality: CalibrationQualityReport) -> list[
     if quality.dropped_pair_edges is not None:
         for edge in quality.dropped_pair_edges:
             lines.append(format_dropped_pair_edge(edge))
+    if quality.anchor_core is not None and isinstance(quality.anchor_core, AnchorCoreDiagnostics):
+        lines.extend(format_anchor_core_lines(quality.anchor_core))
     return lines
 
 
@@ -265,6 +295,42 @@ def _serialize_dropped_pair_edges(
     return [_dropped_pair_edge_to_dict(edge) for edge in edges]
 
 
+def _anchor_core_bootstrap_to_dict(
+    bootstrap: AnchorCoreBootstrapDiagnostics,
+) -> dict[str, Any]:
+    return {
+        "status": bootstrap.status,
+        "frames_considered": bootstrap.frames_considered,
+        "frames_accepted": bootstrap.frames_accepted,
+        "failure_reason": bootstrap.failure_reason,
+    }
+
+
+def _marker_expansion_record_to_dict(record: MarkerExpansionRecord) -> dict[str, Any]:
+    return {
+        "marker_id": record.marker_id,
+        "status": record.status,
+        "support_frames": record.support_frames,
+        "reason": record.reason,
+        "stage": record.stage,
+    }
+
+
+def _anchor_core_to_dict(anchor_core: AnchorCoreDiagnostics | None) -> dict[str, Any] | None:
+    if anchor_core is None:
+        return None
+    return {
+        "mode": anchor_core.mode,
+        "configured_anchor_ids": list(anchor_core.configured_anchor_ids),
+        "bootstrap": _anchor_core_bootstrap_to_dict(anchor_core.bootstrap),
+        "expansion": [
+            _marker_expansion_record_to_dict(record) for record in anchor_core.expansion
+        ],
+        "final_solved_ids": sorted(anchor_core.final_solved_ids),
+        "unresolved_ids": sorted(anchor_core.unresolved_ids),
+    }
+
+
 def build_calibration_diagnostics_document(
     quality: CalibrationQualityReport,
     *,
@@ -283,6 +349,7 @@ def build_calibration_diagnostics_document(
             quality.assignment_rejection_records
         ),
         "dropped_pair_edges": _serialize_dropped_pair_edges(quality.dropped_pair_edges),
+        "anchor_core": _anchor_core_to_dict(quality.anchor_core),
     }
 
 

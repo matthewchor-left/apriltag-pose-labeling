@@ -219,9 +219,15 @@ uv run object-calibrate-marker-model \
   --dictionary 36h11 \
   --detection-sensitivity relaxed \
   --marker-size 0.07 \
-  --marker-ids 0 1 2 3 \
+  --marker-ids 0 1 2 3-10 11 \
   --reference-marker-id 0 \
   --output config/Model/remote1/marker_model.json
+```
+
+For layouts with many markers, pass `--anchor-marker-ids` to bootstrap from a small spatially diverse core (must include `--reference-marker-id`). The solver exhaustively resolves IPPE ambiguity only on anchors (`2^k` per frame), expands the remaining markers in strict hierarchical rounds, then runs the same corner bundle adjustment and quality gates. Omit the flag to keep full-set exhaustive assignment.
+
+```bash
+  --anchor-marker-ids 0 1 4-7 \
 ```
 
 - **S** — solve from captured samples; writes `--output` only when quality gates pass
@@ -319,6 +325,7 @@ uv.lock                # locked dependency versions (commit this)
 | `object-detect` / `annotation-tool` | `--camera-motion` | `static` (default) or `dynamic` board pose retention |
 | `object-calibrate-marker-model` | `--camera` / `--calibration` | Live camera index and intrinsics JSON |
 | `object-calibrate-marker-model` | `--marker-ids` / `--reference-marker-id` | Expected unique IDs and layout reference |
+| `object-calibrate-marker-model` | `--anchor-marker-ids` | Optional bootstrap core for large layouts |
 | `object-calibrate-marker-model` | `--marker-size` | Physical tag edge length in meters |
 | `object-calibrate-marker-model` | `--sample-rate-hz` | Co-visibility sample rate (default 10 Hz) |
 | `object-calibrate-marker-model` | `--min-pair-inliers` | Minimum co-visible frames per pair (default 20) |

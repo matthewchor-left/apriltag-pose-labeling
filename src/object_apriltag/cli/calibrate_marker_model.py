@@ -30,6 +30,8 @@ from object_apriltag.marker_layout_calibration import (
     PairReadinessEdge,
     calibrate_marker_layout,
     compute_live_pair_readiness,
+    parse_anchor_marker_ids,
+    parse_marker_id_spec,
 )
 
 DEFAULT_ASSIGNMENT_REJECTION_SUMMARY_LINES = 3
@@ -87,17 +89,29 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--marker-ids",
-        type=int,
+        type=str,
         nargs="+",
         required=True,
         metavar="ID",
-        help="Expected unique AprilTag marker IDs on the object.",
+        help="Expected unique AprilTag marker IDs (e.g. 0 1 2 3-10 11).",
     )
     parser.add_argument(
         "--reference-marker-id",
         type=int,
         required=True,
         help="Reference marker ID; must appear in --marker-ids.",
+    )
+    parser.add_argument(
+        "--anchor-marker-ids",
+        type=str,
+        nargs="+",
+        default=None,
+        metavar="ID",
+        help=(
+            "Optional anchor-core marker IDs for bootstrap assignment (supports ranges, "
+            "e.g. 0 1 4-7). Must include --reference-marker-id and be a subset of "
+            "--marker-ids. Omitted uses full-set exhaustive IPPE assignment."
+        ),
     )
     parser.add_argument(
         "--output",
@@ -152,7 +166,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def validate_args(args: argparse.Namespace) -> tuple[list[int], CalibrationSettings]:
+def validate_args(
+    args: argparse.Namespace,
+) -> tuple[list[int], CalibrationSettings, tuple[int, ...] | None]:
     if not args.calibration.exists():
         raise RuntimeError(
             f"Calibration file not found: {args.calibration}\n"
@@ -163,11 +179,25 @@ def validate_args(args: argparse.Namespace) -> tuple[list[int], CalibrationSetti
             f"Output already exists: {args.output}. Pass --force to overwrite."
         )
 
-    expected_ids = sorted({int(marker_id) for marker_id in args.marker_ids})
-    if len(expected_ids) != len(args.marker_ids):
-        raise RuntimeError("--marker-ids must contain unique values.")
+    expected_ids, marker_ids_failure = parse_marker_id_spec(args.marker_ids)
+    if marker_ids_failure is not None:
+        raise RuntimeError(f"--marker-ids {marker_ids_failure}")
     if args.reference_marker_id not in expected_ids:
         raise RuntimeError("--reference-marker-id must appear in --marker-ids.")
+    anchor_list: list[int] | None
+    if args.anchor_marker_ids is None:
+        anchor_list = None
+    else:
+        anchor_list, anchor_parse_failure = parse_marker_id_spec(args.anchor_marker_ids)
+        if anchor_parse_failure is not None:
+            raise RuntimeError(f"--anchor-marker-ids {anchor_parse_failure}")
+    anchor_ids, anchor_failure = parse_anchor_marker_ids(
+        anchor_list,
+        expected_ids,
+        args.reference_marker_id,
+    )
+    if anchor_failure is not None:
+        raise RuntimeError(anchor_failure)
     if args.marker_size <= 0.0:
         raise RuntimeError("--marker-size must be positive.")
     if args.sample_rate_hz <= 0.0:
@@ -188,7 +218,7 @@ def validate_args(args: argparse.Namespace) -> tuple[list[int], CalibrationSetti
         pair_translation_rms_gate_ratio=args.pair_translation_rms_gate_ratio,
         pair_rotation_rms_gate_deg=args.pair_rotation_rms_gate_deg,
     )
-    return expected_ids, settings
+    return expected_ids, settings, anchor_ids
 
 
 def open_camera(camera_index: int, width: int, height: int) -> cv2.VideoCapture:
@@ -460,7 +490,7 @@ def write_calibration_diagnostics_if_requested(
 
 def run_capture(args: argparse.Namespace) -> bool:
     """Capture live samples; return True when a model was saved."""
-    expected_ids, settings = validate_args(args)
+    expected_ids, settings, anchor_ids = validate_args(args)
     expected_id_set = set(expected_ids)
 
     camera_matrix, dist_coeffs, image_width, image_height, calibration_source = load_intrinsics(
@@ -550,6 +580,7 @@ def run_capture(args: argparse.Namespace) -> bool:
                     reference_marker_id=args.reference_marker_id,
                     marker_size_m=args.marker_size,
                     settings=settings,
+                    anchor_marker_ids=anchor_ids,
                 )
                 if result.failure_reason is not None or result.layout is None:
                     print_refusal(result)
