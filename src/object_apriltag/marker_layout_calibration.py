@@ -25,6 +25,10 @@ from object_apriltag.pose import marker_corner_object_points
 
 MarkerPair = tuple[int, int]
 
+# ponytail: single-frame weak edges are not cross-frame consensus; raise if marker
+# graphs grow and pairwise quorum needs tuning beyond this floor.
+_BEST_EFFORT_WEAK_EDGE_MIN_SUPPORT = 2
+
 
 @dataclass(frozen=True)
 class FrameObservation:
@@ -3622,6 +3626,10 @@ def _connectivity_failure_message(
     return f"Expected marker IDs are not connected; missing {missing}."
 
 
+def _meets_best_effort_weak_support_floor(supported_count: int) -> bool:
+    return supported_count >= _BEST_EFFORT_WEAK_EDGE_MIN_SUPPORT
+
+
 def _weak_restore_candidates(
     pair_consensus: dict[MarkerPair, _PairConsensus],
     weak_pool: dict[MarkerPair, _PairConsensus],
@@ -3632,6 +3640,8 @@ def _weak_restore_candidates(
     for drop in dropped:
         pair = drop.marker_pair
         if pair in pair_consensus or pair in seen:
+            continue
+        if not _meets_best_effort_weak_support_floor(drop.supported_count):
             continue
         edge = weak_pool.get(pair)
         if edge is None or not edge.inlier_frames:

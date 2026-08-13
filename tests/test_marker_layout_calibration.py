@@ -6,6 +6,7 @@ import json
 import tempfile
 import unittest
 from collections.abc import Callable, Iterable
+from contextlib import contextmanager
 from pathlib import Path
 from unittest import mock
 
@@ -30,6 +31,7 @@ from object_apriltag.marker_layout_calibration import (
     _PairConsensus,
     _estimate_pair_consensus,
     _object_points_by_marker,
+    _maybe_restore_weak_connectivity,
     _recheck_pair_support,
     _reference_gauge_pose,
     _restrict_pair_consensus_to_frames,
@@ -203,6 +205,53 @@ def _synth_pair_with_corrupt_frames(
 
 def _two_marker_poses(marker_size_m: float = 0.07) -> dict[int, tuple[np.ndarray, np.ndarray]]:
     return _pair_poses(marker_size_m)
+
+
+@contextmanager
+def _pruning_refinement_failure_without_weak_recovery(*, block_checkpoints: bool = False):
+    """Simulate post-pruning refinement failure that weak-edge restore cannot heal."""
+    real_restore = _maybe_restore_weak_connectivity
+
+    def _restore_without_post_pruning_weak_recovery(
+        pair_consensus,
+        weak_pool,
+        dropped,
+        required_ids,
+        reference_marker_id,
+        stage,
+        *,
+        best_effort,
+        restored_pair_edges,
+    ):
+        if stage == "post_pruning":
+            best_effort = False
+        return real_restore(
+            pair_consensus,
+            weak_pool,
+            dropped,
+            required_ids,
+            reference_marker_id,
+            stage,
+            best_effort=best_effort,
+            restored_pair_edges=restored_pair_edges,
+        )
+
+    weak_restore_patch = mock.patch(
+        "object_apriltag.marker_layout_calibration._maybe_restore_weak_connectivity",
+        side_effect=_restore_without_post_pruning_weak_recovery,
+    )
+    if block_checkpoints:
+        with (
+            mock.patch(
+                "object_apriltag.marker_layout_calibration._record_optimization_checkpoint",
+                return_value=None,
+            ),
+            weak_restore_patch,
+        ):
+            yield
+    else:
+        with weak_restore_patch:
+            yield
 
 
 def _chain_marker_poses(marker_size_m: float = 0.07) -> dict[int, tuple[np.ndarray, np.ndarray]]:
@@ -1290,16 +1339,17 @@ class OptimizationCheckpointRecoveryTests(unittest.TestCase):
         self.assertIsNone(result.failed_refinement_stage)
 
     def test_best_effort_recovers_pre_pruning_checkpoint_when_pruning_fails(self) -> None:
-        result = calibrate_marker_layout(
-            self._prune_failure_observations(),
-            self.camera_matrix,
-            self.dist_coeffs,
-            expected_marker_ids=[0, 1],
-            reference_marker_id=0,
-            marker_size_m=self.marker_size_m,
-            settings=self.settings,
-            best_effort=True,
-        )
+        with _pruning_refinement_failure_without_weak_recovery():
+            result = calibrate_marker_layout(
+                self._prune_failure_observations(),
+                self.camera_matrix,
+                self.dist_coeffs,
+                expected_marker_ids=[0, 1],
+                reference_marker_id=0,
+                marker_size_m=self.marker_size_m,
+                settings=self.settings,
+                best_effort=True,
+            )
         self.assertIsNotNone(result.layout)
         self.assertIsNone(result.failure_reason)
         self.assertEqual(result.outcome, "provisional")
@@ -1311,10 +1361,7 @@ class OptimizationCheckpointRecoveryTests(unittest.TestCase):
         self.assertEqual(result.quality.missing_expected_ids, frozenset())
 
     def test_best_effort_refuses_when_no_valid_complete_checkpoint_exists(self) -> None:
-        with mock.patch(
-            "object_apriltag.marker_layout_calibration._record_optimization_checkpoint",
-            return_value=None,
-        ):
+        with _pruning_refinement_failure_without_weak_recovery(block_checkpoints=True):
             result = calibrate_marker_layout(
                 self._prune_failure_observations(),
                 self.camera_matrix,
