@@ -6,6 +6,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from object_apriltag.cli.calibration_diagnostics import (
     build_calibration_diagnostics_document,
@@ -289,6 +290,9 @@ class CalibrationDiagnosticsDocumentTests(unittest.TestCase):
         "version",
         "succeeded",
         "failure_reason",
+        "calibration_policy",
+        "outcome",
+        "failed_quality_gates",
         "quality",
         "assignment_rejections",
         "assignment_rejection_records",
@@ -431,7 +435,7 @@ class CalibrationDiagnosticsDocumentTests(unittest.TestCase):
         self.assertEqual(list(payload["quality"].keys()), list(self.QUALITY_KEYS))
         self.assertEqual(list(payload["assignment_rejection_records"][0].keys()), list(self.RECORD_KEYS))
         self.assertEqual(list(payload["dropped_pair_edges"][0].keys()), list(self.DROPPED_EDGE_KEYS))
-        self.assertEqual(payload["version"], 2)
+        self.assertEqual(payload["version"], 3)
         self.assertFalse(payload["succeeded"])
         self.assertEqual(payload["failure_reason"], "refused")
         self.assertIsNone(payload["quality"]["reprojection_rms_px"])
@@ -476,6 +480,29 @@ class CalibrationDiagnosticsDocumentTests(unittest.TestCase):
             payload = json.loads(path.read_text(encoding="utf-8"))
             self.assertFalse(payload["succeeded"])
             self.assertEqual(payload["failure_reason"], "refused")
+
+    def test_provisional_result_records_policy_outcome_and_failed_gates(self) -> None:
+        failed_gates = (
+            "Global reprojection RMS 0.500 px exceeds 0.150 px gate.",
+            "Pair rotation RMS 6.00 deg exceeds 5.00 deg gate.",
+        )
+        result = CalibrationResult(
+            layout=mock.Mock(),
+            quality=_quality_report(reprojection_rms_px=0.5),
+            failure_reason=None,
+            outcome="provisional",
+            calibration_policy="best_effort",
+            failed_quality_gates=failed_gates,
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "diagnostics.json"
+            save_calibration_diagnostics(path, result)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        self.assertTrue(payload["succeeded"])
+        self.assertIsNone(payload["failure_reason"])
+        self.assertEqual(payload["calibration_policy"], "best_effort")
+        self.assertEqual(payload["outcome"], "provisional")
+        self.assertEqual(payload["failed_quality_gates"], list(failed_gates))
 
 
 if __name__ == "__main__":

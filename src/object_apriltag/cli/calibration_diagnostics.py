@@ -24,7 +24,7 @@ from object_apriltag.marker_layout_calibration import (
     MeasurementDistribution,
 )
 
-CALIBRATION_DIAGNOSTICS_VERSION = 2
+CALIBRATION_DIAGNOSTICS_VERSION = 3
 
 
 def format_reprojection_rms_px(value: float) -> str:
@@ -339,11 +339,17 @@ def build_calibration_diagnostics_document(
     *,
     succeeded: bool,
     failure_reason: str | None,
+    calibration_policy: str = "strict",
+    outcome: str = "refused",
+    failed_quality_gates: tuple[str, ...] | list[str] = (),
 ) -> dict[str, Any]:
     return {
         "version": CALIBRATION_DIAGNOSTICS_VERSION,
         "succeeded": succeeded,
         "failure_reason": failure_reason,
+        "calibration_policy": calibration_policy,
+        "outcome": outcome,
+        "failed_quality_gates": list(failed_quality_gates),
         "quality": _quality_report_to_dict(quality),
         "assignment_rejections": _assignment_rejection_summary_to_dict(
             quality.assignment_rejections
@@ -369,11 +375,14 @@ def save_calibration_diagnostics(
     if result.quality is None:
         raise RuntimeError("Cannot write calibration diagnostics without a quality report.")
     path = Path(path)
-    succeeded = result.failure_reason is None and result.layout is not None
+    succeeded = result.layout is not None and result.failure_reason is None
     document = build_calibration_diagnostics_document(
         result.quality,
         succeeded=succeeded,
         failure_reason=result.failure_reason,
+        calibration_policy=result.calibration_policy,
+        outcome=result.outcome or "refused",
+        failed_quality_gates=result.failed_quality_gates,
     )
     serialize = serialize_fn or serialize_calibration_diagnostics_document
     try:

@@ -143,6 +143,14 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--best-effort",
+        action="store_true",
+        help=(
+            "Write a provisional marker model when optimization completes but strict "
+            "reprojection, translation, or rotation quality gates fail."
+        ),
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         required=True,
@@ -219,7 +227,7 @@ def flatten_marker_size_override_tokens(
 
 def validate_args(
     args: argparse.Namespace,
-) -> tuple[list[int], dict[int, float], CalibrationSettings, tuple[int, ...] | None, bool]:
+) -> tuple[list[int], dict[int, float], CalibrationSettings, tuple[int, ...] | None, bool, bool]:
     if not args.calibration.exists():
         raise RuntimeError(
             f"Calibration file not found: {args.calibration}\n"
@@ -251,6 +259,10 @@ def validate_args(
         raise RuntimeError(anchor_failure)
     if args.anchor_stop_after_expansion and anchor_ids is None:
         raise RuntimeError("--anchor-stop-after-expansion requires --anchor-marker-ids.")
+    if args.best_effort and args.anchor_stop_after_expansion:
+        raise RuntimeError(
+            "--best-effort cannot be used with --anchor-stop-after-expansion."
+        )
     if args.marker_size <= 0.0:
         raise RuntimeError("--marker-size must be positive.")
     marker_sizes_m, sizes_failure = resolve_marker_sizes_for_calibration(
@@ -279,7 +291,7 @@ def validate_args(
         pair_translation_rms_gate_ratio=args.pair_translation_rms_gate_ratio,
         pair_rotation_rms_gate_deg=args.pair_rotation_rms_gate_deg,
     )
-    return expected_ids, marker_sizes_m, settings, anchor_ids, args.anchor_stop_after_expansion
+    return expected_ids, marker_sizes_m, settings, anchor_ids, args.anchor_stop_after_expansion, args.best_effort
 
 
 def open_camera(camera_index: int, width: int, height: int) -> cv2.VideoCapture:
@@ -508,6 +520,10 @@ def print_refusal(result: CalibrationResult) -> None:
 
 
 def print_success(result: CalibrationResult, output: Path) -> None:
+    if result.outcome == "provisional":
+        print("WARNING: Saved provisional marker model (strict quality gates failed).")
+        for gate in result.failed_quality_gates:
+            print(f"  failed gate: {gate}")
     print(f"Saved marker model: {output}")
     quality = result.quality
     if quality is None:
@@ -550,7 +566,14 @@ def append_capture_observation(
 
 def run_capture(args: argparse.Namespace) -> bool:
     """Capture live samples; return True when a model was saved."""
-    expected_ids, marker_sizes_m, settings, anchor_ids, anchor_stop_after_expansion = validate_args(args)
+    (
+        expected_ids,
+        marker_sizes_m,
+        settings,
+        anchor_ids,
+        anchor_stop_after_expansion,
+        best_effort,
+    ) = validate_args(args)
     expected_id_set = set(expected_ids)
 
     camera_matrix, dist_coeffs, image_width, image_height, calibration_source = load_intrinsics(
@@ -662,8 +685,9 @@ def run_capture(args: argparse.Namespace) -> bool:
                     anchor_marker_ids=anchor_ids,
                     anchor_stop_after_expansion=anchor_stop_after_expansion,
                     marker_sizes_m=marker_sizes_m,
+                    best_effort=best_effort,
                 )
-                if result.failure_reason is not None or result.layout is None:
+                if result.layout is None:
                     print_refusal(result)
                     try:
                         write_calibration_diagnostics_if_requested(args.diagnostics_output, result)

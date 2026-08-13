@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Iterable, Sequence
+from typing import Iterable, Literal, Sequence
 
 import cv2
 import numpy as np
@@ -105,10 +105,30 @@ class AnchorCoreDiagnostics:
 
 
 @dataclass(frozen=True)
+class QualityGateFailure:
+    category: Literal["strict", "connectivity", "data"]
+    message: str
+
+
+@dataclass(frozen=True)
 class CalibrationResult:
     layout: MarkerLayout | None
     quality: CalibrationQualityReport | None
     failure_reason: str | None
+    outcome: Literal["accepted", "provisional", "refused"] | None = None
+    calibration_policy: Literal["strict", "best_effort"] = "strict"
+    failed_quality_gates: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.outcome is not None:
+            return
+        if self.layout is not None and self.failure_reason is None:
+            resolved: Literal["accepted", "provisional", "refused"] = (
+                "provisional" if self.failed_quality_gates else "accepted"
+            )
+        else:
+            resolved = "refused"
+        object.__setattr__(self, "outcome", resolved)
 
 
 @dataclass(frozen=True)
@@ -556,6 +576,7 @@ def calibrate_marker_layout(
     anchor_marker_ids: Sequence[int] | None = None,
     anchor_stop_after_expansion: bool = False,
     marker_sizes_m: Mapping[int, float] | None = None,
+    best_effort: bool = False,
 ) -> CalibrationResult:
     """Estimate a connected marker layout or refuse with a structured reason."""
     settings = settings or CalibrationSettings()
@@ -968,29 +989,27 @@ def calibrate_marker_layout(
             anchor_core=anchor_core_diagnostics,
         )
         gate_failure = _check_quality_gates(quality, settings, marker_sizes_m, expected_ids)
-        if gate_failure is not None:
-            return CalibrationResult(None, quality, gate_failure)
-        if missing_ids:
-            return CalibrationResult(
-                None,
-                quality,
-                f"Expected marker IDs are not connected to reference: {sorted(missing_ids)}.",
-            )
-        footprints = _footprints_from_poses(marker_poses, marker_sizes_m)
-        if set(footprints) != set(expected_ids):
-            absent = sorted(set(expected_ids) - set(footprints))
-            return CalibrationResult(
-                None,
-                quality,
-                f"Calibration did not produce all expected marker footprints; missing {absent}.",
-            )
+        finalized = _finalize_solved_calibration(
+            marker_poses,
+            quality,
+            settings,
+            marker_sizes_m,
+            expected_ids,
+            reference_marker_id,
+            marker_size_m,
+            missing_ids,
+            gate_failure=gate_failure,
+            best_effort=best_effort,
+        )
+        if finalized is not None:
+            return finalized
         layout = build_marker_layout(
             reference_marker_id=reference_marker_id,
             marker_size_m=marker_size_m,
-            footprints=footprints,
+            footprints=_footprints_from_poses(marker_poses, marker_sizes_m),
             marker_sizes_m=dict(marker_sizes_m),
         )
-        return CalibrationResult(layout, quality, None)
+        return _accepted_calibration_result(layout, quality, best_effort=best_effort)
 
     dropped_edges = list(dropped_pair_edges)
     pair_failure = pair_failure if use_legacy_assignment else None
@@ -1207,13 +1226,113 @@ def calibrate_marker_layout(
     )
 
     gate_failure = _check_quality_gates(quality, settings, marker_sizes_m, expected_ids)
-    if gate_failure is not None:
-        return CalibrationResult(None, quality, gate_failure)
+    finalized = _finalize_solved_calibration(
+        marker_poses,
+        quality,
+        settings,
+        marker_sizes_m,
+        expected_ids,
+        reference_marker_id,
+        marker_size_m,
+        missing_ids,
+        gate_failure=gate_failure,
+        best_effort=best_effort,
+    )
+    if finalized is not None:
+        return finalized
+    layout = build_marker_layout(
+        reference_marker_id=reference_marker_id,
+        marker_size_m=marker_size_m,
+        footprints=_footprints_from_poses(marker_poses, marker_sizes_m),
+        marker_sizes_m=dict(marker_sizes_m),
+    )
+    return _accepted_calibration_result(layout, quality, best_effort=best_effort)
+
+
+def _accepted_calibration_result(
+    layout: MarkerLayout,
+    quality: CalibrationQualityReport,
+    *,
+    best_effort: bool,
+) -> CalibrationResult:
+    return CalibrationResult(
+        layout,
+        quality,
+        None,
+        outcome="accepted",
+        calibration_policy="best_effort" if best_effort else "strict",
+    )
+
+
+def _finalize_solved_calibration(
+    marker_poses: dict[int, tuple[np.ndarray, np.ndarray]],
+    quality: CalibrationQualityReport,
+    settings: CalibrationSettings,
+    marker_sizes_m: Mapping[int, float],
+    expected_ids: list[int],
+    reference_marker_id: int,
+    marker_size_m: float,
+    missing_ids: frozenset[int],
+    *,
+    gate_failure: str | None,
+    best_effort: bool,
+) -> CalibrationResult | None:
+    policy: Literal["strict", "best_effort"] = "best_effort" if best_effort else "strict"
+    gate_failures = _collect_quality_gate_failures(
+        quality,
+        settings,
+        marker_sizes_m,
+        expected_ids,
+    )
+    failed_gate_messages = tuple(failure.message for failure in gate_failures)
+
+    if gate_failures:
+        if (
+            best_effort
+            and all(failure.category == "strict" for failure in gate_failures)
+            and not missing_ids
+        ):
+            footprints = _footprints_from_poses(marker_poses, marker_sizes_m)
+            if set(footprints) != set(expected_ids):
+                absent = sorted(set(expected_ids) - set(footprints))
+                return CalibrationResult(
+                    None,
+                    quality,
+                    f"Calibration did not produce all expected marker footprints; missing {absent}.",
+                    outcome="refused",
+                    calibration_policy=policy,
+                    failed_quality_gates=failed_gate_messages,
+                )
+            layout = build_marker_layout(
+                reference_marker_id=reference_marker_id,
+                marker_size_m=marker_size_m,
+                footprints=footprints,
+                marker_sizes_m=dict(marker_sizes_m),
+            )
+            return CalibrationResult(
+                layout,
+                quality,
+                None,
+                outcome="provisional",
+                calibration_policy=policy,
+                failed_quality_gates=failed_gate_messages,
+            )
+        return CalibrationResult(
+            None,
+            quality,
+            gate_failure or gate_failures[0].message,
+            outcome="refused",
+            calibration_policy=policy,
+            failed_quality_gates=failed_gate_messages,
+        )
+
     if missing_ids:
         return CalibrationResult(
             None,
             quality,
             f"Expected marker IDs are not connected to reference: {sorted(missing_ids)}.",
+            outcome="refused",
+            calibration_policy=policy,
         )
 
     footprints = _footprints_from_poses(marker_poses, marker_sizes_m)
@@ -1223,15 +1342,10 @@ def calibrate_marker_layout(
             None,
             quality,
             f"Calibration did not produce all expected marker footprints; missing {absent}.",
+            outcome="refused",
+            calibration_policy=policy,
         )
-
-    layout = build_marker_layout(
-        reference_marker_id=reference_marker_id,
-        marker_size_m=marker_size_m,
-        footprints=footprints,
-        marker_sizes_m=dict(marker_sizes_m),
-    )
-    return CalibrationResult(layout, quality, None)
+    return None
 
 
 def _normalize_observations(
@@ -3660,42 +3774,84 @@ def _build_quality_report(
     )
 
 
+def _collect_quality_gate_failures(
+    quality: CalibrationQualityReport,
+    settings: CalibrationSettings,
+    marker_sizes_m: Mapping[int, float],
+    expected_ids: list[int],
+) -> tuple[QualityGateFailure, ...]:
+    failures: list[QualityGateFailure] = []
+    if quality.reprojection_rms_px > settings.reprojection_rms_gate_px:
+        failures.append(
+            QualityGateFailure(
+                "strict",
+                (
+                    f"Global reprojection RMS {quality.reprojection_rms_px:.3f} px exceeds "
+                    f"{settings.reprojection_rms_gate_px:.3f} px gate."
+                ),
+            )
+        )
+    for marker_id in expected_ids:
+        marker_rms = quality.per_marker_reprojection_rms_px.get(marker_id)
+        if marker_rms is None:
+            failures.append(
+                QualityGateFailure(
+                    "data",
+                    f"Marker {marker_id} has no inlier reprojection samples after calibration.",
+                )
+            )
+            continue
+        if marker_rms > settings.reprojection_rms_gate_px:
+            failures.append(
+                QualityGateFailure(
+                    "strict",
+                    (
+                        f"Marker {marker_id} reprojection RMS {marker_rms:.3f} px exceeds "
+                        f"{settings.reprojection_rms_gate_px:.3f} px gate."
+                    ),
+                )
+            )
+    for edge in quality.edges:
+        pair = (edge.marker_a, edge.marker_b)
+        translation_gate = _pair_translation_gate(settings, marker_sizes_m, pair)
+        if edge.translation_rms_m > translation_gate:
+            failures.append(
+                QualityGateFailure(
+                    "strict",
+                    (
+                        f"Pair ({pair[0]},{pair[1]}) translation RMS {edge.translation_rms_m:.4f} m exceeds "
+                        f"{translation_gate:.4f} m gate."
+                    ),
+                )
+            )
+    if quality.pair_rotation_rms_max_deg > settings.pair_rotation_rms_gate_deg:
+        failures.append(
+            QualityGateFailure(
+                "strict",
+                (
+                    f"Pair rotation RMS {quality.pair_rotation_rms_max_deg:.2f} deg exceeds "
+                    f"{settings.pair_rotation_rms_gate_deg:.2f} deg gate."
+                ),
+            )
+        )
+    if quality.missing_expected_ids:
+        failures.append(
+            QualityGateFailure(
+                "connectivity",
+                f"Missing expected marker IDs: {sorted(quality.missing_expected_ids)}.",
+            )
+        )
+    return tuple(failures)
+
+
 def _check_quality_gates(
     quality: CalibrationQualityReport,
     settings: CalibrationSettings,
     marker_sizes_m: Mapping[int, float],
     expected_ids: list[int],
 ) -> str | None:
-    if quality.reprojection_rms_px > settings.reprojection_rms_gate_px:
-        return (
-            f"Global reprojection RMS {quality.reprojection_rms_px:.3f} px exceeds "
-            f"{settings.reprojection_rms_gate_px:.3f} px gate."
-        )
-    for marker_id in expected_ids:
-        marker_rms = quality.per_marker_reprojection_rms_px.get(marker_id)
-        if marker_rms is None:
-            return f"Marker {marker_id} has no inlier reprojection samples after calibration."
-        if marker_rms > settings.reprojection_rms_gate_px:
-            return (
-                f"Marker {marker_id} reprojection RMS {marker_rms:.3f} px exceeds "
-                f"{settings.reprojection_rms_gate_px:.3f} px gate."
-            )
-    for edge in quality.edges:
-        pair = (edge.marker_a, edge.marker_b)
-        translation_gate = _pair_translation_gate(settings, marker_sizes_m, pair)
-        if edge.translation_rms_m > translation_gate:
-            return (
-                f"Pair ({pair[0]},{pair[1]}) translation RMS {edge.translation_rms_m:.4f} m exceeds "
-                f"{translation_gate:.4f} m gate."
-            )
-    if quality.pair_rotation_rms_max_deg > settings.pair_rotation_rms_gate_deg:
-        return (
-            f"Pair rotation RMS {quality.pair_rotation_rms_max_deg:.2f} deg exceeds "
-            f"{settings.pair_rotation_rms_gate_deg:.2f} deg gate."
-        )
-    if quality.missing_expected_ids:
-        return f"Missing expected marker IDs: {sorted(quality.missing_expected_ids)}."
-    return None
+    failures = _collect_quality_gate_failures(quality, settings, marker_sizes_m, expected_ids)
+    return failures[0].message if failures else None
 
 
 def _empty_quality(

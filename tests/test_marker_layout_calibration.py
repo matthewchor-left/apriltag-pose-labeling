@@ -641,6 +641,118 @@ class MarkerLayoutCalibrationRefusalTests(unittest.TestCase):
         self.assertIsNotNone(result.quality)
 
 
+class BestEffortCalibrationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.marker_size_m = 0.07
+        self.camera_matrix, self.dist_coeffs = _default_camera()
+
+    def test_best_effort_emits_provisional_layout_when_only_quality_gates_fail(self) -> None:
+        observations = synthesize_observations(
+            _two_marker_poses(self.marker_size_m),
+            frame_count=25,
+            marker_size_m=self.marker_size_m,
+            noise_std_px=0.05,
+            seed=3,
+        )
+        result = calibrate_marker_layout(
+            observations,
+            self.camera_matrix,
+            self.dist_coeffs,
+            expected_marker_ids=[0, 1],
+            reference_marker_id=0,
+            marker_size_m=self.marker_size_m,
+            settings=CalibrationSettings(
+                min_inliers_per_edge=20,
+                reprojection_rms_gate_px=0.15,
+            ),
+            best_effort=True,
+        )
+        self.assertIsNotNone(result.layout)
+        self.assertIsNone(result.failure_reason)
+        self.assertEqual(result.outcome, "provisional")
+        self.assertEqual(result.calibration_policy, "best_effort")
+        self.assertTrue(result.failed_quality_gates)
+        self.assertIn("reprojection RMS", result.failed_quality_gates[0])
+        assert result.quality is not None
+        self.assertGreater(result.quality.reprojection_rms_px, 0.15)
+
+    def test_strict_mode_still_refuses_when_quality_gates_fail(self) -> None:
+        observations = synthesize_observations(
+            _two_marker_poses(self.marker_size_m),
+            frame_count=25,
+            marker_size_m=self.marker_size_m,
+            noise_std_px=0.05,
+            seed=3,
+        )
+        result = calibrate_marker_layout(
+            observations,
+            self.camera_matrix,
+            self.dist_coeffs,
+            expected_marker_ids=[0, 1],
+            reference_marker_id=0,
+            marker_size_m=self.marker_size_m,
+            settings=CalibrationSettings(
+                min_inliers_per_edge=20,
+                reprojection_rms_gate_px=0.15,
+            ),
+        )
+        self.assertIsNone(result.layout)
+        self.assertIsNotNone(result.failure_reason)
+        self.assertEqual(result.outcome, "refused")
+        self.assertEqual(result.calibration_policy, "strict")
+
+    def test_best_effort_still_refuses_hard_failures(self) -> None:
+        observations = synthesize_observations(
+            _two_marker_poses(self.marker_size_m),
+            frame_count=19,
+            marker_size_m=self.marker_size_m,
+        )
+        result = calibrate_marker_layout(
+            observations,
+            self.camera_matrix,
+            self.dist_coeffs,
+            expected_marker_ids=[0, 1],
+            reference_marker_id=0,
+            marker_size_m=self.marker_size_m,
+            settings=CalibrationSettings(min_inliers_per_edge=20),
+            best_effort=True,
+        )
+        self.assertIsNone(result.layout)
+        self.assertIsNotNone(result.failure_reason)
+        self.assertEqual(result.outcome, "refused")
+
+    def test_provisional_marker_model_roundtrips_and_loads(self) -> None:
+        observations = synthesize_observations(
+            _two_marker_poses(self.marker_size_m),
+            frame_count=25,
+            marker_size_m=self.marker_size_m,
+            noise_std_px=0.05,
+            seed=3,
+        )
+        result = calibrate_marker_layout(
+            observations,
+            self.camera_matrix,
+            self.dist_coeffs,
+            expected_marker_ids=[0, 1],
+            reference_marker_id=0,
+            marker_size_m=self.marker_size_m,
+            settings=CalibrationSettings(
+                min_inliers_per_edge=20,
+                reprojection_rms_gate_px=0.15,
+            ),
+            best_effort=True,
+        )
+        assert result.layout is not None
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "marker_model.json"
+            save_marker_model(path, result.layout)
+            loaded = load_marker_model(path)
+            self.assertEqual(
+                marker_layout_to_dict(loaded),
+                marker_layout_to_dict(result.layout),
+            )
+
+
 class MarkerLayoutCalibrationInputValidationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.marker_size_m = 0.07
