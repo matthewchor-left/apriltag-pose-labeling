@@ -77,7 +77,9 @@ class CliHelpTests(unittest.TestCase):
         self.assertIn("--marker-size-for", help_text)
         self.assertIn("--anchor-marker-ids", help_text)
         self.assertIn("--anchor-stop-after-expansion", help_text)
-        self.assertNotIn("--sample-rate-hz", help_text)
+        self.assertIn("--auto", help_text)
+        self.assertIn("--sample-rate-hz", help_text)
+        self.assertIn("ignored in manual mode", help_text)
         self.assertIn("--diagnostics-output", help_text)
         self.assertIn("C  capture", help_text)
         self.assertIn("S  solve", help_text)
@@ -108,6 +110,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 reference_marker_id=0,
                 marker_size=0.07,
                 sample_rate_hz=2.0,
+                auto=False,
                 min_pair_inliers=20,
                 reprojection_rms_gate_px=2.0,
                 pair_translation_rms_gate_ratio=0.10,
@@ -135,6 +138,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 reference_marker_id=0,
                 marker_size=0.07,
                 sample_rate_hz=2.0,
+                auto=False,
                 min_pair_inliers=20,
                 reprojection_rms_gate_px=2.0,
                 pair_translation_rms_gate_ratio=0.10,
@@ -162,6 +166,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 reference_marker_id=0,
                 marker_size=0.07,
                 sample_rate_hz=2.0,
+                auto=False,
                 min_pair_inliers=20,
                 reprojection_rms_gate_px=2.0,
                 pair_translation_rms_gate_ratio=0.10,
@@ -190,6 +195,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 reference_marker_id=0,
                 marker_size=0.07,
                 sample_rate_hz=2.0,
+                auto=False,
                 min_pair_inliers=20,
                 reprojection_rms_gate_px=2.0,
                 pair_translation_rms_gate_ratio=0.10,
@@ -218,6 +224,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 marker_size=0.07,
                 marker_size_for=["4:0.03", "10-11:0.025"],
                 sample_rate_hz=2.0,
+                auto=False,
                 min_pair_inliers=20,
                 reprojection_rms_gate_px=2.0,
                 pair_translation_rms_gate_ratio=0.10,
@@ -247,6 +254,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 marker_size=0.07,
                 marker_size_for=[["4:0.03"], ["10-11:0.025"]],
                 sample_rate_hz=2.0,
+                auto=False,
                 min_pair_inliers=20,
                 reprojection_rms_gate_px=2.0,
                 pair_translation_rms_gate_ratio=0.10,
@@ -273,6 +281,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 reference_marker_id=0,
                 marker_size=0.07,
                 sample_rate_hz=2.0,
+                auto=False,
                 min_pair_inliers=20,
                 reprojection_rms_gate_px=2.0,
                 pair_translation_rms_gate_ratio=0.10,
@@ -284,6 +293,36 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
             with self.assertRaises(RuntimeError) as ctx:
                 validate_args(args)
             self.assertIn("--anchor-stop-after-expansion", str(ctx.exception))
+
+    def test_sample_rate_hz_must_be_finite_and_positive(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import validate_args
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            calibration = Path(tmp_dir) / "intrinsics.json"
+            _write_intrinsics(calibration)
+            for sample_rate_hz in (0.0, -1.0, float("inf"), float("nan")):
+                with self.subTest(sample_rate_hz=sample_rate_hz):
+                    args = mock.Mock(
+                        calibration=calibration,
+                        output=Path(tmp_dir) / "out.json",
+                        force=True,
+                        marker_ids=["0", "1"],
+                        reference_marker_id=0,
+                        marker_size=0.07,
+                        sample_rate_hz=sample_rate_hz,
+                        auto=False,
+                        min_pair_inliers=20,
+                        reprojection_rms_gate_px=2.0,
+                        pair_translation_rms_gate_ratio=0.10,
+                        pair_rotation_rms_gate_deg=5.0,
+                        diagnostics_output=None,
+                        anchor_marker_ids=None,
+                        anchor_stop_after_expansion=False,
+                        marker_size_for=None,
+                    )
+                    with self.assertRaises(RuntimeError) as ctx:
+                        validate_args(args)
+                    self.assertIn("--sample-rate-hz", str(ctx.exception))
 
 
 class CalibrateMarkerModelCaptureTests(unittest.TestCase):
@@ -297,6 +336,8 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
         calibrate_result: object | None = None,
         calibrate_side_effect: object | None = None,
         diagnostics_output: Path | None = None,
+        auto: bool = False,
+        sample_rate_hz: float = 10.0,
     ) -> tuple[list, Path, mock.Mock, mock.MagicMock, mock.Mock, bool]:
         from object_apriltag.cli.calibrate_marker_model import run_capture
 
@@ -317,7 +358,8 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
                 reference_marker_id=0,
                 output=output,
                 force=True,
-                sample_rate_hz=2.0,
+                auto=auto,
+                sample_rate_hz=sample_rate_hz,
                 min_pair_inliers=20,
                 reprojection_rms_gate_px=2.0,
                 pair_translation_rms_gate_ratio=0.10,
@@ -346,6 +388,14 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
 
             detector.detectMarkers.side_effect = detect_markers
 
+            monotonic_iter = iter(monotonic_values)
+
+            def monotonic_side_effect() -> float:
+                try:
+                    return next(monotonic_iter)
+                except StopIteration:
+                    return monotonic_values[-1] + 1.0
+
             wait_iter = iter(wait_keys)
 
             accepted_layout = mock.Mock()
@@ -368,6 +418,10 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
                 mock.patch(
                     "object_apriltag.cli.calibrate_marker_model.build_apriltag_detector",
                     return_value=detector,
+                ),
+                mock.patch(
+                    "object_apriltag.cli.calibrate_marker_model.time.monotonic",
+                    side_effect=monotonic_side_effect,
                 ),
                 mock.patch(
                     "object_apriltag.cli.calibrate_marker_model.cv2.waitKey",
@@ -417,6 +471,25 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
 
         self.assertGreaterEqual(len(captured_lengths), 1)
         self.assertGreater(captured_lengths[-1], 0)
+
+    def test_manual_mode_does_not_auto_capture_without_c(self) -> None:
+        visible_by_frame = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 8
+        monotonic_values = [0.0, *(index * 0.25 for index in range(1, 20))]
+
+        observations_holder: list = []
+
+        def capture_observations(observations, *_args, **_kwargs):
+            observations_holder.extend(observations)
+            return mock.Mock(layout=None, failure_reason="refused", quality=None)
+
+        self._run_capture(
+            wait_keys=[0] * 8 + [ord("S"), ord("q")],
+            monotonic_values=monotonic_values,
+            visible_by_frame=visible_by_frame,
+            calibrate_side_effect=capture_observations,
+            auto=False,
+        )
+        self.assertEqual(observations_holder, [])
 
     def test_capture_continues_while_pair_readiness_is_slow(self) -> None:
         gate = threading.Event()
@@ -486,6 +559,56 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
         self.assertGreaterEqual(len(observations_holder), 2)
         for observation in observations_holder[:2]:
             self.assertEqual(sorted(observation.markers), [0, 1])
+
+    def test_auto_mode_samples_at_configured_rate_and_ignores_single_marker_frames(self) -> None:
+        visible_by_frame = [
+            {0: _marker_corners(0)},
+            {0: _marker_corners(0), 1: _marker_corners(1)},
+            {1: _marker_corners(1)},
+            {0: _marker_corners(0), 1: _marker_corners(1)},
+            {0: _marker_corners(0), 1: _marker_corners(1)},
+            {0: _marker_corners(0), 1: _marker_corners(1)},
+        ]
+        monotonic_values = [0.0, *(index * 0.25 for index in range(1, 20))]
+
+        observations_holder: list = []
+
+        def capture_observations(observations, *_args, **_kwargs):
+            observations_holder.extend(observations)
+            return mock.Mock(layout=None, failure_reason="refused", quality=None)
+
+        self._run_capture(
+            wait_keys=[0] * 8 + [ord("S"), ord("q")],
+            monotonic_values=monotonic_values,
+            visible_by_frame=visible_by_frame,
+            calibrate_side_effect=capture_observations,
+            auto=True,
+            sample_rate_hz=2.0,
+        )
+        self.assertGreaterEqual(len(observations_holder), 2)
+        for observation in observations_holder:
+            self.assertEqual(sorted(observation.markers), [0, 1])
+
+    def test_auto_mode_does_not_double_capture_when_timer_and_c_coincide(self) -> None:
+        visible = {0: _marker_corners(0), 1: _marker_corners(1)}
+        visible_by_frame = [visible]
+        monotonic_values = [0.0, 0.0, 0.0]
+
+        observations_holder: list = []
+
+        def capture_observations(observations, *_args, **_kwargs):
+            observations_holder.extend(observations)
+            return mock.Mock(layout=None, failure_reason="refused", quality=None)
+
+        self._run_capture(
+            wait_keys=[ord("c"), ord("S"), ord("q")],
+            monotonic_values=monotonic_values,
+            visible_by_frame=visible_by_frame,
+            calibrate_side_effect=capture_observations,
+            auto=True,
+            sample_rate_hz=2.0,
+        )
+        self.assertEqual(len(observations_holder), 1)
 
     def test_solve_refusal_prints_frame_counts_and_continues_without_writing(self) -> None:
         refused = mock.Mock(

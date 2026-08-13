@@ -42,7 +42,7 @@ Accepted architecture ([ADR 0002](../adr/0002-corner-bundle-adjustment-for-marke
 7. **Prune and refit:** drop outlier corners and frames without ≥2 complete markers; recheck pair support; rerun BA ([`_prune_and_refit`](../../src/object_apriltag/marker_layout_calibration.py)).
 8. **Hard quality gates** before write: global/per-marker reprojection RMS, per-pair translation/rotation RMS, full connectivity ([`_check_quality_gates`](../../src/object_apriltag/marker_layout_calibration.py)).
 
-Live capture currently solves **only on explicit `S` keypress**; the HUD shows coarse connectivity from raw pair counts, not the full assignment-filtered graph.
+Live capture solves **only on explicit `S` keypress**; capture is **manual by default** (press **C** when at least two expected markers are visible). Pass **`--auto`** for periodic capture at **`--sample-rate-hz`** under the same visibility rule. The HUD shows coarse connectivity from raw pair counts, not the full assignment-filtered graph.
 
 ## Mathematical problem: batch MAP, not a different objective online
 

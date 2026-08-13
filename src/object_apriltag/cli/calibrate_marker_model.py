@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import math
 import sys
+import time
 from pathlib import Path
 
 import cv2
@@ -37,6 +39,7 @@ from object_apriltag.marker_layout_calibration import (
 
 DEFAULT_ASSIGNMENT_REJECTION_SUMMARY_LINES = 3
 
+DEFAULT_SAMPLE_RATE_HZ = 10.0
 DEFAULT_MIN_PAIR_INLIERS = 20
 DEFAULT_REPROJECTION_RMS_GATE_PX = 2.0
 DEFAULT_PAIR_TRANSLATION_RMS_GATE_RATIO = 0.10
@@ -54,9 +57,11 @@ def parse_args() -> argparse.Namespace:
             "  Q  quit without writing\n"
             "\n"
             "Capture:\n"
-            "  Inspect the live image, then press C only for sharp, geometrically diverse "
-            "views. Every expected ID must co-appear with others often enough to connect "
-            "through the reference marker.\n"
+            "  Default is manual capture (press C). Pass --auto to record frames at "
+            "--sample-rate-hz when at least two expected markers are visible; C still "
+            "captures an extra frame in --auto mode. Inspect the live image and prefer "
+            "sharp, geometrically diverse views. Every expected ID must co-appear with "
+            "others often enough to connect through the reference marker.\n"
             "\n"
             "Scale:\n"
             "  Metric layout depends on --marker-size and calibrated camera intrinsics. "
@@ -147,6 +152,20 @@ def parse_args() -> argparse.Namespace:
         "--force",
         action="store_true",
         help="Overwrite an existing --output file.",
+    )
+    parser.add_argument(
+        "--auto",
+        action="store_true",
+        help="Enable periodic automatic capture at --sample-rate-hz (default: manual C only).",
+    )
+    parser.add_argument(
+        "--sample-rate-hz",
+        type=float,
+        default=DEFAULT_SAMPLE_RATE_HZ,
+        help=(
+            "Automatic capture rate in Hz when --auto is set "
+            f"(default: {DEFAULT_SAMPLE_RATE_HZ:g}; ignored in manual mode)."
+        ),
     )
     parser.add_argument(
         "--min-pair-inliers",
@@ -242,6 +261,8 @@ def validate_args(
     if sizes_failure is not None:
         raise RuntimeError(sizes_failure)
     assert marker_sizes_m is not None
+    if not math.isfinite(args.sample_rate_hz) or args.sample_rate_hz <= 0.0:
+        raise RuntimeError("--sample-rate-hz must be finite and positive.")
     if args.min_pair_inliers <= 0:
         raise RuntimeError("--min-pair-inliers must be positive.")
     for name, value in (
@@ -421,7 +442,7 @@ def build_pair_readiness_hud_lines(
             f"pairs: {status_counts['pass']} pass, {status_counts['weak']} weak, "
             f"{status_counts['fail']} fail ({len(diagnostics.pairs)} observed)"
         ),
-        "S=solve  Q=quit",
+        "C=capture  S=solve  Q=quit",
     ]
     if diagnostics.failure_reason:
         lines.insert(7, f"readiness error: {diagnostics.failure_reason}")
@@ -506,6 +527,27 @@ def write_calibration_diagnostics_if_requested(
     print(f"Wrote calibration diagnostics: {path}")
 
 
+def format_capture_mode(auto: bool, sample_rate_hz: float) -> str:
+    if auto:
+        return f"automatic at {sample_rate_hz:g} Hz"
+    return "manual (press C)"
+
+
+def append_capture_observation(
+    observations: list[FrameObservation],
+    visible: dict[int, np.ndarray],
+    *,
+    readiness_worker: LivePairReadinessWorker,
+) -> FrameObservation:
+    observation = FrameObservation(
+        frame_id=len(observations),
+        markers={marker_id: corners.copy() for marker_id, corners in visible.items()},
+    )
+    observations.append(observation)
+    readiness_worker.submit(observations)
+    return observation
+
+
 def run_capture(args: argparse.Namespace) -> bool:
     """Capture live samples; return True when a model was saved."""
     expected_ids, marker_sizes_m, settings, anchor_ids, anchor_stop_after_expansion = validate_args(args)
@@ -529,7 +571,7 @@ def run_capture(args: argparse.Namespace) -> bool:
         print(f"Marker size overrides: {overrides}")
     else:
         print("Marker size overrides: none (uniform)")
-    print("Capture mode: manual (press C)")
+    print(f"Capture mode: {format_capture_mode(args.auto, args.sample_rate_hz)}")
     print(f"Using calibration: {args.calibration}")
     if calibration_source:
         print(f"Calibration source: {calibration_source}")
@@ -548,6 +590,8 @@ def run_capture(args: argparse.Namespace) -> bool:
         print("Press C to capture, S to solve, Q to quit.")
 
         observations: list[FrameObservation] = []
+        sample_interval = 1.0 / args.sample_rate_hz if args.auto else None
+        next_sample_time = time.monotonic()
         status_line: str | None = None
         last_solve_quality: CalibrationQualityReport | None = None
 
@@ -561,6 +605,9 @@ def run_capture(args: argparse.Namespace) -> bool:
             preview = frame.copy()
             draw_detection_outlines(preview, visible, args.reference_marker_id)
 
+            now = time.monotonic()
+            manual_capture = False
+            auto_due = False
             readiness_view = readiness_worker.poll(len(observations))
             hud_lines = build_pair_readiness_hud_lines_from_diagnostics(
                 expected_ids=expected_ids,
@@ -569,6 +616,7 @@ def run_capture(args: argparse.Namespace) -> bool:
                 readiness_view=readiness_view,
                 reference_marker_id=args.reference_marker_id,
             )
+            hud_lines.insert(0, f"capture: {format_capture_mode(args.auto, args.sample_rate_hz)}")
             if status_line:
                 hud_lines.append(status_line)
             draw_calibration_hud(
@@ -583,23 +631,24 @@ def run_capture(args: argparse.Namespace) -> bool:
                 print("Calibration cancelled.")
                 return False
             if key in (ord("c"), ord("C")):
-                if len(visible) < 2:
-                    status_line = "capture skipped: need at least 2 expected markers"
-                    continue
-                observations.append(
-                    FrameObservation(
-                        frame_id=len(observations),
-                        markers={
-                            marker_id: corners.copy()
-                            for marker_id, corners in visible.items()
-                        },
-                    )
+                manual_capture = True
+            if args.auto and sample_interval is not None and now >= next_sample_time:
+                auto_due = True
+            if len(visible) >= 2 and (manual_capture or auto_due):
+                append_capture_observation(
+                    observations,
+                    visible,
+                    readiness_worker=readiness_worker,
                 )
-                readiness_worker.submit(observations)
+                if auto_due:
+                    next_sample_time = now + sample_interval
                 status_line = (
                     f"captured sample {len(observations)}: "
                     f"markers {sorted(visible)}"
                 )
+                continue
+            if manual_capture:
+                status_line = "capture skipped: need at least 2 expected markers"
                 continue
             if key in (ord("s"), ord("S")):
                 result = calibrate_marker_layout(

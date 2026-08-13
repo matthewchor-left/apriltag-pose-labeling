@@ -234,11 +234,11 @@ For layouts with many markers, pass `--anchor-marker-ids` to bootstrap from a sm
   --anchor-stop-after-expansion \
 ```
 
-- **C** — capture the current sharp frame when at least two expected markers are visible
+- **C** — capture the current sharp frame when at least two expected markers are visible (default manual mode)
 - **S** — solve from captured samples; writes `--output` only when quality gates pass
 - **Q** — quit without writing
 
-A frame is recorded only when you press **C** with **at least two** expected marker IDs visible. Capture sharp, diverse viewpoints rather than repeated stationary views. During solve, frames that cannot be assigned a consistent marker interpretation are rejected automatically; each marker pair used in the layout still needs at least **20** accepted co-visible frames (`--min-pair-inliers`) after rejection. You do not need to capture pairs in isolated batches. The HUD shows expected/visible IDs, captured sample count, live pair readiness (raw co-visibility and pass/weak status), graph connectivity from the reference marker, and last-solve frame acceptance when you press **S**.
+By default, frames are recorded only when you press **C** with **at least two** expected marker IDs visible. Pass **`--auto`** to capture periodically at **`--sample-rate-hz`** (default 10 Hz) under the same two-marker rule; **C** still captures an extra frame in automatic mode. Capture sharp, diverse viewpoints rather than repeated stationary views. During solve, frames that cannot be assigned a consistent marker interpretation are rejected automatically; each marker pair used in the layout still needs at least **20** accepted co-visible frames (`--min-pair-inliers`) after rejection. You do not need to capture pairs in isolated batches. The HUD shows expected/visible IDs, captured sample count, live pair readiness (raw co-visibility and pass/weak status), graph connectivity from the reference marker, and last-solve frame acceptance when you press **S**.
 
 **Scale caveat:** metric layout depends on the physical `--marker-size` (default edge length) and calibrated intrinsics. Use repeatable `--marker-size-for ID_OR_RANGE:SIZE` overrides when markers differ (e.g. `4:0.03 10-12:0.025`). Pair translation gates scale with `ratio * min(size_a, size_b)` per edge. Wrong sizes or scaled intrinsics will bias the solved geometry.
 

@@ -186,6 +186,8 @@ class LivePairReadinessWorkerCaptureIntegrationTests(unittest.TestCase):
                 reference_marker_id=0,
                 output=output,
                 force=True,
+                auto=False,
+                sample_rate_hz=10.0,
                 min_pair_inliers=20,
                 reprojection_rms_gate_px=2.0,
                 pair_translation_rms_gate_ratio=0.10,
