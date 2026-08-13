@@ -32,9 +32,11 @@ from object_apriltag.marker_layout_calibration import (
     _estimate_pair_consensus,
     _object_points_by_marker,
     _maybe_restore_weak_connectivity,
+    _make_dropped_pair_edge,
     _recheck_pair_support,
     _reference_gauge_pose,
     _restrict_pair_consensus_to_frames,
+    _weak_restore_candidates,
     _quality_from_pairs,
     _synth_pair_observations,
     calibrate_marker_layout,
@@ -1416,6 +1418,34 @@ class OptimizationCheckpointRecoveryTests(unittest.TestCase):
         self.assertIsNotNone(result.layout)
         self.assertEqual(result.selected_checkpoint_stage, "graph_initialization")
         self.assertEqual(result.failed_refinement_stage, "initial_bundle_adjustment")
+
+
+class WeakRestoreSupportFloorTests(unittest.TestCase):
+    def test_single_frame_consensus_not_restorable_when_observed_count_meets_floor(self) -> None:
+        pair = (0, 1)
+        rotation = np.eye(3, dtype=np.float64)
+        translation = np.zeros(3, dtype=np.float64)
+        edge = _PairConsensus(
+            marker_a=0,
+            marker_b=1,
+            rotation_ba=rotation,
+            translation_ba=translation,
+            inlier_frames=(0,),
+            inlier_hypotheses={0: (rotation, translation)},
+        )
+        dropped = _make_dropped_pair_edge(
+            pair,
+            "initial_consensus",
+            "insufficient_observed_frames",
+            observed_count=2,
+            supported_count=2,
+            required_count=20,
+            translation_gate=0.007,
+            rotation_gate=5.0,
+            edge=edge,
+        )
+
+        self.assertEqual(_weak_restore_candidates({}, {pair: edge}, [dropped]), [])
 
 
 class WeakPairConnectivityRecoveryTests(unittest.TestCase):

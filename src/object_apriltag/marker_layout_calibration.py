@@ -3641,10 +3641,10 @@ def _weak_restore_candidates(
         pair = drop.marker_pair
         if pair in pair_consensus or pair in seen:
             continue
-        if not _meets_best_effort_weak_support_floor(drop.supported_count):
-            continue
         edge = weak_pool.get(pair)
         if edge is None or not edge.inlier_frames:
+            continue
+        if not _meets_best_effort_weak_support_floor(len(edge.inlier_frames)):
             continue
         candidates.append((edge, drop))
         seen.add(pair)
