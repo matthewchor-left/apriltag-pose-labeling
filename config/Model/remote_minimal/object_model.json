@@ -1,28 +1,8 @@
 {
     "units": "meters",
     "coordinate_frame": "marker_model",
-    "keypoints": {
-      "center": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "button-left": [
-        -0.05,
-        0.0,
-        0.0
-      ],
-      "button-right": [
-        0.05,
-        0.0,
-        0.0
-      ]
-    },
-    "skeleton": [
-      [
-        "center",
-        "center"
-      ]
-    ]
-  }
+    "keypoint_sources": {
+      "logo": {"marker_id": 19, "corner": "top_left"}
+    }
+}
   

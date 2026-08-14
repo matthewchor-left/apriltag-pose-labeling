@@ -13,18 +13,23 @@ import numpy as np
 from object_apriltag.board_pose import BoardPoseEstimate, camera_point_to_board
 from object_apriltag.detector import ObjectPose
 from object_apriltag.layout import (
+    CORNER_NAMES,
+    build_marker_layout,
     camera_point_to_layout_point,
+    footprint_from_dict,
     layout_point_to_camera,
     load_marker_model,
 )
 from object_apriltag.object_model_edit import (
     ObjectModelEditSession,
+    apply_keypoint_sources_from_layout,
     board_coordinate_mm_to_layout_point,
     load_object_model_document,
     object_model_for_render,
     object_model_with_keypoint,
     ordered_keypoint_names,
     parse_keypoint_edit_line,
+    parse_keypoint_sources,
     save_object_model_keypoints,
 )
 from object_apriltag.viz.skeleton import load_object_model
@@ -35,6 +40,58 @@ REMOTE1_MARKER_MODEL_PATH = (
 REMOTE1_OBJECT_MODEL_PATH = (
     Path(__file__).resolve().parents[1] / "config/Model/remote1/object_model.json"
 )
+
+
+def _square_corners(half: float, z: float = 0.0) -> dict[str, list[float]]:
+    return {
+        "top_left": [-half, -half, z],
+        "top_right": [half, -half, z],
+        "bottom_right": [half, half, z],
+        "bottom_left": [-half, half, z],
+    }
+
+
+def _synthetic_layout() -> object:
+    marker_size = 0.04
+    half = marker_size / 2.0
+    footprints = {
+        0: footprint_from_dict(0, _square_corners(half)),
+        1: footprint_from_dict(
+            1,
+            {
+                "top_left": [0.06, -half, 0.0],
+                "top_right": [0.06 + marker_size, -half, 0.0],
+                "bottom_right": [0.06 + marker_size, half, 0.0],
+                "bottom_left": [0.06, half, 0.0],
+            },
+        ),
+    }
+    return build_marker_layout(0, marker_size, footprints)
+
+
+def _object_model_document_with_sources() -> dict:
+    return {
+        "units": "meters",
+        "coordinate_frame": "marker_model",
+        "note": "keep-me",
+        "keypoints": {
+            "top": [0.0, 0.0, 0.0],
+            "bottom": [0.0, 0.1, 0.0],
+            "manual": [0.2, 0.2, 0.2],
+        },
+        "skeleton": [["top", "bottom"]],
+        "keypoint_sources": {
+            "top": {"marker_id": 1, "corner": "top_left"},
+            "bottom": {"marker_id": "01", "corner": "bottom_right"},
+        },
+    }
+
+
+def load_object_model_document_from_document(document: dict):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / "object_model.json"
+        path.write_text(json.dumps(document), encoding="utf-8")
+        return load_object_model_document(path)
 
 
 def synthetic_board_pose() -> BoardPoseEstimate:
@@ -299,6 +356,112 @@ class LoadObjectModelDocumentTests(unittest.TestCase):
             with mock.patch.object(Path, "read_text", counting_read_text):
                 load_object_model_document(path)
             self.assertEqual(read_count, 1)
+
+
+class ParseKeypointSourcesTests(unittest.TestCase):
+    def test_parses_marker_id_integer_strings(self) -> None:
+        document = {
+            "keypoint_sources": {
+                "top": {"marker_id": "01", "corner": "top_left"},
+            }
+        }
+        self.assertEqual(parse_keypoint_sources(document), {"top": (1, "top_left")})
+
+    def test_rejects_missing_or_empty_keypoint_sources(self) -> None:
+        for document in ({}, {"keypoint_sources": {}}, {"keypoint_sources": []}):
+            with self.subTest(document=document):
+                with self.assertRaises(ValueError) as ctx:
+                    parse_keypoint_sources(document)
+                self.assertIn("keypoint_sources", str(ctx.exception))
+
+    def test_rejects_invalid_corner(self) -> None:
+        document = {
+            "keypoint_sources": {
+                "top": {"marker_id": 1, "corner": "center"},
+            }
+        }
+        with self.assertRaises(ValueError) as ctx:
+            parse_keypoint_sources(document)
+        self.assertIn("corner", str(ctx.exception))
+        for corner_name in CORNER_NAMES:
+            self.assertIn(corner_name, str(ctx.exception))
+
+    def test_rejects_missing_marker_id_or_corner(self) -> None:
+        with self.assertRaises(ValueError) as missing_id:
+            parse_keypoint_sources({"keypoint_sources": {"top": {"corner": "top_left"}}})
+        self.assertIn("marker_id", str(missing_id.exception))
+
+        with self.assertRaises(ValueError) as missing_corner:
+            parse_keypoint_sources({"keypoint_sources": {"top": {"marker_id": 1}}})
+        self.assertIn("corner", str(missing_corner.exception))
+
+    def test_rejects_non_integer_marker_id(self) -> None:
+        document = {
+            "keypoint_sources": {
+                "top": {"marker_id": "abc", "corner": "top_left"},
+            }
+        }
+        with self.assertRaises(ValueError) as ctx:
+            parse_keypoint_sources(document)
+        self.assertIn("marker_id", str(ctx.exception))
+
+
+class ApplyKeypointSourcesFromLayoutTests(unittest.TestCase):
+    def test_copies_calibrated_corners_verbatim(self) -> None:
+        layout = _synthetic_layout()
+        document = _object_model_document_with_sources()
+        model, _ = load_object_model_document_from_document(document)
+
+        updated = apply_keypoint_sources_from_layout(model, document, layout)
+        np.testing.assert_allclose(
+            updated.keypoints["top"],
+            layout.footprints[1].top_left,
+            atol=1e-12,
+        )
+        np.testing.assert_allclose(
+            updated.keypoints["bottom"],
+            layout.footprints[1].bottom_right,
+            atol=1e-12,
+        )
+
+    def test_preserves_unmapped_keypoints_skeleton_and_metadata_on_save(self) -> None:
+        layout = _synthetic_layout()
+        document = _object_model_document_with_sources()
+        model, loaded_document = load_object_model_document_from_document(document)
+        manual_before = model.keypoints["manual"].copy()
+
+        updated = apply_keypoint_sources_from_layout(model, document, layout)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "object_model.json"
+            path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+            save_object_model_keypoints(path, updated, loaded_document)
+            saved = json.loads(path.read_text(encoding="utf-8"))
+
+        np.testing.assert_allclose(saved["keypoints"]["manual"], manual_before, atol=1e-12)
+        self.assertEqual(saved["skeleton"], document["skeleton"])
+        self.assertEqual(saved["note"], "keep-me")
+        self.assertEqual(saved["keypoint_sources"], document["keypoint_sources"])
+
+    def test_rejects_unknown_keypoint_or_missing_marker(self) -> None:
+        layout = _synthetic_layout()
+        model, document = load_object_model_document_from_document(_object_model_document_with_sources())
+
+        unknown_keypoint = dict(document)
+        unknown_keypoint["keypoint_sources"] = {
+            "missing": {"marker_id": 1, "corner": "top_left"},
+        }
+        with self.assertRaises(ValueError) as ctx:
+            apply_keypoint_sources_from_layout(model, unknown_keypoint, layout)
+        self.assertIn("unknown keypoint", str(ctx.exception))
+
+        missing_marker = dict(document)
+        missing_marker["keypoint_sources"] = {
+            "top": {"marker_id": 9, "corner": "top_left"},
+        }
+        with self.assertRaises(ValueError) as ctx:
+            apply_keypoint_sources_from_layout(model, missing_marker, layout)
+        self.assertIn("marker 9", str(ctx.exception))
+        self.assertIn("solved marker layout", str(ctx.exception))
 
 
 class ObjectModelEditSessionSaveFailureTests(unittest.TestCase):

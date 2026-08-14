@@ -253,6 +253,37 @@ By default, frames are recorded only when you press **C** with **at least two** 
 
 Refused solves print diagnostics and resume capture; nothing is written until a solve passes. Use `--force` to overwrite an existing `--output`. Frame resolution must match the calibration `image_size`; intrinsics are not scaled.
 
+### Optional object-model keypoint update
+
+Pass **`--object-model PATH`** to copy calibrated marker footprint corners into object-model keypoints after a successful solve (same moment as `--output` is written). The object-model JSON must include a non-empty top-level **`keypoint_sources`** map from existing keypoint names to marker corners:
+
+```json
+{
+  "units": "meters",
+  "coordinate_frame": "marker_model",
+  "keypoints": {
+    "top": [0.0, 0.0, 0.0],
+    "bottom": [0.0, 0.1, 0.0]
+  },
+  "skeleton": [["top", "bottom"]],
+  "keypoint_sources": {
+    "top": {"marker_id": 1, "corner": "top_left"},
+    "bottom": {"marker_id": "01", "corner": "bottom_right"}
+  }
+}
+```
+
+Supported corners match marker footprints: `top_left`, `top_right`, `bottom_right`, `bottom_left`. `marker_id` may be an integer or decimal string (e.g. `"01"` resolves to `1`). Only keypoints listed in `keypoint_sources` are updated; other keypoints, `skeleton`, and other metadata are preserved. `keypoint_sources` itself is left unchanged in the saved object model.
+
+Validation runs at startup when `--object-model` is set: the file must exist, `keypoint_sources` must be non-empty with valid specs, and every source marker must appear in `--marker-ids`. Refused or no-layout solves do not modify the object model. If a source marker is missing from the solved layout (including partial solves that omit it), the marker model is still saved but the command fails clearly without changing the object model.
+
+```bash
+uv run object-calibrate-marker-model \
+  ... \
+  --output config/Model/remote1/marker_model.json \
+  --object-model config/Model/remote1/object_model.json
+```
+
 Inspect an existing model (terminal or static diagram):
 
 ```bash
@@ -339,4 +370,5 @@ Live camera and video file CLIs use `--source`: pass a camera device index (e.g.
 | `object-calibrate-marker-model` | `--marker-size-for` | Per-marker overrides (`ID_OR_RANGE:SIZE`, repeatable) |
 | `object-calibrate-marker-model` | `--min-pair-inliers` | Minimum co-visible frames per pair (default 20) |
 | `object-calibrate-marker-model` | `--output` / `--force` | Marker model JSON; refuse overwrite unless `--force` |
+| `object-calibrate-marker-model` | `--object-model` | Optional object model JSON; update mapped keypoints from solved footprints after a successful save |
 | `object-inspect-marker-model` | `--marker-model` / `--visualize` | Print or diagram an existing marker model |

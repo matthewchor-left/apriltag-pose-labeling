@@ -19,7 +19,13 @@ from object_apriltag.frame_source import (
     parse_frame_source,
     read_frame,
 )
-from object_apriltag.layout import marker_color_bgr, save_marker_model
+from object_apriltag.layout import MarkerLayout, marker_color_bgr, save_marker_model
+from object_apriltag.object_model_edit import (
+    apply_keypoint_sources_from_layout,
+    load_object_model_document,
+    parse_keypoint_sources,
+    save_object_model_keypoints,
+)
 from object_apriltag.cli.calibration_diagnostics import (
     format_omitted_marker_lines,
     format_quality_diagnostics_lines,
@@ -224,6 +230,15 @@ def parse_args() -> argparse.Namespace:
         help=f"Accepted pair rotation RMS gate in degrees (default: {DEFAULT_PAIR_ROTATION_RMS_GATE_DEG:g}).",
     )
     parser.add_argument(
+        "--object-model",
+        type=Path,
+        default=None,
+        help=(
+            "Optional object model JSON to update after a successful marker-model save. "
+            "Requires non-empty keypoint_sources mapping keypoint names to marker corners."
+        ),
+    )
+    parser.add_argument(
         "--diagnostics-output",
         type=Path,
         default=None,
@@ -249,6 +264,7 @@ def flatten_marker_size_override_tokens(
 def validate_args(
     args: argparse.Namespace,
 ) -> tuple[list[int], dict[int, float], CalibrationSettings, tuple[int, ...] | None, bool, bool, bool]:
+    object_model_sources: dict[str, tuple[int, str]] | None = None
     if not args.calibration.exists():
         raise RuntimeError(
             f"Calibration file not found: {args.calibration}\n"
@@ -258,10 +274,28 @@ def validate_args(
         raise RuntimeError(
             f"Output already exists: {args.output}. Pass --force to overwrite."
         )
+    if isinstance(args.object_model, Path):
+        if not args.object_model.exists():
+            raise RuntimeError(f"Object model file not found: {args.object_model}")
+        try:
+            _, document = load_object_model_document(args.object_model)
+            object_model_sources = parse_keypoint_sources(document)
+        except (ValueError, OSError) as error:
+            raise RuntimeError(str(error)) from error
 
     expected_ids, marker_ids_failure = parse_marker_id_spec(args.marker_ids)
     if marker_ids_failure is not None:
         raise RuntimeError(f"--marker-ids {marker_ids_failure}")
+    if object_model_sources is not None:
+        missing_source_ids = sorted(
+            {marker_id for marker_id, _ in object_model_sources.values()}
+            - set(expected_ids)
+        )
+        if missing_source_ids:
+            raise RuntimeError(
+                "Object-model keypoint source marker IDs must appear in --marker-ids: "
+                f"{missing_source_ids}."
+            )
     if args.reference_marker_id not in expected_ids:
         raise RuntimeError("--reference-marker-id must appear in --marker-ids.")
     anchor_list: list[int] | None
@@ -572,6 +606,13 @@ def write_calibration_diagnostics_if_requested(
     print(f"Wrote calibration diagnostics: {path}")
 
 
+def update_object_model_from_layout(object_model_path: Path, layout: MarkerLayout) -> None:
+    model, document = load_object_model_document(object_model_path)
+    updated = apply_keypoint_sources_from_layout(model, document, layout)
+    save_object_model_keypoints(object_model_path, updated, document)
+    print(f"Updated object model: {object_model_path}")
+
+
 def format_capture_mode(auto: bool, sample_rate_hz: float) -> str:
     if auto:
         return f"automatic at {sample_rate_hz:g} Hz"
@@ -734,6 +775,14 @@ def run_capture(args: argparse.Namespace) -> bool:
 
                 save_marker_model(args.output, result.layout)
                 print_success(result, args.output)
+                if isinstance(args.object_model, Path):
+                    try:
+                        update_object_model_from_layout(args.object_model, result.layout)
+                    except (ValueError, OSError) as error:
+                        raise RuntimeError(
+                            f"Marker model saved to {args.output}, but object model "
+                            f"update failed: {error}"
+                        ) from error
                 try:
                     write_calibration_diagnostics_if_requested(args.diagnostics_output, result)
                 except RuntimeError as error:

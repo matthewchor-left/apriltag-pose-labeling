@@ -13,14 +13,99 @@ import numpy as np
 
 from object_apriltag.board_pose import BoardPoseEstimate, board_point_to_camera
 from object_apriltag.detector import ObjectPose
-from object_apriltag.layout import MarkerLayout, camera_point_to_layout_point
-from object_apriltag.viz.skeleton import ObjectModel, object_model_from_data
+from object_apriltag.layout import CORNER_NAMES, MarkerLayout, camera_point_to_layout_point
+from object_apriltag.viz.skeleton import MODEL_FRAME_NAME, ObjectModel, object_model_from_data
 
 
 def load_object_model_document(path: str | Path) -> tuple[ObjectModel, dict[str, Any]]:
     path = Path(path)
     document = json.loads(path.read_text(encoding="utf-8"))
     return object_model_from_data(document), document
+
+
+def _parse_source_marker_id(value: Any, field_name: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be an integer marker id, got {value!r}.")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        try:
+            return int(text, 10)
+        except ValueError as exc:
+            raise ValueError(
+                f"{field_name} must be an integer marker id, got {value!r}."
+            ) from exc
+    raise ValueError(f"{field_name} must be an integer marker id, got {value!r}.")
+
+
+def parse_keypoint_sources(document: dict[str, Any]) -> dict[str, tuple[int, str]]:
+    raw = document.get("keypoint_sources")
+    if not isinstance(raw, dict) or not raw:
+        raise ValueError(
+            "Object model must contain a non-empty 'keypoint_sources' object when "
+            "updating from marker calibration."
+        )
+
+    sources: dict[str, tuple[int, str]] = {}
+    for keypoint_name, payload in raw.items():
+        name = str(keypoint_name)
+        if not name:
+            raise ValueError("keypoint_sources keys must be non-empty keypoint names.")
+        if not isinstance(payload, dict):
+            raise ValueError(
+                f"keypoint_sources.{name} must be an object with marker_id and corner."
+            )
+        if "marker_id" not in payload:
+            raise ValueError(f"keypoint_sources.{name} is missing marker_id.")
+        if "corner" not in payload:
+            raise ValueError(f"keypoint_sources.{name} is missing corner.")
+        marker_id = _parse_source_marker_id(
+            payload["marker_id"],
+            f"keypoint_sources.{name}.marker_id",
+        )
+        corner = str(payload["corner"])
+        if corner not in CORNER_NAMES:
+            raise ValueError(
+                f"keypoint_sources.{name}.corner must be one of {list(CORNER_NAMES)}, "
+                f"got {corner!r}."
+            )
+        sources[name] = (marker_id, corner)
+    return sources
+
+
+def apply_keypoint_sources_from_layout(
+    model: ObjectModel,
+    document: dict[str, Any],
+    layout: MarkerLayout,
+) -> ObjectModel:
+    coordinate_frame = document.get("coordinate_frame", MODEL_FRAME_NAME)
+    if coordinate_frame != MODEL_FRAME_NAME:
+        raise ValueError(
+            f"object model coordinate_frame must be {MODEL_FRAME_NAME!r}, got {coordinate_frame!r}."
+        )
+
+    sources = parse_keypoint_sources(document)
+    names = ordered_keypoint_names(document, model)
+    updated = model
+    for keypoint_name, (marker_id, corner) in sources.items():
+        if keypoint_name not in model.keypoints:
+            raise ValueError(
+                f"keypoint_sources.{keypoint_name} references unknown keypoint {keypoint_name!r}."
+            )
+        if marker_id not in layout.footprints:
+            raise ValueError(
+                f"keypoint_sources.{keypoint_name} references marker {marker_id}, "
+                f"which is not present in the solved marker layout."
+            )
+        corner_point = layout.footprints[marker_id].corners_by_name()[corner]
+        updated = object_model_with_keypoint(
+            updated,
+            keypoint_name,
+            corner_point,
+            keypoint_names=names,
+        )
+    return updated
 
 
 def object_model_for_render(

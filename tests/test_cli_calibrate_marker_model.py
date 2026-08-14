@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -84,6 +85,8 @@ class CliHelpTests(unittest.TestCase):
         self.assertIn("--sample-rate-hz", help_text)
         self.assertIn("ignored in manual mode", help_text)
         self.assertIn("--diagnostics-output", help_text)
+        self.assertIn("--object-model", help_text)
+        self.assertIn("keypoint_sources", help_text)
         self.assertIn("C  capture", help_text)
         self.assertIn("S  solve", help_text)
         self.assertIn("Q  quit", help_text)
@@ -124,6 +127,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 best_effort=False,
                 partial_output=False,
                 marker_size_for=None,
+                object_model=None,
             )
             with self.assertRaises(RuntimeError) as ctx:
                 validate_args(args)
@@ -154,6 +158,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 best_effort=False,
                 partial_output=False,
                 marker_size_for=None,
+                object_model=None,
             )
             with self.assertRaises(RuntimeError) as ctx:
                 validate_args(args)
@@ -184,6 +189,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 best_effort=False,
                 partial_output=False,
                 marker_size_for=None,
+                object_model=None,
             )
             expected_ids, marker_sizes_m, _, anchor_ids, stop_after, _, _ = validate_args(args)
             self.assertEqual(expected_ids, [0, 1, 3, 4, 5])
@@ -215,6 +221,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 best_effort=False,
                 partial_output=False,
                 marker_size_for=None,
+                object_model=None,
             )
             with self.assertRaises(RuntimeError) as ctx:
                 validate_args(args)
@@ -245,6 +252,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 anchor_stop_after_expansion=False,
                 best_effort=False,
                 partial_output=False,
+                object_model=None,
             )
             expected_ids, marker_sizes_m, _, _, _, _, _ = validate_args(args)
             self.assertEqual(expected_ids, [0, 1, 4, 10, 11])
@@ -277,6 +285,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 anchor_stop_after_expansion=False,
                 best_effort=False,
                 partial_output=False,
+                object_model=None,
             )
             _, marker_sizes_m, _, _, _, _, _ = validate_args(args)
             self.assertEqual(marker_sizes_m[4], 0.03)
@@ -307,6 +316,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 best_effort=False,
                 partial_output=False,
                 marker_size_for=None,
+                object_model=None,
             )
             with self.assertRaises(RuntimeError) as ctx:
                 validate_args(args)
@@ -337,6 +347,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 best_effort=True,
                 partial_output=False,
                 marker_size_for=None,
+                object_model=None,
             )
             with self.assertRaises(RuntimeError) as ctx:
                 validate_args(args)
@@ -401,10 +412,247 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                         best_effort=False,
                         partial_output=False,
                         marker_size_for=None,
+                        object_model=None,
                     )
                     with self.assertRaises(RuntimeError) as ctx:
                         validate_args(args)
                     self.assertIn("--sample-rate-hz", str(ctx.exception))
+
+
+def _write_object_model(path: Path, *, keypoint_sources: dict | None) -> None:
+    payload = {
+        "units": "meters",
+        "coordinate_frame": "marker_model",
+        "keypoints": {
+            "top": [0.0, 0.0, 0.0],
+            "bottom": [0.0, 0.1, 0.0],
+        },
+        "skeleton": [["top", "bottom"]],
+    }
+    if keypoint_sources is not None:
+        payload["keypoint_sources"] = keypoint_sources
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def _synthetic_marker_layout():
+    from object_apriltag.layout import build_marker_layout, footprint_from_dict
+
+    marker_size = 0.04
+    half = marker_size / 2.0
+    square = {
+        "top_left": [-half, -half, 0.0],
+        "top_right": [half, -half, 0.0],
+        "bottom_right": [half, half, 0.0],
+        "bottom_left": [-half, half, 0.0],
+    }
+    footprints = {
+        0: footprint_from_dict(0, square),
+        1: footprint_from_dict(
+            1,
+            {
+                "top_left": [0.06, -half, 0.0],
+                "top_right": [0.06 + marker_size, -half, 0.0],
+                "bottom_right": [0.06 + marker_size, half, 0.0],
+                "bottom_left": [0.06, half, 0.0],
+            },
+        ),
+    }
+    return build_marker_layout(0, marker_size, footprints)
+
+
+class CalibrateMarkerModelObjectModelValidationTests(unittest.TestCase):
+    def _validation_args(self, tmp_dir: str, object_model: Path | None) -> mock.Mock:
+        calibration = Path(tmp_dir) / "intrinsics.json"
+        _write_intrinsics(calibration)
+        return mock.Mock(
+            calibration=calibration,
+            output=Path(tmp_dir) / "out.json",
+            force=True,
+            marker_ids=["0", "1"],
+            reference_marker_id=0,
+            marker_size=0.07,
+            sample_rate_hz=2.0,
+            auto=False,
+            min_pair_inliers=20,
+            reprojection_rms_gate_px=2.0,
+            pair_translation_rms_gate_ratio=0.10,
+            pair_rotation_rms_gate_deg=5.0,
+            diagnostics_output=None,
+            anchor_marker_ids=None,
+            anchor_stop_after_expansion=False,
+            best_effort=False,
+            partial_output=False,
+            marker_size_for=None,
+            object_model=object_model,
+        )
+
+    def test_validate_args_rejects_missing_object_model_file(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import validate_args
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            missing = Path(tmp_dir) / "missing_object_model.json"
+            with self.assertRaises(RuntimeError) as ctx:
+                validate_args(self._validation_args(tmp_dir, missing))
+            self.assertIn("Object model file not found", str(ctx.exception))
+
+    def test_validate_args_rejects_empty_keypoint_sources(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import validate_args
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            object_model = Path(tmp_dir) / "object_model.json"
+            _write_object_model(object_model, keypoint_sources={})
+            with self.assertRaises(RuntimeError) as ctx:
+                validate_args(self._validation_args(tmp_dir, object_model))
+            self.assertIn("keypoint_sources", str(ctx.exception))
+
+    def test_validate_args_rejects_invalid_corner_in_keypoint_sources(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import validate_args
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            object_model = Path(tmp_dir) / "object_model.json"
+            _write_object_model(
+                object_model,
+                keypoint_sources={"top": {"marker_id": 1, "corner": "center"}},
+            )
+            with self.assertRaises(RuntimeError) as ctx:
+                validate_args(self._validation_args(tmp_dir, object_model))
+            self.assertIn("corner", str(ctx.exception))
+
+    def test_validate_args_rejects_source_marker_outside_marker_ids(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import validate_args
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            object_model = Path(tmp_dir) / "object_model.json"
+            _write_object_model(
+                object_model,
+                keypoint_sources={"top": {"marker_id": 9, "corner": "top_left"}},
+            )
+            with self.assertRaises(RuntimeError) as ctx:
+                validate_args(self._validation_args(tmp_dir, object_model))
+            self.assertIn("must appear in --marker-ids", str(ctx.exception))
+            self.assertIn("9", str(ctx.exception))
+
+
+class CalibrateMarkerModelObjectModelCaptureTests(unittest.TestCase):
+    def test_solve_success_updates_object_model_keypoints(self) -> None:
+        layout = _synthetic_marker_layout()
+        accepted = mock.Mock(
+            layout=layout,
+            failure_reason=None,
+            outcome="accepted",
+            quality=_quality_report_mock(),
+        )
+        visible = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 2
+        monotonic = [0.0, 0.0, 0.6]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            object_model = Path(tmp_dir) / "object_model.json"
+            _write_object_model(
+                object_model,
+                keypoint_sources={
+                    "top": {"marker_id": 1, "corner": "top_left"},
+                    "bottom": {"marker_id": "01", "corner": "bottom_right"},
+                },
+            )
+            original = json.loads(object_model.read_text(encoding="utf-8"))
+            capture_tests = CalibrateMarkerModelCaptureTests()
+            with mock.patch("builtins.print"):
+                _, _, save_mock, _, _, saved = capture_tests._run_capture(
+                    wait_keys=[ord("S")],
+                    monotonic_values=monotonic,
+                    visible_by_frame=visible,
+                    calibrate_result=accepted,
+                    object_model=object_model,
+                )
+            self.assertTrue(saved)
+            save_mock.assert_called_once()
+            updated = json.loads(object_model.read_text(encoding="utf-8"))
+            np.testing.assert_allclose(
+                updated["keypoints"]["top"],
+                layout.footprints[1].top_left.tolist(),
+                atol=1e-12,
+            )
+            np.testing.assert_allclose(
+                updated["keypoints"]["bottom"],
+                layout.footprints[1].bottom_right.tolist(),
+                atol=1e-12,
+            )
+            self.assertEqual(updated["keypoint_sources"], original["keypoint_sources"])
+            self.assertEqual(updated["skeleton"], original["skeleton"])
+
+    def test_solve_refusal_leaves_object_model_unchanged(self) -> None:
+        refused = mock.Mock(
+            layout=None,
+            failure_reason="refused",
+            quality=_quality_report_mock(
+                frame_count=20,
+                inlier_corner_count=0,
+                reprojection_rms_px=5.0,
+                connected_marker_ids={0},
+                missing_expected_ids={1},
+            ),
+        )
+        visible = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 2
+        monotonic = [0.0, 0.0, 0.6, 0.6, 1.2, 1.2]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            object_model = Path(tmp_dir) / "object_model.json"
+            _write_object_model(
+                object_model,
+                keypoint_sources={"top": {"marker_id": 1, "corner": "top_left"}},
+            )
+            original_text = object_model.read_text(encoding="utf-8")
+            capture_tests = CalibrateMarkerModelCaptureTests()
+            with mock.patch("builtins.print"):
+                _, _, save_mock, _, _, saved = capture_tests._run_capture(
+                    wait_keys=[ord("s"), ord("q")],
+                    monotonic_values=monotonic,
+                    visible_by_frame=visible,
+                    calibrate_result=refused,
+                    object_model=object_model,
+                )
+            self.assertFalse(saved)
+            save_mock.assert_not_called()
+            self.assertEqual(object_model.read_text(encoding="utf-8"), original_text)
+
+    def test_solve_success_with_missing_source_marker_reports_failure(self) -> None:
+        from object_apriltag.layout import build_marker_layout
+
+        full_layout = _synthetic_marker_layout()
+        layout = build_marker_layout(
+            0,
+            full_layout.marker_size_m,
+            {0: full_layout.footprints[0]},
+        )
+        accepted = mock.Mock(
+            layout=layout,
+            failure_reason=None,
+            outcome="accepted",
+            quality=_quality_report_mock(),
+        )
+        visible = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 2
+        monotonic = [0.0, 0.0, 0.6]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            object_model = Path(tmp_dir) / "object_model.json"
+            _write_object_model(
+                object_model,
+                keypoint_sources={"top": {"marker_id": 1, "corner": "top_left"}},
+            )
+            original_text = object_model.read_text(encoding="utf-8")
+            capture_tests = CalibrateMarkerModelCaptureTests()
+            with self.assertRaises(RuntimeError) as ctx:
+                capture_tests._run_capture(
+                    wait_keys=[ord("S")],
+                    monotonic_values=monotonic,
+                    visible_by_frame=visible,
+                    calibrate_result=accepted,
+                    object_model=object_model,
+                )
+            self.assertEqual(object_model.read_text(encoding="utf-8"), original_text)
+            self.assertIn("Marker model saved", str(ctx.exception))
+            self.assertIn("object model update failed", str(ctx.exception))
+            self.assertIn("marker 1", str(ctx.exception))
 
 
 class CalibrateMarkerModelCaptureTests(unittest.TestCase):
@@ -420,6 +668,7 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
         diagnostics_output: Path | None = None,
         auto: bool = False,
         sample_rate_hz: float = 10.0,
+        object_model: Path | None = None,
     ) -> tuple[list, Path, mock.Mock, mock.MagicMock, mock.Mock, bool]:
         from object_apriltag.cli.calibrate_marker_model import run_capture
 
@@ -452,6 +701,7 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
                 best_effort=False,
                 partial_output=False,
                 marker_size_for=None,
+                object_model=object_model,
             )
 
             frame = np.zeros((height, width, 3), dtype=np.uint8)
