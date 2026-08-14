@@ -82,7 +82,7 @@ def _draw_marker_layout_footprints_2d(ax, layout: MarkerLayout, horiz_index: int
             marker_style = {"tl": "o", "tr": "^", "br": "s", "bl": "D"}[label]
             ax.scatter(
                 point[horiz_index], point[vert_index], s=70, c=color, marker=marker_style,
-                edgecolors="black", linewidths=0.6, zorder=5,
+                edgecolors="white", linewidths=0.6, zorder=5,
             )
             ax.text(point[horiz_index], point[vert_index], f" {marker_id}:{label}", fontsize=7, color=color)
 
@@ -97,28 +97,29 @@ def render_marker_model_plot(
     from matplotlib.figure import Figure
 
     axis_limits = layout_axis_limits(marker_model)
-    fig = Figure(figsize=figsize, dpi=dpi)
-    FigureCanvasAgg(fig)
-    ax_xy = fig.add_subplot(1, 2, 1)
-    ax_yz = fig.add_subplot(1, 2, 2)
+    with plt.style.context("dark_background"):
+        fig = Figure(figsize=figsize, dpi=dpi)
+        FigureCanvasAgg(fig)
+        ax_xy = fig.add_subplot(1, 2, 1)
+        ax_yz = fig.add_subplot(1, 2, 2)
 
-    _draw_marker_layout_footprints_2d(ax_xy, marker_model, horiz_index=0, vert_index=1)
-    set_xy_axis_limits(ax_xy, axis_limits)
-    ax_xy.set_title("X-Y (object frame)")
-    ax_xy.set_aspect("equal", adjustable="box")
+        _draw_marker_layout_footprints_2d(ax_xy, marker_model, horiz_index=0, vert_index=1)
+        set_xy_axis_limits(ax_xy, axis_limits)
+        ax_xy.set_title("X-Y (object frame)")
+        ax_xy.set_aspect("equal", adjustable="box")
 
-    _draw_marker_layout_footprints_2d(ax_yz, marker_model, horiz_index=1, vert_index=2)
-    set_yz_axis_limits(ax_yz, axis_limits)
-    ax_yz.set_title("Y-Z (object frame)")
-    ax_yz.set_aspect("equal", adjustable="box")
+        _draw_marker_layout_footprints_2d(ax_yz, marker_model, horiz_index=1, vert_index=2)
+        set_yz_axis_limits(ax_yz, axis_limits)
+        ax_yz.set_title("Y-Z (object frame)")
+        ax_yz.set_aspect("equal", adjustable="box")
 
-    fig.suptitle("Marker model: tl/tr/br/bl corners", fontsize=10)
-    fig.tight_layout()
+        fig.suptitle("Marker model: tl/tr/br/bl corners", fontsize=10)
+        fig.tight_layout()
 
-    canvas = FigureCanvasAgg(fig)
-    canvas.draw()
-    plot = np.asarray(canvas.buffer_rgba())[..., :3]
-    plt.close(fig)
+        canvas = FigureCanvasAgg(fig)
+        canvas.draw()
+        plot = np.asarray(canvas.buffer_rgba())[..., :3]
+        plt.close(fig)
     return cv2.cvtColor(plot, cv2.COLOR_RGB2BGR)
 
 

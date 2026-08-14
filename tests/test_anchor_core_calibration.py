@@ -146,6 +146,8 @@ class AnchorCoreCalibrationTests(unittest.TestCase):
         self.assertIsNone(legacy.failure_reason)
         self.assertIsNone(anchor_all.failure_reason)
         assert legacy.layout is not None and anchor_all.layout is not None
+        self.assertEqual(legacy.layout.anchor_marker_ids, (0, 1))
+        self.assertEqual(anchor_all.layout.anchor_marker_ids, (0, 1))
         for marker_id in (0, 1):
             for corner_name in CORNER_NAMES:
                 expected = getattr(legacy.layout.footprints[marker_id], corner_name)
@@ -167,6 +169,7 @@ class AnchorCoreCalibrationTests(unittest.TestCase):
 
         self.assertIsNone(result.failure_reason)
         assert result.layout is not None
+        self.assertEqual(result.layout.anchor_marker_ids, (0, 1))
         assert result.quality is not None
         self.assertIsNotNone(result.quality.anchor_core)
         assert result.quality.anchor_core is not None

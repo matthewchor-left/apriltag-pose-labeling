@@ -42,6 +42,8 @@ def main() -> None:
     marker_model = load_marker_model(args.marker_model)
     print(f"Marker model: {args.marker_model}")
     print(f"Reference marker id: {marker_model.reference_marker_id}")
+    if marker_model.anchor_marker_ids is not None:
+        print(f"Anchor marker ids: {list(marker_model.anchor_marker_ids)}")
     print(f"Units: {marker_model.units}")
     print(f"Default marker size: {marker_model.marker_size_m:.4f} m")
 

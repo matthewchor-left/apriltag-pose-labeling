@@ -27,6 +27,7 @@ def _run_cli_help(command: str) -> str:
 class CliBoardFrameHelpTests(unittest.TestCase):
     def test_object_detect_help_lists_board_options(self) -> None:
         help_text = _run_cli_help("object-detect")
+        self.assertIn("--source", help_text)
         self.assertIn("--board-frame", help_text)
         self.assertIn("--board-model", help_text)
         self.assertIn("--camera-motion", help_text)
@@ -50,7 +51,7 @@ class CliBoardFrameContractTests(unittest.TestCase):
 
         argv = [
             "object-detect",
-            "--camera",
+            "--source",
             "0",
             "--calibration",
             str(CALIBRATION),
@@ -73,7 +74,7 @@ class CliBoardFrameContractTests(unittest.TestCase):
 
         argv = [
             "annotation-tool",
-            "--camera",
+            "--source",
             "0",
             "--calibration",
             str(CALIBRATION),

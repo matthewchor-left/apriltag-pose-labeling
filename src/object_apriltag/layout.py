@@ -16,7 +16,7 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable, Sequence
 
 import numpy as np
 
@@ -76,6 +76,7 @@ class MarkerLayout:
     marker_sizes_m: dict[int, float]
     footprints: dict[int, MarkerFootprint]
     transforms: dict[int, MarkerToObject]
+    anchor_marker_ids: tuple[int, ...] | None = None
 
     @property
     def marker_ids(self) -> set[int]:
@@ -83,6 +84,17 @@ class MarkerLayout:
 
     def marker_size_for(self, marker_id: int) -> float:
         return self.marker_sizes_m[marker_id]
+
+
+def resolve_anchor_marker_ids_for_layout(
+    anchor_marker_ids: Sequence[int] | None,
+    marker_ids: Iterable[int],
+) -> tuple[int, ...]:
+    present = set(marker_ids)
+    if anchor_marker_ids is None:
+        return tuple(sorted(present))
+    resolved = tuple(marker_id for marker_id in anchor_marker_ids if marker_id in present)
+    return resolved or tuple(sorted(present))
 
 
 def _as_point3(value: Any, field_name: str) -> np.ndarray:
@@ -240,6 +252,7 @@ def marker_layout_to_dict(layout: MarkerLayout) -> dict[str, Any]:
         "units": layout.units,
         "marker_size_m": layout.marker_size_m,
         "markers": markers,
+        **({"anchor_marker_ids": list(layout.anchor_marker_ids)}),
     }
 
 
@@ -271,6 +284,7 @@ def build_marker_layout(
     footprints: dict[int, MarkerFootprint],
     units: str = "meters",
     marker_sizes_m: dict[int, float] | None = None,
+    anchor_marker_ids: Sequence[int] | None = None,
 ) -> MarkerLayout:
     footprint_ids = set(footprints)
     if marker_sizes_m is None:
@@ -286,6 +300,7 @@ def build_marker_layout(
         resolved_sizes = dict(marker_sizes_m)
     validate_all_footprint_sizes(footprints, resolved_sizes)
     transforms = derive_marker_to_object_transforms(footprints, reference_marker_id)
+    resolved_anchors = resolve_anchor_marker_ids_for_layout(anchor_marker_ids, footprints)
     return MarkerLayout(
         reference_marker_id=reference_marker_id,
         units=units,
@@ -293,6 +308,7 @@ def build_marker_layout(
         marker_sizes_m=resolved_sizes,
         footprints=footprints,
         transforms=transforms,
+        anchor_marker_ids=resolved_anchors,
     )
 
 
@@ -355,6 +371,11 @@ def load_marker_model(path: str | Path) -> MarkerLayout:
     marker_sizes_m = resolve_marker_sizes(set(footprints), marker_size_m, size_overrides)
     validate_all_footprint_sizes(footprints, marker_sizes_m)
     transforms = derive_marker_to_object_transforms(footprints, reference_marker_id)
+    anchor_marker_ids = _parse_anchor_marker_ids_field(
+        data.get("anchor_marker_ids"),
+        footprints,
+        reference_marker_id,
+    )
     return MarkerLayout(
         reference_marker_id=reference_marker_id,
         units=units,
@@ -362,7 +383,34 @@ def load_marker_model(path: str | Path) -> MarkerLayout:
         marker_sizes_m=marker_sizes_m,
         footprints=footprints,
         transforms=transforms,
+        anchor_marker_ids=anchor_marker_ids,
     )
+
+
+def _parse_anchor_marker_ids_field(
+    raw: Any,
+    footprints: dict[int, MarkerFootprint],
+    reference_marker_id: int,
+) -> tuple[int, ...] | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not raw:
+        raise ValueError("anchor_marker_ids must be a non-empty list of marker IDs when present.")
+    try:
+        anchor_marker_ids = tuple(int(marker_id) for marker_id in raw)
+    except (TypeError, ValueError) as error:
+        raise ValueError("anchor_marker_ids must contain integer marker IDs.") from error
+    if len(set(anchor_marker_ids)) != len(anchor_marker_ids):
+        duplicates = sorted({marker_id for marker_id in anchor_marker_ids if anchor_marker_ids.count(marker_id) > 1})
+        raise ValueError(f"anchor_marker_ids contains duplicates: {duplicates}.")
+    unknown = sorted(set(anchor_marker_ids) - set(footprints))
+    if unknown:
+        raise ValueError(f"anchor_marker_ids are not subset of markers; extra {unknown}.")
+    if reference_marker_id not in anchor_marker_ids:
+        raise ValueError(
+            f"reference_marker_id {reference_marker_id} must appear in anchor_marker_ids."
+        )
+    return anchor_marker_ids
 
 
 def validate_footprint_size(

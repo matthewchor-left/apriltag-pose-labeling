@@ -13,6 +13,12 @@ import numpy as np
 
 from object_apriltag.apriltag import build_apriltag_detector
 from object_apriltag.calibration import load_intrinsics, require_calibration_image_size
+from object_apriltag.frame_source import (
+    format_frame_source,
+    open_frame_source,
+    parse_frame_source,
+    read_frame,
+)
 from object_apriltag.layout import marker_color_bgr, save_marker_model
 from object_apriltag.cli.calibration_diagnostics import (
     format_omitted_marker_lines,
@@ -70,7 +76,12 @@ def parse_args() -> argparse.Namespace:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--camera", type=int, required=True, help="Camera device index.")
+    parser.add_argument(
+        "--source",
+        type=parse_frame_source,
+        required=True,
+        help="Frame source: camera device index (e.g. 0) or path to a video file.",
+    )
     parser.add_argument(
         "--calibration",
         type=Path,
@@ -304,15 +315,6 @@ def validate_args(
         pair_rotation_rms_gate_deg=args.pair_rotation_rms_gate_deg,
     )
     return expected_ids, marker_sizes_m, settings, anchor_ids, args.anchor_stop_after_expansion, args.best_effort, args.partial_output
-
-
-def open_camera(camera_index: int, width: int, height: int) -> cv2.VideoCapture:
-    capture = cv2.VideoCapture(camera_index)
-    if not capture.isOpened():
-        raise RuntimeError(f"Cannot open camera {camera_index}.")
-    capture.set(cv2.CAP_PROP_FRAME_WIDTH, float(width))
-    capture.set(cv2.CAP_PROP_FRAME_HEIGHT, float(height))
-    return capture
 
 
 def require_frame_size(
@@ -627,7 +629,8 @@ def run_capture(args: argparse.Namespace) -> bool:
     if calibration_source:
         print(f"Calibration source: {calibration_source}")
 
-    capture = open_camera(args.camera, width, height)
+    capture = open_frame_source(args.source, width=width, height=height)
+    source_label = format_frame_source(args.source)
     readiness_worker = LivePairReadinessWorker(
         compute_fn=compute_live_pair_readiness,
         camera_matrix=camera_matrix,
@@ -637,7 +640,10 @@ def run_capture(args: argparse.Namespace) -> bool:
         settings=settings,
     )
     try:
-        print(f"Camera {args.camera}: target {width}x{height}")
+        if isinstance(args.source, int):
+            print(f"{source_label}: target {width}x{height}")
+        else:
+            print(source_label)
         print("Press C to capture, S to solve, Q to quit.")
 
         observations: list[FrameObservation] = []
@@ -647,9 +653,9 @@ def run_capture(args: argparse.Namespace) -> bool:
         last_solve_quality: CalibrationQualityReport | None = None
 
         while True:
-            ok, frame = capture.read()
-            if not ok:
-                raise RuntimeError(f"Failed to read a frame from camera {args.camera}.")
+            ok, frame = read_frame(capture, args.source)
+            if not ok or frame is None:
+                raise RuntimeError(f"Failed to read a frame from {source_label}.")
             require_frame_size(frame.shape[1], frame.shape[0], width, height, args.calibration)
 
             visible = detect_expected_markers(detector, frame, expected_id_set)

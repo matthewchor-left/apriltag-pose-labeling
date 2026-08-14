@@ -13,6 +13,12 @@ from object_apriltag.board_pose import make_charuco_detector, select_board_pose,
 from object_apriltag.calibration import load_intrinsics, require_calibration_image_size
 from object_apriltag.detector import ObjectDetector, ObjectPose
 from object_apriltag.eraser import EraserModel, load_eraser_model, project_eraser_planes
+from object_apriltag.frame_source import (
+    format_frame_source,
+    open_frame_source,
+    parse_frame_source,
+    read_frame,
+)
 from object_apriltag.layout import MarkerModel
 from object_apriltag.viz.board_frame import render_board_frame_grid_axes
 from object_apriltag.viz.overlay import draw_object_model_board_coordinate_labels, draw_object_pose
@@ -51,15 +57,6 @@ def erase_with_planes(
         return frame.copy()
     mask = build_eraser_mask(frame.shape[:2], polygons)
     return erase_with_mask(frame, plate, mask)
-
-
-def open_camera(camera_index: int, width: int, height: int) -> cv2.VideoCapture:
-    capture = cv2.VideoCapture(camera_index)
-    if not capture.isOpened():
-        raise RuntimeError(f"Cannot open camera {camera_index}.")
-    capture.set(cv2.CAP_PROP_FRAME_WIDTH, float(width))
-    capture.set(cv2.CAP_PROP_FRAME_HEIGHT, float(height))
-    return capture
 
 
 def draw_status_hud(frame: np.ndarray, *, plate_captured: bool, plane_count: int) -> None:
@@ -128,7 +125,12 @@ def main() -> None:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--camera", type=int, required=True, help="Camera device index (0 = first camera).")
+    parser.add_argument(
+        "--source",
+        type=parse_frame_source,
+        required=True,
+        help="Frame source: camera device index (e.g. 0) or path to a video file.",
+    )
     parser.add_argument(
         "--calibration",
         type=Path,
@@ -239,16 +241,20 @@ def main() -> None:
     if calibration_source:
         print(f"Calibration source: {calibration_source}")
 
-    cap = open_camera(args.camera, width, height)
-    print(f"Camera {args.camera}: {width}x{height}")
+    cap = open_frame_source(args.source, width=width, height=height)
+    source_label = format_frame_source(args.source)
+    if isinstance(args.source, int):
+        print(f"{source_label}: target {width}x{height}")
+    else:
+        print(source_label)
     print("Press C to capture the background plate, q to quit.")
 
     background_plate: np.ndarray | None = None
 
     while True:
-        ok, frame = cap.read()
-        if not ok:
-            raise RuntimeError(f"Failed to read a frame from camera {args.camera}.")
+        ok, frame = read_frame(cap, args.source)
+        if not ok or frame is None:
+            raise RuntimeError(f"Failed to read a frame from {source_label}.")
 
         detections = detector.find_markers(frame)
         preview = frame.copy()

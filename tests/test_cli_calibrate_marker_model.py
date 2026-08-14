@@ -73,6 +73,7 @@ def _quality_report_mock(**overrides: object) -> mock.Mock:
 class CliHelpTests(unittest.TestCase):
     def test_calibrate_marker_model_help_lists_controls_and_sampling(self) -> None:
         help_text = _run_cli_help("object-calibrate-marker-model")
+        self.assertIn("--source", help_text)
         self.assertIn("--marker-ids", help_text)
         self.assertIn("--marker-size-for", help_text)
         self.assertIn("--anchor-marker-ids", help_text)
@@ -1086,7 +1087,7 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
             _write_intrinsics(calibration, width=640, height=480)
             argv = [
                 "object-calibrate-marker-model",
-                "--camera",
+                "--source",
                 "0",
                 "--calibration",
                 str(calibration),

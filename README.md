@@ -22,7 +22,7 @@ uv sync
 
 ```bash
 uv run object-charuco \
-  --camera 0 \
+  --source 0 \
   --layout 7 10 \
   --marker-size 0.018 \
   --output config/Camera/nexplaygroundcam/intrinsics.json
@@ -33,7 +33,7 @@ ChArUco is the default board type (`--board-type charuco_board`). For a plain ch
 ```bash
 uv run object-charuco \
   --board-type checkerboard \
-  --camera 0 \
+  --source 0 \
   --layout 6 9 \
   --output config/Camera/nexplaygroundcam/intrinsics.json
 ```
@@ -87,7 +87,7 @@ Live camera:
 uv run object-visualize-board-frame \
   --calibration config/Camera/webcam/intrinsics.json \
   --board-model config/Board/charuco_h6_w9_25mm_4x4_50/board_model.json \
-  --camera 0 \
+  --source 0 \
   --output path/to/saved_frame.png
 ```
 
@@ -99,7 +99,7 @@ uv run object-visualize-board-frame \
 
 ```bash
 uv run object-detect \
-  --camera 0 \
+  --source 0 \
   --calibration config/Camera/nexplaygroundcam/intrinsics.json \
   --marker-model config/Model/object_01/marker_model.json \
   --dictionary 36h11 \
@@ -114,7 +114,7 @@ Both `object-detect` and `annotation-tool` can track a printed ChArUco board and
 
 ```bash
 uv run object-detect \
-  --camera 0 \
+  --source 0 \
   --calibration config/Camera/nexplaygroundcam/intrinsics.json \
   --marker-model config/Model/remote1/marker_model.json \
   --dictionary 36h11 \
@@ -128,7 +128,7 @@ uv run object-detect \
 
 ```bash
 uv run annotation-tool \
-  --camera 0 \
+  --source 0 \
   --calibration config/Camera/nexplaygroundcam/intrinsics.json \
   --marker-model config/Model/remote1/marker_model.json \
   --eraser-model config/Model/remote1/eraser_model.json \
@@ -208,7 +208,7 @@ If the object is viewed from the back or from the side, the mapping between mode
 
 `ObjectDetector` estimates one **camera-frame** `origin` and `rotation` from all visible marker-model corners with a layout-wide RANSAC PnP solve. This rejects inconsistent corner detections instead of averaging independent marker poses. When only one marker is usable, both IPPE candidates are considered and the candidate closest to the preceding pose is selected; without history, the lower-reprojection candidate is used.
 
-Marker model JSON uses top-level `marker_size_m` as the default physical edge length (meters). Each `markers.<id>` entry may optionally include `size_m` when that sticker differs from the default; omitted `size_m` means the default. Calibration writes `size_m` only for non-default markers. Footprint validation checks each marker against its resolved size.
+Marker model JSON uses top-level `marker_size_m` as the default physical edge length (meters). Each `markers.<id>` entry may optionally include `size_m` when that sticker differs from the default; omitted `size_m` means the default. Calibration writes `size_m` only for non-default markers. Saved models record `anchor_marker_ids`: every marker in the layout when `--anchor-marker-ids` is omitted, or the explicit bootstrap core when it is provided. Footprint validation checks each marker against its resolved size.
 
 ## Marker model calibration (live)
 
@@ -216,7 +216,7 @@ Marker model JSON uses top-level `marker_size_m` as the default physical edge le
 
 ```bash
 uv run object-calibrate-marker-model \
-  --camera 0 \
+  --source 0 \
   --calibration config/Camera/nexplaygroundcam/intrinsics.json \
   --dictionary 36h11 \
   --detection-sensitivity relaxed \
@@ -266,7 +266,7 @@ The `viz` extra adds overlays, skeleton keypoints, and matplotlib plots:
 ```bash
 uv sync --extra viz
 uv run object-detect \
-  --camera 0 \
+  --source 0 \
   --calibration config/Camera/nexplaygroundcam/intrinsics.json \
   --marker-model config/Model/object_01/marker_model.json \
   --dictionary 36h11 \
@@ -307,6 +307,8 @@ pyproject.toml         # project metadata and dependencies
 uv.lock                # locked dependency versions (commit this)
 ```
 
+Live camera and video file CLIs use `--source`: pass a camera device index (e.g. `0`) or a path to a video file. Video files loop on end-of-file in interactive tools.
+
 ## Common options
 
 | Command | Flag | Description |
@@ -315,11 +317,11 @@ uv.lock                # locked dependency versions (commit this)
 | `object-charuco` | `--board-type` | `charuco_board` or `checkerboard` |
 | `object-charuco` | `--layout` | Board height × width (rows × columns) |
 | `object-charuco` | `--marker-size` | ArUco marker size in meters (ChArUco only) |
-| `object-charuco` | `--camera` | Camera device index |
+| `object-charuco` | `--source` | Camera device index (e.g. `0`) or path to a video file |
 | `object-charuco` | `--output` | Intrinsics JSON path |
 | `object-visualize-board-frame` | `--calibration` | Path to camera intrinsics JSON |
 | `object-visualize-board-frame` | `--board-model` | ChArUco board model JSON path |
-| `object-visualize-board-frame` | `--camera` / `--image` | Live camera index or still image |
+| `object-visualize-board-frame` | `--source` / `--image` | Live camera index, video file, or still image |
 | `object-visualize-board-frame` | `--grid-margin` | Grid extension in square counts (default 2) |
 | `object-detect` | `--calibration` | Path to camera intrinsics JSON |
 | `object-detect` | `--marker-model` | Marker model JSON path |
@@ -328,7 +330,8 @@ uv.lock                # locked dependency versions (commit this)
 | `object-detect` / `annotation-tool` | `--board-frame` | Board Reference Frame grid, axes, and coordinate labels |
 | `object-detect` / `annotation-tool` | `--board-model` | ChArUco board model JSON (required with `--board-frame`) |
 | `object-detect` / `annotation-tool` | `--camera-motion` | `static` (default) or `dynamic` board pose retention |
-| `object-calibrate-marker-model` | `--camera` / `--calibration` | Live camera index and intrinsics JSON |
+| `object-detect` / `annotation-tool` / `object-calibrate-marker-model` | `--source` | Camera device index (e.g. `0`) or path to a video file |
+| `object-calibrate-marker-model` | `--calibration` | Camera intrinsics JSON |
 | `object-calibrate-marker-model` | `--marker-ids` / `--reference-marker-id` | Expected unique IDs and layout reference |
 | `object-calibrate-marker-model` | `--anchor-marker-ids` | Optional bootstrap core for large layouts |
 | `object-calibrate-marker-model` | `--anchor-stop-after-expansion` | Debug: write expansion-only layout (no BA/gates) |

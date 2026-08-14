@@ -1240,6 +1240,7 @@ def calibrate_marker_layout(
                 marker_size_m=marker_size_m,
                 footprints=footprints,
                 marker_sizes_m=dict(marker_sizes_m),
+                anchor_marker_ids=anchor_ids,
             )
             quality = _quality_from_pairs(
                 pair_consensus,
@@ -1408,6 +1409,7 @@ def calibrate_marker_layout(
             anchor_core_diagnostics=anchor_core_diagnostics,
             frame_candidates=frame_candidates,
             assigned_candidates=assigned_candidates,
+            anchor_marker_ids=anchor_ids,
         )
         dropped_edges.extend(pruning_drops)
         if refinement_result is not None:
@@ -1467,6 +1469,7 @@ def calibrate_marker_layout(
             missing_ids,
             gate_failure=gate_failure,
             best_effort=best_effort,
+            anchor_marker_ids=anchor_ids,
         )
         if finalized is not None:
             return finalized
@@ -1479,6 +1482,7 @@ def calibrate_marker_layout(
             marker_size_m=marker_size_m,
             footprints=emitted_footprints,
             marker_sizes_m=emitted_sizes,
+            anchor_marker_ids=anchor_ids,
         )
         return _maybe_wrap_partial_success(
             _accepted_calibration_result(layout, quality, best_effort=best_effort),
@@ -1701,6 +1705,7 @@ def calibrate_marker_layout(
         anchor_core_diagnostics=None,
         frame_candidates=None,
         assigned_candidates=None,
+        anchor_marker_ids=anchor_ids,
     )
     dropped_edges.extend(pruning_drops)
     if refinement_result is not None:
@@ -1761,6 +1766,7 @@ def calibrate_marker_layout(
         missing_ids,
         gate_failure=gate_failure,
         best_effort=best_effort,
+        anchor_marker_ids=anchor_ids,
     )
     if finalized is not None:
         return finalized
@@ -1771,6 +1777,7 @@ def calibrate_marker_layout(
         marker_size_m=marker_size_m,
         footprints=emitted_footprints,
         marker_sizes_m=emitted_sizes,
+        anchor_marker_ids=anchor_ids,
     )
     return _maybe_wrap_partial_success(
         _accepted_calibration_result(layout, quality, best_effort=best_effort),
@@ -1948,6 +1955,7 @@ def _provisional_result_from_checkpoint(
     dropped_pair_edges: tuple[DroppedPairEdge, ...],
     restored_pair_edges: tuple[RestoredPairEdge, ...] | None,
     anchor_core: AnchorCoreDiagnostics | None,
+    anchor_marker_ids: Sequence[int] | None = None,
 ) -> CalibrationResult:
     marker_poses = checkpoint.marker_poses
     frame_poses = checkpoint.frame_poses
@@ -1990,6 +1998,7 @@ def _provisional_result_from_checkpoint(
         marker_size_m=marker_size_m,
         footprints=_footprints_from_poses(marker_poses, marker_sizes_m),
         marker_sizes_m=dict(marker_sizes_m),
+        anchor_marker_ids=anchor_marker_ids,
     )
     return CalibrationResult(
         layout,
@@ -2025,6 +2034,7 @@ def _maybe_recover_from_checkpoints(
     dropped_pair_edges: tuple[DroppedPairEdge, ...],
     restored_pair_edges: tuple[RestoredPairEdge, ...] | None,
     anchor_core: AnchorCoreDiagnostics | None,
+    anchor_marker_ids: Sequence[int] | None = None,
 ) -> CalibrationResult | None:
     if not best_effort:
         return None
@@ -2057,6 +2067,7 @@ def _maybe_recover_from_checkpoints(
         dropped_pair_edges=dropped_pair_edges,
         restored_pair_edges=restored_pair_edges,
         anchor_core=anchor_core,
+        anchor_marker_ids=anchor_marker_ids,
     )
 
 
@@ -2123,6 +2134,7 @@ def _refine_layout_with_checkpoints(
     anchor_core_diagnostics: AnchorCoreDiagnostics | None,
     frame_candidates: list[tuple[int, dict[int, list[_MarkerCandidate]]]] | None,
     assigned_candidates: dict[int, dict[int, _MarkerCandidate]] | None,
+    anchor_marker_ids: Sequence[int] | None = None,
 ) -> tuple[
     dict[int, tuple[np.ndarray, np.ndarray]],
     list[tuple[np.ndarray, np.ndarray] | None],
@@ -2181,6 +2193,7 @@ def _refine_layout_with_checkpoints(
             dropped_pair_edges=tuple(dropped_edges),
             restored_pair_edges=restored_edges,
             anchor_core=anchor_core_diagnostics,
+            anchor_marker_ids=anchor_marker_ids,
         )
         if recovered is not None:
             return marker_poses, frame_poses, inlier_mask, pair_consensus, (), recovered
@@ -2276,6 +2289,7 @@ def _refine_layout_with_checkpoints(
             dropped_pair_edges=tuple(dropped_edges),
             restored_pair_edges=restored_edges,
             anchor_core=anchor_core_diagnostics,
+            anchor_marker_ids=anchor_marker_ids,
         )
         if recovered is not None:
             return marker_poses, frame_poses, inlier_mask, pair_consensus, (), recovered
@@ -2348,6 +2362,7 @@ def _finalize_solved_calibration(
     *,
     gate_failure: str | None,
     best_effort: bool,
+    anchor_marker_ids: Sequence[int] | None = None,
 ) -> CalibrationResult | None:
     policy: Literal["strict", "best_effort"] = "best_effort" if best_effort else "strict"
     gate_failures = _collect_quality_gate_failures(
@@ -2380,6 +2395,7 @@ def _finalize_solved_calibration(
                 marker_size_m=marker_size_m,
                 footprints=footprints,
                 marker_sizes_m=dict(marker_sizes_m),
+                anchor_marker_ids=anchor_marker_ids,
             )
             return CalibrationResult(
                 layout,

@@ -22,6 +22,7 @@ from object_apriltag.board_pose import (
     charuco_draw_arrays,
     parse_charuco_detection,
 )
+from object_apriltag.frame_source import format_frame_source, open_frame_source, parse_frame_source, read_frame
 
 
 METERS_PER_INCH = 0.0254
@@ -72,7 +73,11 @@ def parse_args() -> argparse.Namespace:
         metavar=("HEIGHT", "WIDTH"),
         help="Board layout as height × width (rows × columns).",
     )
-    parser.add_argument("--camera", type=int, help="Camera device index.")
+    parser.add_argument(
+        "--source",
+        type=parse_frame_source,
+        help="Frame source: camera device index (e.g. 0) or path to a video file.",
+    )
     parser.add_argument(
         "--output",
         type=Path,
@@ -338,8 +343,8 @@ def main() -> None:
         board_type = args.board_type
 
     if args.save_board is None:
-        if args.camera is None:
-            raise RuntimeError("--camera is required for live calibration.")
+        if args.source is None:
+            raise RuntimeError("--source is required for live calibration.")
         if args.output is None:
             raise RuntimeError("--output is required for live calibration.")
 
@@ -368,9 +373,8 @@ def main() -> None:
             )
             return
 
-    capture = cv2.VideoCapture(args.camera)
-    if not capture.isOpened():
-        raise RuntimeError(f"Cannot open camera {args.camera}.")
+    capture = open_frame_source(args.source)
+    source_label = format_frame_source(args.source)
 
     print(f"Board type: {board_type}")
     print(f"Layout: {layout_height} rows × {layout_width} columns")
@@ -378,7 +382,7 @@ def main() -> None:
     if board_type == "charuco_board":
         print(f"Marker size: {marker_size:.4f} m")
         print(f"Dictionary: {dictionary}")
-    print(f"Camera {args.camera}")
+    print(source_label)
     print("Space = capture frame, q = calibrate and save")
 
     object_points_list: list[np.ndarray] = []
@@ -387,9 +391,9 @@ def main() -> None:
     image_height = 0
 
     while True:
-        ok, frame = capture.read()
-        if not ok:
-            raise RuntimeError(f"Failed to read a frame from camera {args.camera}.")
+        ok, frame = read_frame(capture, args.source)
+        if not ok or frame is None:
+            raise RuntimeError(f"Failed to read a frame from {source_label}.")
 
         image_height, image_width = frame.shape[:2]
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)

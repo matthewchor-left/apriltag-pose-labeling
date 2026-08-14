@@ -22,8 +22,10 @@ from object_apriltag.layout import (
     layout_point_to_camera,
     layout_point_to_object_frame,
     load_marker_model,
+    build_marker_layout,
     marker_color,
     marker_color_bgr,
+    marker_layout_to_dict,
     marker_origin_on_object,
     object_reference_origin,
     rectangle_center,
@@ -222,6 +224,48 @@ class MarkerOriginsIntegrationTests(unittest.TestCase):
             layout = load_marker_model(path)
             self.assertEqual(layout.marker_ids, {0, 1})
             self.assertIn(1, layout.transforms)
+
+    def test_build_marker_layout_defaults_anchors_to_all_markers(self) -> None:
+        footprints = {
+            0: footprint_from_dict(0, _square_payload(0.02)),
+            1: footprint_from_dict(
+                1,
+                {
+                    "top_left": [-0.02, 0.06, 0.0],
+                    "top_right": [0.02, 0.06, 0.0],
+                    "bottom_right": [0.02, 0.1, 0.0],
+                    "bottom_left": [-0.02, 0.1, 0.0],
+                },
+            ),
+        }
+        layout = build_marker_layout(0, 0.04, footprints)
+        self.assertEqual(layout.anchor_marker_ids, (0, 1))
+        payload = marker_layout_to_dict(layout)
+        self.assertEqual(payload["anchor_marker_ids"], [0, 1])
+
+    def test_anchor_marker_ids_round_trip(self) -> None:
+        payload = {
+            "reference_marker_id": 0,
+            "units": "meters",
+            "marker_size_m": 0.04,
+            "anchor_marker_ids": [0, 1],
+            "markers": {
+                "0": _square_payload(0.02),
+                "1": {
+                    "top_left": [-0.02, 0.06, 0.0],
+                    "top_right": [0.02, 0.06, 0.0],
+                    "bottom_right": [0.02, 0.1, 0.0],
+                    "bottom_left": [-0.02, 0.1, 0.0],
+                },
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "layout.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            layout = load_marker_model(path)
+            self.assertEqual(layout.anchor_marker_ids, (0, 1))
+            round_trip = marker_layout_to_dict(layout)
+            self.assertEqual(round_trip["anchor_marker_ids"], [0, 1])
 
 
 class MarkerLayoutColorTests(unittest.TestCase):

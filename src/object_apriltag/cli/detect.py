@@ -11,6 +11,12 @@ from object_apriltag.board_model import load_board_model
 from object_apriltag.board_pose import make_charuco_detector, select_board_pose, solve_board_pose
 from object_apriltag.calibration import load_intrinsics, require_calibration_image_size
 from object_apriltag.detector import ObjectDetector
+from object_apriltag.frame_source import (
+    format_frame_source,
+    open_frame_source,
+    parse_frame_source,
+    read_frame,
+)
 from object_apriltag.object_model_edit import ObjectModelEditSession, object_model_for_render
 from object_apriltag.eraser import load_eraser_model, project_eraser_planes
 from object_apriltag.pose import layout_reprojection_errors, reference_marker_camera_position
@@ -36,15 +42,6 @@ from object_apriltag.viz.overlay import (
     draw_object_model_board_coordinate_labels,
     draw_object_model_edit_hud,
 )
-
-
-def open_camera(camera_index: int, width: int, height: int) -> cv2.VideoCapture:
-    capture = cv2.VideoCapture(camera_index)
-    if not capture.isOpened():
-        raise RuntimeError(f"Cannot open camera {camera_index}.")
-    capture.set(cv2.CAP_PROP_FRAME_WIDTH, float(width))
-    capture.set(cv2.CAP_PROP_FRAME_HEIGHT, float(height))
-    return capture
 
 
 def main() -> None:
@@ -76,7 +73,12 @@ def main() -> None:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--camera", type=int, required=True, help="Camera device index (0 = first camera).")
+    parser.add_argument(
+        "--source",
+        type=parse_frame_source,
+        required=True,
+        help="Frame source: camera device index (e.g. 0) or path to a video file.",
+    )
     parser.add_argument(
         "--calibration",
         type=Path,
@@ -282,8 +284,12 @@ def main() -> None:
     if calibration_source:
         print(f"Calibration source: {calibration_source}")
 
-    cap = open_camera(args.camera, width, height)
-    print(f"Camera {args.camera}: {width}x{height}")
+    cap = open_frame_source(args.source, width=width, height=height)
+    source_label = format_frame_source(args.source)
+    if isinstance(args.source, int):
+        print(f"{source_label}: target {width}x{height}")
+    else:
+        print(source_label)
     if edit_enabled:
         print(f"Object model editing enabled: {args.object_model}")
         print("Keys: e edit, s save, q quit (when saved), x discard+quit.")
@@ -294,9 +300,9 @@ def main() -> None:
     plot_figsize = (args.plot_width / 50.0, args.plot_width / 100.0)
 
     while True:
-        ok, frame = cap.read()
-        if not ok:
-            raise RuntimeError(f"Failed to read a frame from camera {args.camera}.")
+        ok, frame = read_frame(cap, args.source)
+        if not ok or frame is None:
+            raise RuntimeError(f"Failed to read a frame from {source_label}.")
 
         detections = detector.find_markers(frame)
         pose = detector.fuse(detections)

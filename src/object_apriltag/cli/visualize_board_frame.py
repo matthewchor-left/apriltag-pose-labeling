@@ -15,6 +15,7 @@ from object_apriltag.board_pose import (
     make_charuco_detector,
 )
 from object_apriltag.calibration import load_intrinsics, require_calibration_image_size
+from object_apriltag.frame_source import format_frame_source, open_frame_source, parse_frame_source, read_frame
 from object_apriltag.viz.board_frame import render_board_frame_overlay
 
 
@@ -28,7 +29,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--calibration", type=Path, required=True, help="Camera intrinsics JSON path.")
     parser.add_argument("--board-model", type=Path, required=True, help="ChArUco board model JSON path.")
     source = parser.add_mutually_exclusive_group(required=True)
-    source.add_argument("--camera", type=int, help="Camera device index.")
+    source.add_argument(
+        "--source",
+        type=parse_frame_source,
+        help="Frame source: camera device index (e.g. 0) or path to a video file.",
+    )
     source.add_argument("--image", type=Path, help="Still image path.")
     parser.add_argument(
         "--output",
@@ -159,19 +164,18 @@ def run_live_camera(args: argparse.Namespace) -> None:
     model = load_board_model(args.board_model)
     board, detector = make_charuco_detector(model)
 
-    capture = cv2.VideoCapture(args.camera)
-    if not capture.isOpened():
-        raise RuntimeError(f"Cannot open camera {args.camera}.")
+    capture = open_frame_source(args.source)
+    source_label = format_frame_source(args.source)
 
-    print(f"Camera {args.camera}")
+    print(source_label)
     print("q = quit")
     if args.output is not None:
         print("S = save current rendered frame")
 
     while True:
-        ok, frame = capture.read()
-        if not ok:
-            raise RuntimeError(f"Failed to read a frame from camera {args.camera}.")
+        ok, frame = read_frame(capture, args.source)
+        if not ok or frame is None:
+            raise RuntimeError(f"Failed to read a frame from {source_label}.")
         frame_height, frame_width = frame.shape[:2]
         validate_image_size(frame_width, frame_height, calibration_width, calibration_height, args.calibration)
 
@@ -186,7 +190,7 @@ def run_live_camera(args: argparse.Namespace) -> None:
             axis_length_squares=args.axis_length_squares,
             show_intersections=args.show_intersections,
             show_hud=args.hud,
-            source_label=f"camera {args.camera}",
+            source_label=source_label,
         )
         cv2.imshow("Board Reference Frame", preview)
         key = cv2.waitKey(1) & 0xFF
