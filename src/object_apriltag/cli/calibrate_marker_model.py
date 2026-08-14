@@ -19,7 +19,16 @@ from object_apriltag.frame_source import (
     parse_frame_source,
     read_frame,
 )
-from object_apriltag.layout import MarkerLayout, marker_color_bgr, save_marker_model
+from object_apriltag.layout import (
+    CORNER_NAMES,
+    MarkerLayout,
+    footprint_corner_with_padding,
+    footprint_from_dict,
+    marker_color_bgr,
+    save_marker_model,
+)
+from object_apriltag.pose import estimate_marker_pose, marker_corner_object_points
+from object_apriltag.viz.projection import opencv_image_point, project_camera_point
 from object_apriltag.object_model_edit import (
     apply_keypoint_sources_from_layout,
     load_object_model_document,
@@ -235,7 +244,17 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Optional object model JSON to update after a successful marker-model save. "
-            "Requires non-empty keypoint_sources mapping keypoint names to marker corners."
+            "Requires non-empty keypoint_sources mapping keypoint names to marker corners "
+            "(optional padding_mm per source)."
+        ),
+    )
+    parser.add_argument(
+        "--overlay-object-model",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Preview object-model keypoint_sources on the live view. Requires --object-model. "
+            "Draws each mapped corner (and padding_mm offset) on visible source tags."
         ),
     )
     parser.add_argument(
@@ -264,7 +283,7 @@ def flatten_marker_size_override_tokens(
 def validate_args(
     args: argparse.Namespace,
 ) -> tuple[list[int], dict[int, float], CalibrationSettings, tuple[int, ...] | None, bool, bool, bool]:
-    object_model_sources: dict[str, tuple[int, str]] | None = None
+    object_model_sources: dict[str, tuple[int, str, float]] | None = None
     if not args.calibration.exists():
         raise RuntimeError(
             f"Calibration file not found: {args.calibration}\n"
@@ -282,13 +301,15 @@ def validate_args(
             object_model_sources = parse_keypoint_sources(document)
         except (ValueError, OSError) as error:
             raise RuntimeError(str(error)) from error
+    if args.overlay_object_model and not isinstance(args.object_model, Path):
+        raise RuntimeError("--object-model is required when --overlay-object-model is enabled.")
 
     expected_ids, marker_ids_failure = parse_marker_id_spec(args.marker_ids)
     if marker_ids_failure is not None:
         raise RuntimeError(f"--marker-ids {marker_ids_failure}")
     if object_model_sources is not None:
         missing_source_ids = sorted(
-            {marker_id for marker_id, _ in object_model_sources.values()}
+            {marker_id for marker_id, _, _ in object_model_sources.values()}
             - set(expected_ids)
         )
         if missing_source_ids:
@@ -399,6 +420,116 @@ def draw_detection_outlines(
             frame,
             f"id={marker_id}",
             (anchor[0] + 8, anchor[1] - 8),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            color,
+            1,
+            cv2.LINE_AA,
+        )
+
+
+KEYPOINT_SOURCE_OVERLAY_COLORS_BGR = {
+    "top": (128, 0, 128),
+    "bottom": (0, 255, 0),
+    "left": (255, 255, 0),
+    "right": (165, 42, 42),
+}
+
+
+def marker_frame_footprint(marker_id: int, marker_size_m: float):
+    object_points = marker_corner_object_points(marker_size_m)
+    payload = {
+        corner_name: object_points[index].astype(np.float64).tolist()
+        for index, corner_name in enumerate(CORNER_NAMES)
+    }
+    return footprint_from_dict(marker_id, payload)
+
+
+def project_keypoint_source_on_marker(
+    corners: np.ndarray,
+    marker_id: int,
+    marker_size_m: float,
+    corner_name: str,
+    padding_m: float,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    try:
+        rvec, tvec = estimate_marker_pose(corners, marker_size_m, camera_matrix, dist_coeffs)
+    except RuntimeError:
+        return None
+
+    rotation, _ = cv2.Rodrigues(rvec)
+    translation = np.asarray(tvec, dtype=np.float64).reshape(3)
+    footprint = marker_frame_footprint(marker_id, marker_size_m)
+    corner_point = footprint.corners_by_name()[corner_name]
+    target_point = footprint_corner_with_padding(footprint, corner_name, padding_m)
+
+    raw_camera = rotation @ corner_point + translation
+    target_camera = rotation @ target_point + translation
+    if raw_camera[2] <= 0.0 or target_camera[2] <= 0.0:
+        return None
+
+    raw_image = project_camera_point(raw_camera, camera_matrix, dist_coeffs)
+    target_image = project_camera_point(target_camera, camera_matrix, dist_coeffs)
+    if not (np.all(np.isfinite(raw_image)) and np.all(np.isfinite(target_image))):
+        return None
+    return raw_image, target_image
+
+
+def draw_keypoint_source_overlays(
+    frame: np.ndarray,
+    visible: dict[int, np.ndarray],
+    keypoint_sources: dict[str, tuple[int, str, float]],
+    marker_sizes_m: dict[int, float],
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+) -> None:
+    for keypoint_name, (marker_id, corner_name, padding_m) in keypoint_sources.items():
+        corners = visible.get(marker_id)
+        if corners is None:
+            continue
+        projected = project_keypoint_source_on_marker(
+            corners,
+            marker_id,
+            marker_sizes_m[marker_id],
+            corner_name,
+            padding_m,
+            camera_matrix,
+            dist_coeffs,
+        )
+        if projected is None:
+            continue
+
+        color = KEYPOINT_SOURCE_OVERLAY_COLORS_BGR.get(keypoint_name, (200, 200, 200))
+        raw_point = opencv_image_point(projected[0])
+        target_point = opencv_image_point(projected[1])
+        if raw_point is None or target_point is None:
+            continue
+
+        cv2.circle(frame, raw_point, 5, color, -1, lineType=cv2.LINE_AA)
+        cv2.circle(frame, raw_point, 5, (0, 0, 0), 1, lineType=cv2.LINE_AA)
+        if padding_m > 0.0 and raw_point != target_point:
+            cv2.line(frame, raw_point, target_point, color, 2, lineType=cv2.LINE_AA)
+            cv2.circle(frame, target_point, 5, color, -1, lineType=cv2.LINE_AA)
+            cv2.circle(frame, target_point, 5, (0, 0, 0), 1, lineType=cv2.LINE_AA)
+            label_point = target_point
+        else:
+            label_point = raw_point
+        cv2.putText(
+            frame,
+            keypoint_name,
+            (label_point[0] + 8, label_point[1] - 8),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (0, 0, 0),
+            3,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            frame,
+            keypoint_name,
+            (label_point[0] + 8, label_point[1] - 8),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.55,
             color,
@@ -670,6 +801,11 @@ def run_capture(args: argparse.Namespace) -> bool:
     if calibration_source:
         print(f"Calibration source: {calibration_source}")
 
+    keypoint_sources: dict[str, tuple[int, str, float]] | None = None
+    if args.overlay_object_model:
+        _, object_model_document = load_object_model_document(args.object_model)
+        keypoint_sources = parse_keypoint_sources(object_model_document)
+
     capture = open_frame_source(args.source, width=width, height=height)
     source_label = format_frame_source(args.source)
     readiness_worker = LivePairReadinessWorker(
@@ -702,6 +838,15 @@ def run_capture(args: argparse.Namespace) -> bool:
             visible = detect_expected_markers(detector, frame, expected_id_set)
             preview = frame.copy()
             draw_detection_outlines(preview, visible, args.reference_marker_id)
+            if keypoint_sources is not None:
+                draw_keypoint_source_overlays(
+                    preview,
+                    visible,
+                    keypoint_sources,
+                    marker_sizes_m,
+                    camera_matrix,
+                    dist_coeffs,
+                )
 
             now = time.monotonic()
             manual_capture = False

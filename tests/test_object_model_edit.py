@@ -16,6 +16,7 @@ from object_apriltag.layout import (
     CORNER_NAMES,
     build_marker_layout,
     camera_point_to_layout_point,
+    footprint_corner_with_padding,
     footprint_from_dict,
     layout_point_to_camera,
     load_marker_model,
@@ -365,7 +366,49 @@ class ParseKeypointSourcesTests(unittest.TestCase):
                 "top": {"marker_id": "01", "corner": "top_left"},
             }
         }
-        self.assertEqual(parse_keypoint_sources(document), {"top": (1, "top_left")})
+        self.assertEqual(parse_keypoint_sources(document), {"top": (1, "top_left", 0.0)})
+
+    def test_parses_omitted_and_zero_padding_mm(self) -> None:
+        omitted = {
+            "keypoint_sources": {
+                "top": {"marker_id": 1, "corner": "top_left"},
+            }
+        }
+        zero = {
+            "keypoint_sources": {
+                "top": {"marker_id": 1, "corner": "top_left", "padding_mm": 0},
+            }
+        }
+        self.assertEqual(parse_keypoint_sources(omitted)["top"], (1, "top_left", 0.0))
+        self.assertEqual(parse_keypoint_sources(zero)["top"], (1, "top_left", 0.0))
+
+    def test_parses_positive_padding_mm(self) -> None:
+        document = {
+            "keypoint_sources": {
+                "tip": {"marker_id": 2, "corner": "bottom_right", "padding_mm": 3.0},
+            }
+        }
+        self.assertEqual(parse_keypoint_sources(document)["tip"], (2, "bottom_right", 0.003))
+
+    def test_rejects_invalid_padding_mm(self) -> None:
+        invalid_values = {
+            "bool": True,
+            "string": "3.0",
+            "null": None,
+            "nan": float("nan"),
+            "inf": float("inf"),
+            "negative": -1.0,
+        }
+        for label, padding_mm in invalid_values.items():
+            document = {
+                "keypoint_sources": {
+                    "top": {"marker_id": 1, "corner": "top_left", "padding_mm": padding_mm},
+                }
+            }
+            with self.subTest(label=label):
+                with self.assertRaises(ValueError) as ctx:
+                    parse_keypoint_sources(document)
+                self.assertIn("padding_mm", str(ctx.exception))
 
     def test_rejects_missing_or_empty_keypoint_sources(self) -> None:
         for document in ({}, {"keypoint_sources": {}}, {"keypoint_sources": []}):
@@ -462,6 +505,90 @@ class ApplyKeypointSourcesFromLayoutTests(unittest.TestCase):
             apply_keypoint_sources_from_layout(model, missing_marker, layout)
         self.assertIn("marker 9", str(ctx.exception))
         self.assertIn("solved marker layout", str(ctx.exception))
+
+    def test_applies_padding_mm_to_mapped_keypoints(self) -> None:
+        layout = _synthetic_layout()
+        padding_mm = 3.0
+        padding_m = padding_mm / 1000.0
+        document = {
+            "units": "meters",
+            "coordinate_frame": "marker_model",
+            "keypoints": {"tip": [0.0, 0.0, 0.0], "anchor": [0.0, 0.0, 0.0]},
+            "skeleton": [["tip", "anchor"]],
+            "keypoint_sources": {
+                "tip": {"marker_id": 1, "corner": "top_left", "padding_mm": padding_mm},
+            },
+        }
+        model, _ = load_object_model_document_from_document(document)
+        footprint = layout.footprints[1]
+        expected = footprint_corner_with_padding(footprint, "top_left", padding_m)
+        updated = apply_keypoint_sources_from_layout(model, document, layout)
+        np.testing.assert_allclose(updated.keypoints["tip"], expected, atol=1e-12)
+        self.assertAlmostEqual(
+            float(np.linalg.norm(updated.keypoints["tip"] - footprint.top_left)),
+            padding_m * np.sqrt(2.0),
+            places=12,
+        )
+        self.assertFalse(
+            np.allclose(updated.keypoints["tip"], footprint.top_left, atol=1e-12)
+        )
+
+    def test_apply_padding_mm_for_all_square_corners_matches_layout_helper(self) -> None:
+        layout = _synthetic_layout()
+        padding_mm = 2.5
+        padding_m = padding_mm / 1000.0
+        footprint = layout.footprints[0]
+        keypoint_sources = {
+            corner_name: {
+                "marker_id": 0,
+                "corner": corner_name,
+                "padding_mm": padding_mm,
+            }
+            for corner_name in CORNER_NAMES
+        }
+        document = {
+            "units": "meters",
+            "coordinate_frame": "marker_model",
+            "keypoints": {corner_name: [0.0, 0.0, 0.0] for corner_name in CORNER_NAMES},
+            "skeleton": [["top_left", "top_right"]],
+            "keypoint_sources": keypoint_sources,
+        }
+        model, _ = load_object_model_document_from_document(document)
+        updated = apply_keypoint_sources_from_layout(model, document, layout)
+        for corner_name in CORNER_NAMES:
+            expected = footprint_corner_with_padding(footprint, corner_name, padding_m)
+            np.testing.assert_allclose(updated.keypoints[corner_name], expected, atol=1e-12)
+            self.assertAlmostEqual(
+                float(np.linalg.norm(updated.keypoints[corner_name] - footprint.corners_by_name()[corner_name])),
+                padding_m * np.sqrt(2.0),
+                places=12,
+            )
+
+    def test_save_preserves_padding_mm_in_keypoint_sources(self) -> None:
+        layout = _synthetic_layout()
+        padding_mm = 2.5
+        padding_m = padding_mm / 1000.0
+        document = {
+            "units": "meters",
+            "coordinate_frame": "marker_model",
+            "note": "keep-me",
+            "keypoints": {"tip": [0.0, 0.0, 0.0], "anchor": [0.0, 0.0, 0.0]},
+            "skeleton": [["tip", "anchor"]],
+            "keypoint_sources": {
+                "tip": {"marker_id": 1, "corner": "top_left", "padding_mm": padding_mm},
+            },
+        }
+        model, loaded_document = load_object_model_document_from_document(document)
+        updated = apply_keypoint_sources_from_layout(model, document, layout)
+        expected = footprint_corner_with_padding(layout.footprints[1], "top_left", padding_m)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "object_model.json"
+            path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+            save_object_model_keypoints(path, updated, loaded_document)
+            saved = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(saved["keypoint_sources"], document["keypoint_sources"])
+        self.assertEqual(saved["note"], "keep-me")
+        np.testing.assert_allclose(saved["keypoints"]["tip"], expected.tolist(), atol=1e-12)
 
 
 class ObjectModelEditSessionSaveFailureTests(unittest.TestCase):

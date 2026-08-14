@@ -129,6 +129,60 @@ def rectangle_center(
     return (top_left + top_right + bottom_right + bottom_left) / 4.0
 
 
+def footprint_corner_with_padding(
+    footprint: MarkerFootprint,
+    corner_name: str,
+    padding_m: float,
+) -> np.ndarray:
+    if corner_name not in CORNER_NAMES:
+        raise ValueError(
+            f"corner must be one of {list(CORNER_NAMES)}, got {corner_name!r}."
+        )
+    if not np.isfinite(padding_m):
+        raise ValueError(f"padding_m must be finite, got {padding_m}.")
+    if padding_m < 0.0:
+        raise ValueError(f"padding_m must be >= 0, got {padding_m}.")
+
+    corners_by_name = footprint.corners_by_name()
+    corner = corners_by_name[corner_name]
+    if padding_m == 0.0:
+        return corner.copy()
+
+    corner_index = CORNER_NAMES.index(corner_name)
+    prev_corner = corners_by_name[CORNER_NAMES[(corner_index - 1) % 4]]
+    next_corner = corners_by_name[CORNER_NAMES[(corner_index + 1) % 4]]
+    z = footprint.orientation[:, 2]
+    inward_hint = rectangle_center(*footprint.corners()) - corner
+
+    normals: list[np.ndarray] = []
+    for edge in (corner - prev_corner, next_corner - corner):
+        edge_norm = np.linalg.norm(edge)
+        if edge_norm <= 0.0:
+            raise ValueError(
+                f"Degenerate footprint edge at {corner_name!r} for marker {footprint.marker_id}."
+            )
+        normal = np.cross(z, edge)
+        normal_norm = np.linalg.norm(normal)
+        if normal_norm <= 0.0:
+            raise ValueError(
+                f"Degenerate in-plane normal at {corner_name!r} for marker {footprint.marker_id}."
+            )
+        normal /= normal_norm
+        if np.dot(normal, inward_hint) > 0.0:
+            normal = -normal
+        normals.append(normal)
+
+    n1, n2 = normals
+    denominator = 1.0 + float(np.dot(n1, n2))
+    if abs(denominator) <= 1e-12:
+        raise ValueError(
+            f"Cannot apply padding at {corner_name!r} for marker {footprint.marker_id}: "
+            "incident edge normals are opposed."
+        )
+    delta = padding_m * (n1 + n2) / denominator
+    return corner + delta
+
+
 def marker_origin_on_object(bottom_left: np.ndarray, bottom_right: np.ndarray) -> np.ndarray:
     return (bottom_left + bottom_right) / 2.0
 

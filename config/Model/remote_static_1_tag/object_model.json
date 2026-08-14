@@ -1,0 +1,82 @@
+{
+  "units": "meters",
+  "coordinate_frame": "marker_model",
+  "keypoint_sources": {
+    "bottom_left": {
+      "marker_id": 24,
+      "corner": "top_left",
+      "padding_mm": 4.0
+    },
+    "bottom_right": {
+      "marker_id": 27,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "back_left": {
+      "marker_id": 22,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "home_right": {
+      "marker_id": 23,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "center_top": {
+      "marker_id": 25,
+      "corner": "top_left",
+      "padding_mm": 4.0
+    },
+    "center_bottom": {
+      "marker_id": 26,
+      "corner": "bottom_left",
+      "padding_mm": 4.0
+    }
+  },
+  "keypoints": {
+    "bottom_left": [
+      0.007497588135347341,
+      -0.03482628415799117,
+      0.0009626168865247927
+    ],
+    "center_top": [
+      -0.0018319515156751108,
+      0.08461278852887776,
+      0.00017386857962337684
+    ],
+    "back_left": [
+      0.010285771129533284,
+      0.05203046368522599,
+      -0.0004910486984963039
+    ],
+    "home_right": [
+      -0.012381280642307292,
+      0.05194564483709971,
+      -0.00023782733351007516
+    ],
+    "center_bottom": [
+      -0.001459672551266807,
+      0.06154233357341144,
+      -1.1299456437162143e-05
+    ],
+    "bottom_right": [
+      -0.007165523296262125,
+      -0.03534854782022104,
+      0.0001788781296062561
+    ]
+  },
+  "skeleton": [
+    [
+      "center_top",
+      "center_bottom"
+    ],
+    [
+      "back_left",
+      "home_right"
+    ],
+    [
+      "bottom_left",
+      "bottom_right"
+    ]
+  ]
+}

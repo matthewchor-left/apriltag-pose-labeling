@@ -13,7 +13,12 @@ import numpy as np
 
 from object_apriltag.board_pose import BoardPoseEstimate, board_point_to_camera
 from object_apriltag.detector import ObjectPose
-from object_apriltag.layout import CORNER_NAMES, MarkerLayout, camera_point_to_layout_point
+from object_apriltag.layout import (
+    CORNER_NAMES,
+    MarkerLayout,
+    camera_point_to_layout_point,
+    footprint_corner_with_padding,
+)
 from object_apriltag.viz.skeleton import MODEL_FRAME_NAME, ObjectModel, object_model_from_data
 
 
@@ -39,7 +44,20 @@ def _parse_source_marker_id(value: Any, field_name: str) -> int:
     raise ValueError(f"{field_name} must be an integer marker id, got {value!r}.")
 
 
-def parse_keypoint_sources(document: dict[str, Any]) -> dict[str, tuple[int, str]]:
+def _parse_padding_mm(value: Any, field_name: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be a number in millimeters, got {value!r}.")
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"{field_name} must be a number in millimeters, got {value!r}.")
+    padding_mm = float(value)
+    if not np.isfinite(padding_mm):
+        raise ValueError(f"{field_name} must be finite, got {padding_mm}.")
+    if padding_mm < 0.0:
+        raise ValueError(f"{field_name} must be >= 0, got {padding_mm}.")
+    return padding_mm / 1000.0
+
+
+def parse_keypoint_sources(document: dict[str, Any]) -> dict[str, tuple[int, str, float]]:
     raw = document.get("keypoint_sources")
     if not isinstance(raw, dict) or not raw:
         raise ValueError(
@@ -47,7 +65,7 @@ def parse_keypoint_sources(document: dict[str, Any]) -> dict[str, tuple[int, str
             "updating from marker calibration."
         )
 
-    sources: dict[str, tuple[int, str]] = {}
+    sources: dict[str, tuple[int, str, float]] = {}
     for keypoint_name, payload in raw.items():
         name = str(keypoint_name)
         if not name:
@@ -70,7 +88,13 @@ def parse_keypoint_sources(document: dict[str, Any]) -> dict[str, tuple[int, str
                 f"keypoint_sources.{name}.corner must be one of {list(CORNER_NAMES)}, "
                 f"got {corner!r}."
             )
-        sources[name] = (marker_id, corner)
+        padding_m = 0.0
+        if "padding_mm" in payload:
+            padding_m = _parse_padding_mm(
+                payload["padding_mm"],
+                f"keypoint_sources.{name}.padding_mm",
+            )
+        sources[name] = (marker_id, corner, padding_m)
     return sources
 
 
@@ -88,7 +112,7 @@ def apply_keypoint_sources_from_layout(
     sources = parse_keypoint_sources(document)
     names = ordered_keypoint_names(document, model)
     updated = model
-    for keypoint_name, (marker_id, corner) in sources.items():
+    for keypoint_name, (marker_id, corner, padding_m) in sources.items():
         if keypoint_name not in model.keypoints:
             raise ValueError(
                 f"keypoint_sources.{keypoint_name} references unknown keypoint {keypoint_name!r}."
@@ -98,7 +122,8 @@ def apply_keypoint_sources_from_layout(
                 f"keypoint_sources.{keypoint_name} references marker {marker_id}, "
                 f"which is not present in the solved marker layout."
             )
-        corner_point = layout.footprints[marker_id].corners_by_name()[corner]
+        footprint = layout.footprints[marker_id]
+        corner_point = footprint_corner_with_padding(footprint, corner, padding_m)
         updated = object_model_with_keypoint(
             updated,
             keypoint_name,

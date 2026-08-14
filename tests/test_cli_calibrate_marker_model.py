@@ -86,6 +86,7 @@ class CliHelpTests(unittest.TestCase):
         self.assertIn("ignored in manual mode", help_text)
         self.assertIn("--diagnostics-output", help_text)
         self.assertIn("--object-model", help_text)
+        self.assertIn("--overlay-object-model", help_text)
         self.assertIn("keypoint_sources", help_text)
         self.assertIn("C  capture", help_text)
         self.assertIn("S  solve", help_text)
@@ -128,6 +129,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 partial_output=False,
                 marker_size_for=None,
                 object_model=None,
+                overlay_object_model=False,
             )
             with self.assertRaises(RuntimeError) as ctx:
                 validate_args(args)
@@ -159,6 +161,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 partial_output=False,
                 marker_size_for=None,
                 object_model=None,
+                overlay_object_model=False,
             )
             with self.assertRaises(RuntimeError) as ctx:
                 validate_args(args)
@@ -190,6 +193,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 partial_output=False,
                 marker_size_for=None,
                 object_model=None,
+                overlay_object_model=False,
             )
             expected_ids, marker_sizes_m, _, anchor_ids, stop_after, _, _ = validate_args(args)
             self.assertEqual(expected_ids, [0, 1, 3, 4, 5])
@@ -222,6 +226,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 partial_output=False,
                 marker_size_for=None,
                 object_model=None,
+                overlay_object_model=False,
             )
             with self.assertRaises(RuntimeError) as ctx:
                 validate_args(args)
@@ -253,6 +258,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 best_effort=False,
                 partial_output=False,
                 object_model=None,
+                overlay_object_model=False,
             )
             expected_ids, marker_sizes_m, _, _, _, _, _ = validate_args(args)
             self.assertEqual(expected_ids, [0, 1, 4, 10, 11])
@@ -286,6 +292,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 best_effort=False,
                 partial_output=False,
                 object_model=None,
+                overlay_object_model=False,
             )
             _, marker_sizes_m, _, _, _, _, _ = validate_args(args)
             self.assertEqual(marker_sizes_m[4], 0.03)
@@ -317,6 +324,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 partial_output=False,
                 marker_size_for=None,
                 object_model=None,
+                overlay_object_model=False,
             )
             with self.assertRaises(RuntimeError) as ctx:
                 validate_args(args)
@@ -348,6 +356,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                 partial_output=False,
                 marker_size_for=None,
                 object_model=None,
+                overlay_object_model=False,
             )
             with self.assertRaises(RuntimeError) as ctx:
                 validate_args(args)
@@ -413,6 +422,7 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                         partial_output=False,
                         marker_size_for=None,
                         object_model=None,
+                        overlay_object_model=False,
                     )
                     with self.assertRaises(RuntimeError) as ctx:
                         validate_args(args)
@@ -484,6 +494,7 @@ class CalibrateMarkerModelObjectModelValidationTests(unittest.TestCase):
             partial_output=False,
             marker_size_for=None,
             object_model=object_model,
+            overlay_object_model=False,
         )
 
     def test_validate_args_rejects_missing_object_model_file(self) -> None:
@@ -532,6 +543,46 @@ class CalibrateMarkerModelObjectModelValidationTests(unittest.TestCase):
             self.assertIn("must appear in --marker-ids", str(ctx.exception))
             self.assertIn("9", str(ctx.exception))
 
+    def test_validate_args_rejects_invalid_padding_mm_in_keypoint_sources(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import validate_args
+
+        invalid_values = {
+            "bool": True,
+            "string": "3.0",
+            "null": None,
+            "nan": float("nan"),
+            "inf": float("inf"),
+            "negative": -2.0,
+        }
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            for label, padding_mm in invalid_values.items():
+                object_model = Path(tmp_dir) / f"object_model_{label}.json"
+                _write_object_model(
+                    object_model,
+                    keypoint_sources={
+                        "top": {
+                            "marker_id": 1,
+                            "corner": "top_left",
+                            "padding_mm": padding_mm,
+                        }
+                    },
+                )
+                with self.subTest(label=label):
+                    with self.assertRaises(RuntimeError) as ctx:
+                        validate_args(self._validation_args(tmp_dir, object_model))
+                    self.assertIn("padding_mm", str(ctx.exception))
+
+
+    def test_validate_args_rejects_overlay_without_object_model(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import validate_args
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            args = self._validation_args(tmp_dir, None)
+            args.overlay_object_model = True
+            with self.assertRaises(RuntimeError) as ctx:
+                validate_args(args)
+            self.assertIn("--object-model is required", str(ctx.exception))
+
 
 class CalibrateMarkerModelObjectModelCaptureTests(unittest.TestCase):
     def test_solve_success_updates_object_model_keypoints(self) -> None:
@@ -579,6 +630,58 @@ class CalibrateMarkerModelObjectModelCaptureTests(unittest.TestCase):
             )
             self.assertEqual(updated["keypoint_sources"], original["keypoint_sources"])
             self.assertEqual(updated["skeleton"], original["skeleton"])
+
+    def test_solve_success_applies_padding_mm_to_object_model_keypoints(self) -> None:
+        from object_apriltag.layout import footprint_corner_with_padding
+
+        layout = _synthetic_marker_layout()
+        padding_mm = 3.0
+        accepted = mock.Mock(
+            layout=layout,
+            failure_reason=None,
+            outcome="accepted",
+            quality=_quality_report_mock(),
+        )
+        visible = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 2
+        monotonic = [0.0, 0.0, 0.6]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            object_model = Path(tmp_dir) / "object_model.json"
+            keypoint_sources = {
+                "top": {
+                    "marker_id": 1,
+                    "corner": "top_left",
+                    "padding_mm": padding_mm,
+                },
+            }
+            _write_object_model(object_model, keypoint_sources=keypoint_sources)
+            original = json.loads(object_model.read_text(encoding="utf-8"))
+            capture_tests = CalibrateMarkerModelCaptureTests()
+            with mock.patch("builtins.print"):
+                _, _, save_mock, _, _, saved = capture_tests._run_capture(
+                    wait_keys=[ord("S")],
+                    monotonic_values=monotonic,
+                    visible_by_frame=visible,
+                    calibrate_result=accepted,
+                    object_model=object_model,
+                )
+            self.assertTrue(saved)
+            save_mock.assert_called_once()
+            updated = json.loads(object_model.read_text(encoding="utf-8"))
+            expected = footprint_corner_with_padding(
+                layout.footprints[1],
+                "top_left",
+                padding_mm / 1000.0,
+            )
+            np.testing.assert_allclose(updated["keypoints"]["top"], expected.tolist(), atol=1e-12)
+            self.assertFalse(
+                np.allclose(
+                    updated["keypoints"]["top"],
+                    layout.footprints[1].top_left.tolist(),
+                    atol=1e-12,
+                )
+            )
+            self.assertEqual(updated["keypoint_sources"], original["keypoint_sources"])
 
     def test_solve_refusal_leaves_object_model_unchanged(self) -> None:
         refused = mock.Mock(
@@ -702,6 +805,7 @@ class CalibrateMarkerModelCaptureTests(unittest.TestCase):
                 partial_output=False,
                 marker_size_for=None,
                 object_model=object_model,
+                overlay_object_model=False,
             )
 
             frame = np.zeros((height, width, 3), dtype=np.uint8)
@@ -1429,6 +1533,223 @@ class CalibrationHudTests(unittest.TestCase):
         self.assertTrue(
             all(call.args[5] == (255, 255, 255) for call in text_mock.call_args_list)
         )
+
+
+class KeypointSourceOverlayTests(unittest.TestCase):
+    @staticmethod
+    def _frontal_marker_geometry(
+        marker_size: float,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        half = marker_size / 2.0
+        center = 320.0
+        top = center - half * 900.0
+        bottom = center + half * 900.0
+        left = center - half * 900.0
+        right = center + half * 900.0
+        corners = np.array(
+            [
+                [left, top],
+                [right, top],
+                [right, bottom],
+                [left, bottom],
+            ],
+            dtype=np.float64,
+        )
+        camera_matrix = np.array(
+            [[900.0, 0.0, center], [0.0, 900.0, center], [0.0, 0.0, 1.0]],
+            dtype=np.float64,
+        )
+        dist_coeffs = np.zeros((5, 1), dtype=np.float64)
+        return corners, camera_matrix, dist_coeffs
+
+    def test_project_keypoint_source_on_marker_returns_image_points(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import project_keypoint_source_on_marker
+
+        marker_size = 0.02
+        corners, camera_matrix, dist_coeffs = self._frontal_marker_geometry(marker_size)
+
+        projected = project_keypoint_source_on_marker(
+            corners,
+            marker_id=19,
+            marker_size_m=marker_size,
+            corner_name="top_left",
+            padding_m=0.002,
+            camera_matrix=camera_matrix,
+            dist_coeffs=dist_coeffs,
+        )
+        self.assertIsNotNone(projected)
+        raw_image, target_image = projected
+        self.assertTrue(np.all(np.isfinite(raw_image)))
+        self.assertTrue(np.all(np.isfinite(target_image)))
+        self.assertGreater(np.linalg.norm(target_image - raw_image), 0.0)
+
+    def test_project_keypoint_source_overlay_uses_miter_local_point_not_radial_bisector(self) -> None:
+        import cv2
+
+        from object_apriltag.cli.calibrate_marker_model import (
+            marker_frame_footprint,
+            project_keypoint_source_on_marker,
+        )
+        from object_apriltag.layout import CORNER_NAMES, footprint_corner_with_padding, rectangle_center
+        from object_apriltag.pose import estimate_marker_pose
+        from object_apriltag.viz.projection import project_camera_point
+
+        marker_size = 0.04
+        padding_m = 0.003
+        corners, camera_matrix, dist_coeffs = self._frontal_marker_geometry(marker_size)
+        corner_name = "top_left"
+
+        projected = project_keypoint_source_on_marker(
+            corners,
+            marker_id=19,
+            marker_size_m=marker_size,
+            corner_name=corner_name,
+            padding_m=padding_m,
+            camera_matrix=camera_matrix,
+            dist_coeffs=dist_coeffs,
+        )
+        self.assertIsNotNone(projected)
+        raw_image, target_image = projected
+
+        rvec, tvec = estimate_marker_pose(corners, marker_size, camera_matrix, dist_coeffs)
+        rotation, _ = cv2.Rodrigues(rvec)
+        translation = np.asarray(tvec, dtype=np.float64).reshape(3)
+        footprint = marker_frame_footprint(19, marker_size)
+        corner_point = footprint.corners_by_name()[corner_name]
+        miter_point = footprint_corner_with_padding(footprint, corner_name, padding_m)
+        expected_raw_image = project_camera_point(
+            rotation @ corner_point + translation,
+            camera_matrix,
+            dist_coeffs,
+        )
+        expected_target_image = project_camera_point(
+            rotation @ miter_point + translation,
+            camera_matrix,
+            dist_coeffs,
+        )
+        np.testing.assert_allclose(raw_image, expected_raw_image, atol=1e-6)
+        np.testing.assert_allclose(target_image, expected_target_image, atol=1e-6)
+
+        corner_index = CORNER_NAMES.index(corner_name)
+        prev_corner = footprint.corners_by_name()[CORNER_NAMES[(corner_index - 1) % 4]]
+        next_corner = footprint.corners_by_name()[CORNER_NAMES[(corner_index + 1) % 4]]
+        z_axis = footprint.orientation[:, 2]
+        edge_a = next_corner - corner_point
+        edge_b = corner_point - prev_corner
+        inward_hint = rectangle_center(*footprint.corners()) - corner_point
+        n1 = np.cross(z_axis, edge_a)
+        n1 /= np.linalg.norm(n1)
+        if float(np.dot(n1, inward_hint)) > 0.0:
+            n1 = -n1
+        n2 = np.cross(z_axis, edge_b)
+        n2 /= np.linalg.norm(n2)
+        if float(np.dot(n2, inward_hint)) > 0.0:
+            n2 = -n2
+        radial_point = corner_point + padding_m * (n1 + n2) / np.linalg.norm(n1 + n2)
+        radial_image = project_camera_point(
+            rotation @ radial_point + translation,
+            camera_matrix,
+            dist_coeffs,
+        )
+        self.assertFalse(np.allclose(target_image, radial_image, atol=0.5))
+        self.assertGreater(
+            float(np.linalg.norm(miter_point - corner_point)),
+            padding_m,
+        )
+
+    def test_project_keypoint_source_overlay_matches_padded_point_for_rotated_pose(self) -> None:
+        import cv2
+
+        from object_apriltag.cli.calibrate_marker_model import (
+            marker_frame_footprint,
+            project_keypoint_source_on_marker,
+        )
+        from object_apriltag.layout import footprint_corner_with_padding
+        from object_apriltag.pose import marker_corner_object_points
+        from object_apriltag.viz.projection import project_camera_point
+
+        marker_size = 0.04
+        padding_m = 0.003
+        center = 320.0
+        camera_matrix = np.array(
+            [[900.0, 0.0, center], [0.0, 900.0, center], [0.0, 0.0, 1.0]],
+            dtype=np.float64,
+        )
+        dist_coeffs = np.zeros((5, 1), dtype=np.float64)
+        rvec_true = np.array([0.35, -0.25, 0.4], dtype=np.float64)
+        tvec_true = np.array([[0.04], [-0.03], [0.65]], dtype=np.float64)
+        object_points = marker_corner_object_points(marker_size)
+        image_points, _ = cv2.projectPoints(
+            object_points,
+            rvec_true,
+            tvec_true,
+            camera_matrix,
+            dist_coeffs,
+        )
+        corners = image_points.reshape(4, 2).astype(np.float64)
+        corner_name = "bottom_right"
+
+        projected = project_keypoint_source_on_marker(
+            corners,
+            marker_id=7,
+            marker_size_m=marker_size,
+            corner_name=corner_name,
+            padding_m=padding_m,
+            camera_matrix=camera_matrix,
+            dist_coeffs=dist_coeffs,
+        )
+        self.assertIsNotNone(projected)
+        _, target_image = projected
+
+        rotation, _ = cv2.Rodrigues(rvec_true)
+        translation = tvec_true.reshape(3)
+        footprint = marker_frame_footprint(7, marker_size)
+        miter_point = footprint_corner_with_padding(footprint, corner_name, padding_m)
+        expected_target_image = project_camera_point(
+            rotation @ miter_point + translation,
+            camera_matrix,
+            dist_coeffs,
+        )
+        np.testing.assert_allclose(target_image, expected_target_image, atol=1e-6)
+
+    def test_draw_keypoint_source_overlays_marks_visible_source_tag(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import draw_keypoint_source_overlays
+
+        marker_size = 0.02
+        half = marker_size / 2.0
+        center = 320.0
+        top = center - half * 900.0
+        bottom = center + half * 900.0
+        left = center - half * 900.0
+        right = center + half * 900.0
+        corners = np.array(
+            [
+                [left, top],
+                [right, top],
+                [right, bottom],
+                [left, bottom],
+            ],
+            dtype=np.float64,
+        )
+        camera_matrix = np.array(
+            [[900.0, 0.0, center], [0.0, 900.0, center], [0.0, 0.0, 1.0]],
+            dtype=np.float64,
+        )
+        dist_coeffs = np.zeros((5, 1), dtype=np.float64)
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        keypoint_sources = {"logo": (19, "top_left", 0.002)}
+
+        with mock.patch("object_apriltag.cli.calibrate_marker_model.cv2.circle") as circle_mock:
+            draw_keypoint_source_overlays(
+                frame,
+                visible={19: corners},
+                keypoint_sources=keypoint_sources,
+                marker_sizes_m={19: marker_size},
+                camera_matrix=camera_matrix,
+                dist_coeffs=dist_coeffs,
+            )
+
+        self.assertGreaterEqual(circle_mock.call_count, 2)
 
 
 class CliFrameCountFormattingTests(unittest.TestCase):

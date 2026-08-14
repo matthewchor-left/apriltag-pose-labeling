@@ -1,8 +1,0 @@
-{
-    "units": "meters",
-    "coordinate_frame": "marker_model",
-    "keypoint_sources": {
-      "logo": {"marker_id": 19, "corner": "top_left"}
-    }
-}
-  

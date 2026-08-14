@@ -11,11 +11,13 @@ import numpy as np
 
 from object_apriltag.calibration import DEFAULT_MARKER_MODEL_PATH
 from object_apriltag.layout import (
+    CORNER_NAMES,
     DEFAULT_MARKER_COLOR,
     DEFAULT_MARKER_COLOR_BGR,
     REFERENCE_MARKER_COLOR,
     REFERENCE_MARKER_COLOR_BGR,
     derive_marker_to_object_transform,
+    footprint_corner_with_padding,
     footprint_edge_lengths,
     footprint_from_dict,
     footprint_orientation,
@@ -266,6 +268,191 @@ class MarkerOriginsIntegrationTests(unittest.TestCase):
             self.assertEqual(layout.anchor_marker_ids, (0, 1))
             round_trip = marker_layout_to_dict(layout)
             self.assertEqual(round_trip["anchor_marker_ids"], [0, 1])
+
+
+def _perpendicular_distance_to_edge(
+    point: np.ndarray,
+    edge_start: np.ndarray,
+    edge_end: np.ndarray,
+) -> float:
+    edge = edge_end - edge_start
+    length = float(np.linalg.norm(edge))
+    if length <= 0.0:
+        raise ValueError("degenerate edge")
+    return float(np.linalg.norm(np.cross(edge, point - edge_start))) / length
+
+
+def _rotated_square_payload(half: float, angle_rad: float, z: float = 0.0) -> dict[str, list[float]]:
+    rotation = np.array(
+        [
+            [np.cos(angle_rad), -np.sin(angle_rad), 0.0],
+            [np.sin(angle_rad), np.cos(angle_rad), 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=np.float64,
+    )
+    return {
+        corner_name: (rotation @ np.asarray(coords, dtype=np.float64)).tolist()
+        for corner_name, coords in _square_payload(half, z).items()
+    }
+
+
+class FootprintCornerPaddingTests(unittest.TestCase):
+    def test_axis_aligned_square_corners_with_uniform_padding(self) -> None:
+        half = 0.02
+        padding_m = 0.003
+        footprint = footprint_from_dict(0, _square_payload(half))
+        expected = {
+            "top_left": np.array([-half - padding_m, -half - padding_m, 0.0]),
+            "top_right": np.array([half + padding_m, -half - padding_m, 0.0]),
+            "bottom_right": np.array([half + padding_m, half + padding_m, 0.0]),
+            "bottom_left": np.array([-half - padding_m, half + padding_m, 0.0]),
+        }
+        for corner_name, target in expected.items():
+            padded = footprint_corner_with_padding(footprint, corner_name, padding_m)
+            np.testing.assert_allclose(padded, target, atol=1e-12)
+
+    def test_square_padding_moves_p_per_edge_normal_with_sqrt_two_displacement(self) -> None:
+        half = 0.02
+        padding_m = 0.003
+        footprint = footprint_from_dict(0, _square_payload(half))
+        expected_norm = padding_m * np.sqrt(2.0)
+        for corner_name in CORNER_NAMES:
+            corner = footprint.corners_by_name()[corner_name]
+            corner_index = CORNER_NAMES.index(corner_name)
+            prev_corner = footprint.corners_by_name()[CORNER_NAMES[(corner_index - 1) % 4]]
+            next_corner = footprint.corners_by_name()[CORNER_NAMES[(corner_index + 1) % 4]]
+            padded = footprint_corner_with_padding(footprint, corner_name, padding_m)
+            delta = padded - corner
+            self.assertAlmostEqual(float(np.linalg.norm(delta)), expected_norm, places=12)
+            self.assertAlmostEqual(
+                _perpendicular_distance_to_edge(padded, corner, next_corner),
+                padding_m,
+                places=12,
+            )
+            self.assertAlmostEqual(
+                _perpendicular_distance_to_edge(padded, prev_corner, corner),
+                padding_m,
+                places=12,
+            )
+
+    def test_rotated_square_padding_uses_local_normals_not_global_axes(self) -> None:
+        half = 0.02
+        padding_m = 0.004
+        angle_rad = np.deg2rad(37.0)
+        footprint = footprint_from_dict(0, _rotated_square_payload(half, angle_rad))
+        expected_norm = padding_m * np.sqrt(2.0)
+        global_axis_hack = {
+            "top_left": np.array([-padding_m, -padding_m, 0.0]),
+            "top_right": np.array([padding_m, -padding_m, 0.0]),
+            "bottom_right": np.array([padding_m, padding_m, 0.0]),
+            "bottom_left": np.array([-padding_m, padding_m, 0.0]),
+        }
+        for corner_name in CORNER_NAMES:
+            corner = footprint.corners_by_name()[corner_name]
+            corner_index = CORNER_NAMES.index(corner_name)
+            prev_corner = footprint.corners_by_name()[CORNER_NAMES[(corner_index - 1) % 4]]
+            next_corner = footprint.corners_by_name()[CORNER_NAMES[(corner_index + 1) % 4]]
+            padded = footprint_corner_with_padding(footprint, corner_name, padding_m)
+            delta = padded - corner
+            self.assertAlmostEqual(float(np.linalg.norm(delta)), expected_norm, places=12)
+            self.assertAlmostEqual(
+                _perpendicular_distance_to_edge(padded, corner, next_corner),
+                padding_m,
+                places=12,
+            )
+            self.assertAlmostEqual(
+                _perpendicular_distance_to_edge(padded, prev_corner, corner),
+                padding_m,
+                places=12,
+            )
+            naive_global = corner + global_axis_hack[corner_name]
+            self.assertFalse(np.allclose(padded, naive_global, atol=1e-9))
+
+    def test_zero_padding_returns_raw_corner(self) -> None:
+        footprint = footprint_from_dict(0, _square_payload(0.02))
+        for corner_name in CORNER_NAMES:
+            raw = footprint.corners_by_name()[corner_name]
+            padded = footprint_corner_with_padding(footprint, corner_name, 0.0)
+            np.testing.assert_allclose(padded, raw, atol=0.0)
+
+    def test_side_face_padding_stays_in_footprint_plane_and_moves_outward(self) -> None:
+        half = 0.024
+        footprint = footprint_from_dict(
+            2,
+            {
+                "top_left": [0.0, -half, half],
+                "top_right": [0.0, half, half],
+                "bottom_right": [0.0, half, -half],
+                "bottom_left": [0.0, -half, -half],
+            },
+        )
+        padding_m = 0.004
+        corner_name = "top_left"
+        corner = footprint.corners_by_name()[corner_name]
+        center = rectangle_center(*footprint.corners())
+        padded = footprint_corner_with_padding(footprint, corner_name, padding_m)
+        delta = padded - corner
+        plane_normal = footprint.orientation[:, 2]
+        self.assertAlmostEqual(float(np.dot(delta, plane_normal)), 0.0, places=12)
+        self.assertLess(float(np.dot(delta, center - corner)), 0.0)
+        self.assertGreater(float(np.linalg.norm(delta)), padding_m)
+
+    def test_skewed_footprint_perpendicular_distance_matches_padding(self) -> None:
+        footprint = footprint_from_dict(
+            5,
+            {
+                "top_left": [-0.02, -0.02, 0.0],
+                "top_right": [0.03, -0.025, 0.0],
+                "bottom_right": [0.025, 0.03, 0.0],
+                "bottom_left": [-0.025, 0.025, 0.0],
+            },
+        )
+        padding_m = 0.003
+        corner_name = "top_left"
+        corner = footprint.corners_by_name()[corner_name]
+        corner_index = CORNER_NAMES.index(corner_name)
+        prev_corner = footprint.corners_by_name()[CORNER_NAMES[(corner_index - 1) % 4]]
+        next_corner = footprint.corners_by_name()[CORNER_NAMES[(corner_index + 1) % 4]]
+        padded = footprint_corner_with_padding(footprint, corner_name, padding_m)
+        self.assertAlmostEqual(
+            _perpendicular_distance_to_edge(padded, corner, next_corner),
+            padding_m,
+            places=9,
+        )
+        self.assertAlmostEqual(
+            _perpendicular_distance_to_edge(padded, prev_corner, corner),
+            padding_m,
+            places=9,
+        )
+
+        plane_normal = footprint.orientation[:, 2]
+        z_axis = plane_normal / np.linalg.norm(plane_normal)
+        edge_a = next_corner - corner
+        edge_b = corner - prev_corner
+        n1 = np.cross(z_axis, edge_a)
+        n1 /= np.linalg.norm(n1)
+        if float(np.dot(n1, rectangle_center(*footprint.corners()) - corner)) > 0.0:
+            n1 = -n1
+        n2 = np.cross(z_axis, edge_b)
+        n2 /= np.linalg.norm(n2)
+        if float(np.dot(n2, rectangle_center(*footprint.corners()) - corner)) > 0.0:
+            n2 = -n2
+        naive = corner + padding_m * (n1 + n2)
+        naive_dist_a = _perpendicular_distance_to_edge(naive, corner, next_corner)
+        naive_dist_b = _perpendicular_distance_to_edge(naive, prev_corner, corner)
+        self.assertFalse(
+            abs(naive_dist_a - padding_m) < 1e-9 and abs(naive_dist_b - padding_m) < 1e-9
+        )
+
+    def test_invalid_corner_or_padding_raises(self) -> None:
+        footprint = footprint_from_dict(0, _square_payload(0.02))
+        with self.assertRaises(ValueError):
+            footprint_corner_with_padding(footprint, "center", 0.001)
+        with self.assertRaises(ValueError):
+            footprint_corner_with_padding(footprint, "top_left", -0.001)
+        with self.assertRaises(ValueError):
+            footprint_corner_with_padding(footprint, "top_left", float("nan"))
 
 
 class MarkerLayoutColorTests(unittest.TestCase):
