@@ -21,6 +21,73 @@ OptimizationCheckpointStage = Literal[
 
 
 @dataclass
+class BundleAdjustmentRunProfiler:
+    """Per-run BA sector timings and counts when solve diagnostics are enabled.
+
+    Timing accounting (do not double-count):
+    - Per-run BA wall sectors sum as setup + least_squares + post.
+    - ``residual_callback_total`` is measured inside ``least_squares`` only.
+    - ``least_squares_overhead`` is the unobservable SciPy remainder (sparse
+      Jacobian finite-difference probes, linear algebra, etc.).
+
+    Count semantics:
+    - ``projection_calls``: total per-corner projection evaluations (scalar-era
+      metric; one per corner sent through the projection path each callback).
+    - ``opencv_projectpoints_invocations``: ``cv2.projectPoints`` calls (one per
+      residual callback when poses are finite).
+    - ``batched_corner_count``: corners batched into each ``projectPoints`` call,
+      summed across callbacks.
+    - ``projection_loop`` (timing): pose gathering, batched transforms, OpenCV
+      projection, and residual assembly inside each residual callback.
+    """
+
+    parameter_count: int = 0
+    residual_count: int = 0
+    residual_callback_invocations: int = 0
+    projection_calls: int = 0
+    opencv_projectpoints_invocations: int = 0
+    batched_corner_count: int = 0
+    setup_seconds: float = 0.0
+    least_squares_seconds: float = 0.0
+    post_seconds: float = 0.0
+    residual_callback_total_seconds: float = 0.0
+    residual_unpack_seconds: float = 0.0
+    projection_loop_seconds: float = 0.0
+
+    def timing_seconds(self) -> dict[str, float]:
+        residual_callback_other = max(
+            0.0,
+            self.residual_callback_total_seconds
+            - self.residual_unpack_seconds
+            - self.projection_loop_seconds,
+        )
+        least_squares_overhead = max(
+            0.0,
+            self.least_squares_seconds - self.residual_callback_total_seconds,
+        )
+        return {
+            "setup": self.setup_seconds,
+            "least_squares": self.least_squares_seconds,
+            "post": self.post_seconds,
+            "residual_callback_total": self.residual_callback_total_seconds,
+            "residual_unpack": self.residual_unpack_seconds,
+            "projection_loop": self.projection_loop_seconds,
+            "residual_callback_other": residual_callback_other,
+            "least_squares_overhead": least_squares_overhead,
+        }
+
+    def counts(self) -> dict[str, int]:
+        return {
+            "parameter_count": self.parameter_count,
+            "residual_count": self.residual_count,
+            "residual_callback_invocations": self.residual_callback_invocations,
+            "projection_calls": self.projection_calls,
+            "opencv_projectpoints_invocations": self.opencv_projectpoints_invocations,
+            "batched_corner_count": self.batched_corner_count,
+        }
+
+
+@dataclass
 class CalibrationSolveDiagnostics:
     """Optional benchmark collector for solve-stage timings and BA optimizer runs."""
 
@@ -53,21 +120,31 @@ def record_optimizer_run(
     active_frame_count: int,
     inlier_corner_count: int,
     result: Any | None,
+    profiler: BundleAdjustmentRunProfiler | None = None,
 ) -> None:
-    if diagnostics is None or stage_name is None or result is None:
+    """Append one optimizer run; ``result`` may be None after a SciPy ValueError."""
+    if diagnostics is None or stage_name is None:
         return
-    njev = getattr(result, "njev", None)
-    diagnostics.optimizer_runs.append(
-        {
-            "stage": stage_name,
-            "nfev": int(result.nfev),
-            "njev": int(njev) if njev is not None else None,
-            "status": int(result.status),
-            "cost": float(result.cost),
-            "active_frame_count": active_frame_count,
-            "inlier_corner_count": inlier_corner_count,
-        }
-    )
+    entry: dict[str, Any] = {
+        "stage": stage_name,
+        "active_frame_count": active_frame_count,
+        "inlier_corner_count": inlier_corner_count,
+    }
+    if result is not None:
+        njev = getattr(result, "njev", None)
+        entry["nfev"] = int(result.nfev)
+        entry["njev"] = int(njev) if njev is not None else None
+        entry["status"] = int(result.status)
+        entry["cost"] = float(result.cost)
+    else:
+        entry["nfev"] = None
+        entry["njev"] = None
+        entry["status"] = None
+        entry["cost"] = None
+    if profiler is not None:
+        entry["timing_seconds"] = profiler.timing_seconds()
+        entry["counts"] = profiler.counts()
+    diagnostics.optimizer_runs.append(entry)
 
 
 @dataclass(frozen=True)
@@ -94,6 +171,79 @@ class CornerObservation:
     marker_id: int
     corner_index: int
     image_point: np.ndarray
+
+
+@dataclass(frozen=True)
+class BundleAdjustmentObservationLayout:
+    """Immutable active-corner arrays for one bundle-adjustment run.
+
+    Built once per ``run_bundle_adjustment`` call. Residual order matches the
+    scalar loop: inlier observations in ``corner_observations`` list order.
+    """
+
+    object_points: np.ndarray
+    image_points: np.ndarray
+    marker_ids: np.ndarray
+    frame_indices: np.ndarray
+    unique_marker_ids: np.ndarray
+    unique_frame_indices: np.ndarray
+    marker_pose_slots: np.ndarray
+    frame_pose_slots: np.ndarray
+    observation_count: int
+
+
+def _empty_bundle_adjustment_observation_layout() -> BundleAdjustmentObservationLayout:
+    empty_object = np.empty((0, 3), dtype=np.float64)
+    empty_image = np.empty((0, 2), dtype=np.float64)
+    empty_index = np.empty(0, dtype=np.int64)
+    return BundleAdjustmentObservationLayout(
+        empty_object,
+        empty_image,
+        empty_index,
+        empty_index,
+        empty_index,
+        empty_index,
+        empty_index,
+        empty_index,
+        0,
+    )
+
+
+def build_bundle_adjustment_observation_layout(
+    corner_observations: Sequence[CornerObservation],
+    inlier_mask: np.ndarray,
+    object_points_by_marker: dict[int, np.ndarray],
+) -> BundleAdjustmentObservationLayout:
+    object_points: list[np.ndarray] = []
+    image_points: list[np.ndarray] = []
+    marker_ids: list[int] = []
+    frame_indices: list[int] = []
+    for observation, keep in zip(corner_observations, inlier_mask, strict=True):
+        if not keep:
+            continue
+        object_points.append(
+            object_points_by_marker[observation.marker_id][observation.corner_index]
+        )
+        image_points.append(observation.image_point)
+        marker_ids.append(observation.marker_id)
+        frame_indices.append(observation.frame_index)
+    if not object_points:
+        return _empty_bundle_adjustment_observation_layout()
+    marker_ids_arr = np.asarray(marker_ids, dtype=np.int64)
+    frame_indices_arr = np.asarray(frame_indices, dtype=np.int64)
+    unique_marker_ids, marker_pose_slots = np.unique(marker_ids_arr, return_inverse=True)
+    unique_frame_indices, frame_pose_slots = np.unique(frame_indices_arr, return_inverse=True)
+    return BundleAdjustmentObservationLayout(
+        object_points=np.stack(object_points, axis=0),
+        image_points=np.stack(image_points, axis=0),
+        marker_ids=marker_ids_arr,
+        frame_indices=frame_indices_arr,
+        unique_marker_ids=unique_marker_ids,
+        unique_frame_indices=unique_frame_indices,
+        marker_pose_slots=marker_pose_slots.astype(np.int64, copy=False),
+        frame_pose_slots=frame_pose_slots.astype(np.int64, copy=False),
+        observation_count=len(object_points),
+    )
 
 
 def copy_marker_poses(

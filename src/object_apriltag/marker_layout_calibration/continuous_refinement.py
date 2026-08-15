@@ -7,6 +7,8 @@ from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+import time
+
 import cv2
 import numpy as np
 from scipy.optimize import least_squares
@@ -14,12 +16,15 @@ from scipy.sparse import lil_matrix
 
 from object_apriltag.layout import build_marker_layout
 from object_apriltag.marker_layout_calibration.solve_primitives import (
+    BundleAdjustmentObservationLayout,
+    BundleAdjustmentRunProfiler,
     CalibrationSolveDiagnostics,
     CornerObservation,
     MarkerCandidate,
     MarkerPair,
     OptimizationCheckpointStage,
     PairConsensus,
+    build_bundle_adjustment_observation_layout,
     copy_frame_poses,
     copy_marker_poses,
     covisible_frame_count,
@@ -30,7 +35,6 @@ from object_apriltag.marker_layout_calibration.solve_primitives import (
     missing_from_graph,
     positive_depth_failure,
     poses_are_finite,
-    project_corner,
     record_optimizer_run,
     snapshot_pair_consensus,
     timed_solve_stage,
@@ -346,6 +350,14 @@ def run_bundle_adjustment(
     if not non_reference_ids:
         return marker_poses, frame_poses, inlier_mask, None
 
+    profiler: BundleAdjustmentRunProfiler | None = (
+        BundleAdjustmentRunProfiler()
+        if solve_diagnostics is not None and stage_name is not None
+        else None
+    )
+
+    if profiler is not None:
+        setup_start = time.perf_counter()
     x0 = _pack_parameters(marker_poses, frame_poses, non_reference_ids, active_frames)
     if not np.all(np.isfinite(x0)):
         return marker_poses, frame_poses, inlier_mask, "Bundle adjustment initial parameters are non-finite."
@@ -357,10 +369,25 @@ def run_bundle_adjustment(
         active_frames,
         reference_marker_id,
     )
+    observation_layout = build_bundle_adjustment_observation_layout(
+        corner_observations,
+        inlier_mask,
+        object_points_by_marker,
+    )
+    if profiler is not None:
+        profiler.setup_seconds = time.perf_counter() - setup_start
+        profiler.parameter_count = int(len(x0))
+        profiler.residual_count = int(jac_sparsity.shape[0])
 
     def residuals(params: np.ndarray) -> np.ndarray:
+        callback_start = time.perf_counter()
+        if profiler is not None:
+            profiler.residual_callback_invocations += 1
         if not np.all(np.isfinite(params)):
+            if profiler is not None:
+                profiler.residual_callback_total_seconds += time.perf_counter() - callback_start
             return np.full(jac_sparsity.shape[0], 1e3, dtype=np.float64)
+        unpack_start = time.perf_counter()
         marker_state, frame_pose_list = _unpack_parameters(
             params,
             marker_poses,
@@ -369,30 +396,25 @@ def run_bundle_adjustment(
             active_frames,
             reference_marker_id,
         )
-        values: list[float] = []
-        for observation, keep in zip(corner_observations, inlier_mask, strict=True):
-            if not keep:
-                continue
-            frame_pose = frame_pose_list[observation.frame_index]
-            marker_pose = marker_state.get(observation.marker_id)
-            if frame_pose is None or marker_pose is None:
-                values.extend([1000.0, 1000.0])
-                continue
-            projected = project_corner(
-                observation.corner_index,
-                observation.marker_id,
-                marker_pose,
-                frame_pose,
-                object_points_by_marker,
+        if profiler is not None:
+            profiler.residual_unpack_seconds += time.perf_counter() - unpack_start
+        loop_start = time.perf_counter()
+        values, projection_count, projectpoints_count, batched_corners = (
+            _evaluate_bundle_adjustment_residuals(
+                observation_layout,
+                marker_state,
+                frame_pose_list,
                 camera_matrix,
                 dist_coeffs,
             )
-            if not np.all(np.isfinite(projected)):
-                values.extend([1000.0, 1000.0])
-                continue
-            delta = projected - observation.image_point
-            values.extend(delta.tolist())
-        return np.asarray(values, dtype=np.float64)
+        )
+        if profiler is not None:
+            profiler.projection_loop_seconds += time.perf_counter() - loop_start
+            profiler.projection_calls += projection_count
+            profiler.opencv_projectpoints_invocations += projectpoints_count
+            profiler.batched_corner_count += batched_corners
+            profiler.residual_callback_total_seconds += time.perf_counter() - callback_start
+        return values
 
     inlier_corner_count = int(np.count_nonzero(inlier_mask))
     active_frame_count = len(active_frames)
@@ -403,6 +425,8 @@ def run_bundle_adjustment(
     )
     with stage_timer:
         try:
+            if profiler is not None:
+                least_squares_start = time.perf_counter()
             result = least_squares(
                 residuals,
                 x0,
@@ -411,18 +435,30 @@ def run_bundle_adjustment(
                 f_scale=settings.huber_delta_px,
                 max_nfev=max(settings.max_ba_iterations * len(x0), len(x0) + 1),
             )
+            if profiler is not None:
+                profiler.least_squares_seconds = time.perf_counter() - least_squares_start
         except ValueError as exc:
+            if profiler is not None:
+                profiler.least_squares_seconds = time.perf_counter() - least_squares_start
+            record_optimizer_run(
+                solve_diagnostics,
+                stage_name=stage_name,
+                active_frame_count=active_frame_count,
+                inlier_corner_count=inlier_corner_count,
+                result=None,
+                profiler=profiler,
+            )
             return marker_poses, frame_poses, inlier_mask, f"Bundle adjustment failed: {exc}"
 
-    record_optimizer_run(
-        solve_diagnostics,
-        stage_name=stage_name,
-        active_frame_count=active_frame_count,
-        inlier_corner_count=inlier_corner_count,
-        result=result,
-    )
-
     if not result.success or not np.all(np.isfinite(result.x)):
+        record_optimizer_run(
+            solve_diagnostics,
+            stage_name=stage_name,
+            active_frame_count=active_frame_count,
+            inlier_corner_count=inlier_corner_count,
+            result=result,
+            profiler=profiler,
+        )
         return (
             marker_poses,
             frame_poses,
@@ -430,6 +466,8 @@ def run_bundle_adjustment(
             f"Bundle adjustment did not converge (status={result.status}).",
         )
 
+    if profiler is not None:
+        post_start = time.perf_counter()
     marker_poses, frame_poses = _unpack_parameters(
         result.x,
         marker_poses,
@@ -445,6 +483,18 @@ def run_bundle_adjustment(
         frame_poses,
         object_points_by_marker,
     )
+    if profiler is not None:
+        profiler.post_seconds = time.perf_counter() - post_start
+
+    record_optimizer_run(
+        solve_diagnostics,
+        stage_name=stage_name,
+        active_frame_count=active_frame_count,
+        inlier_corner_count=inlier_corner_count,
+        result=result,
+        profiler=profiler,
+    )
+
     if depth_failure is not None:
         return marker_poses, frame_poses, inlier_mask, depth_failure
     return marker_poses, frame_poses, inlier_mask, None
@@ -755,6 +805,78 @@ def _prune_and_refit(
     if ba_failure is not None:
         return marker_poses, frame_poses, pruned, updated_consensus, ba_failure, dropped_edges
     return marker_poses, frame_poses, pruned, updated_consensus, None, dropped_edges
+
+
+def _evaluate_bundle_adjustment_residuals(
+    layout: BundleAdjustmentObservationLayout,
+    marker_state: dict[int, tuple[np.ndarray, np.ndarray]],
+    frame_pose_list: list[tuple[np.ndarray, np.ndarray] | None],
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+) -> tuple[np.ndarray, int, int, int]:
+    """Vectorized corner residuals; returns (residuals, projection_calls, projectpoints_invocations, batched_corners)."""
+    observation_count = layout.observation_count
+    if observation_count == 0:
+        return np.empty(0, dtype=np.float64), 0, 0, 0
+
+    num_markers = int(layout.unique_marker_ids.shape[0])
+    num_frames = int(layout.unique_frame_indices.shape[0])
+    marker_rotations = np.empty((num_markers, 3, 3), dtype=np.float64)
+    marker_translations = np.empty((num_markers, 3), dtype=np.float64)
+    marker_valid = np.zeros(num_markers, dtype=bool)
+    for slot, marker_id in enumerate(layout.unique_marker_ids):
+        marker_pose = marker_state.get(int(marker_id))
+        if marker_pose is None:
+            continue
+        marker_rotations[slot], marker_translations[slot] = marker_pose
+        marker_valid[slot] = True
+
+    frame_rotations = np.empty((num_frames, 3, 3), dtype=np.float64)
+    frame_translations = np.empty((num_frames, 3), dtype=np.float64)
+    frame_valid = np.zeros(num_frames, dtype=bool)
+    for slot, frame_index in enumerate(layout.unique_frame_indices):
+        frame_pose = frame_pose_list[int(frame_index)]
+        if frame_pose is None:
+            continue
+        frame_rotations[slot], frame_translations[slot] = frame_pose
+        frame_valid[slot] = True
+
+    marker_slots = layout.marker_pose_slots
+    frame_slots = layout.frame_pose_slots
+    valid_pose = marker_valid[marker_slots] & frame_valid[frame_slots]
+
+    residuals = np.full((observation_count, 2), 1000.0, dtype=np.float64)
+    if not np.any(valid_pose):
+        return residuals.reshape(-1), 0, 0, 0
+
+    object_points = layout.object_points[valid_pose]
+    marker_rotations_valid = marker_rotations[marker_slots[valid_pose]]
+    marker_translations_valid = marker_translations[marker_slots[valid_pose]]
+    frame_rotations_valid = frame_rotations[frame_slots[valid_pose]]
+    frame_translations_valid = frame_translations[frame_slots[valid_pose]]
+
+    points_layout = (
+        np.einsum("nij,nj->ni", marker_rotations_valid, object_points)
+        + marker_translations_valid
+    )
+    points_camera = (
+        np.einsum("nij,nj->ni", frame_rotations_valid, points_layout)
+        + frame_translations_valid
+    )
+    batched_corners = int(points_camera.shape[0])
+    projected, _ = cv2.projectPoints(
+        points_camera.reshape(-1, 1, 3).astype(np.float32),
+        np.zeros((3, 1), dtype=np.float64),
+        np.zeros((3, 1), dtype=np.float64),
+        camera_matrix,
+        dist_coeffs,
+    )
+    projected = projected.reshape(-1, 2)
+    projection_count = batched_corners
+    finite_mask = np.all(np.isfinite(projected), axis=1)
+    delta = projected - layout.image_points[valid_pose]
+    residuals[valid_pose] = np.where(finite_mask[:, None], delta, 1000.0)
+    return residuals.reshape(-1), projection_count, 1, batched_corners
 
 
 def _build_jac_sparsity(

@@ -2245,6 +2245,26 @@ class CalibrationSolveDiagnosticsTests(unittest.TestCase):
         "cost",
         "active_frame_count",
         "inlier_corner_count",
+        "timing_seconds",
+        "counts",
+    )
+    OPTIMIZER_RUN_TIMING_KEYS = (
+        "setup",
+        "least_squares",
+        "post",
+        "residual_callback_total",
+        "residual_unpack",
+        "projection_loop",
+        "residual_callback_other",
+        "least_squares_overhead",
+    )
+    OPTIMIZER_RUN_COUNT_KEYS = (
+        "parameter_count",
+        "residual_count",
+        "residual_callback_invocations",
+        "projection_calls",
+        "opencv_projectpoints_invocations",
+        "batched_corner_count",
     )
 
     def setUp(self) -> None:
@@ -2307,7 +2327,19 @@ class CalibrationSolveDiagnosticsTests(unittest.TestCase):
         self.assertGreaterEqual(len(diagnostics.optimizer_runs), 2)
         for run in diagnostics.optimizer_runs:
             self.assertEqual(set(run), set(self.OPTIMIZER_RUN_KEYS))
+            self.assertEqual(set(run["timing_seconds"]), set(self.OPTIMIZER_RUN_TIMING_KEYS))
+            self.assertEqual(set(run["counts"]), set(self.OPTIMIZER_RUN_COUNT_KEYS))
             self.assertGreaterEqual(run["nfev"], 0)
+            self.assertGreaterEqual(
+                run["counts"]["residual_callback_invocations"],
+                run["nfev"],
+            )
+            self.assertGreater(run["counts"]["projection_calls"], 0)
+            self.assertAlmostEqual(
+                diagnostics.solve_stages_seconds[run["stage"]],
+                run["timing_seconds"]["least_squares"],
+                places=3,
+            )
             self.assertGreaterEqual(run["active_frame_count"], 1)
             self.assertGreaterEqual(run["inlier_corner_count"], 8)
             self.assertIn(run["stage"], ("initial_bundle_adjustment", "post_pruning_refit"))

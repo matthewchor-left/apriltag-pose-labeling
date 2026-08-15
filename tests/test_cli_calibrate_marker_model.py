@@ -789,6 +789,24 @@ class CalibrateMarkerModelBenchmarkTests(unittest.TestCase):
                     "cost": 0.12,
                     "active_frame_count": 20,
                     "inlier_corner_count": 160,
+                    "timing_seconds": {
+                        "setup": 0.001,
+                        "least_squares": 0.5,
+                        "post": 0.0001,
+                        "residual_callback_total": 0.4,
+                        "residual_unpack": 0.05,
+                        "projection_loop": 0.34,
+                        "residual_callback_other": 0.01,
+                        "least_squares_overhead": 0.1,
+                    },
+                    "counts": {
+                        "parameter_count": 126,
+                        "residual_count": 320,
+                        "residual_callback_invocations": 42,
+                        "projection_calls": 6720,
+                        "opencv_projectpoints_invocations": 42,
+                        "batched_corner_count": 6720,
+                    },
                 }
             ],
         )
