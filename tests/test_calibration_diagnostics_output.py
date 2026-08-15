@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import tempfile
 import unittest
 from pathlib import Path
@@ -345,6 +346,7 @@ class RestoredPairEdgeFormattingTests(unittest.TestCase):
 class CalibrationDiagnosticsDocumentTests(unittest.TestCase):
     TOP_LEVEL_KEYS = (
         "version",
+        "benchmark",
         "succeeded",
         "failure_reason",
         "calibration_policy",
@@ -498,7 +500,7 @@ class CalibrationDiagnosticsDocumentTests(unittest.TestCase):
         self.assertEqual(list(payload["quality"].keys()), list(self.QUALITY_KEYS))
         self.assertEqual(list(payload["assignment_rejection_records"][0].keys()), list(self.RECORD_KEYS))
         self.assertEqual(list(payload["dropped_pair_edges"][0].keys()), list(self.DROPPED_EDGE_KEYS))
-        self.assertEqual(payload["version"], 7)
+        self.assertEqual(payload["version"], 8)
         self.assertFalse(payload["succeeded"])
         self.assertEqual(payload["failure_reason"], "refused")
         self.assertIsNone(payload["quality"]["reprojection_rms_px"])
@@ -518,7 +520,78 @@ class CalibrationDiagnosticsDocumentTests(unittest.TestCase):
         first = serialize_calibration_diagnostics_document(document)
         second = serialize_calibration_diagnostics_document(document)
         self.assertEqual(first, second)
-        self.assertTrue(first.index('"version"') < first.index('"succeeded"') < first.index('"quality"'))
+        self.assertTrue(first.index('"version"') < first.index('"benchmark"') < first.index('"succeeded"') < first.index('"quality"'))
+
+    def test_benchmark_is_null_by_default(self) -> None:
+        document = build_calibration_diagnostics_document(
+            _quality_report(),
+            succeeded=True,
+            failure_reason=None,
+        )
+        payload = json.loads(serialize_calibration_diagnostics_document(document))
+        self.assertIsNone(payload["benchmark"])
+
+    def test_benchmark_object_is_preserved(self) -> None:
+        benchmark = {
+            "fixture": "remote_static_1_tag",
+            "frame_count": 120,
+            "nested": {"enabled": True, "tags": [0, 1]},
+        }
+        document = build_calibration_diagnostics_document(
+            _quality_report(),
+            succeeded=True,
+            failure_reason=None,
+            benchmark=benchmark,
+        )
+        payload = json.loads(serialize_calibration_diagnostics_document(document))
+        self.assertEqual(payload["benchmark"], benchmark)
+
+    def test_benchmark_non_finite_values_serialize_as_null(self) -> None:
+        document = build_calibration_diagnostics_document(
+            _quality_report(),
+            succeeded=True,
+            failure_reason=None,
+            benchmark={
+                "finite": 1.5,
+                "non_finite": float("nan"),
+                "nested": {"inf_value": float("inf")},
+            },
+        )
+        text = serialize_calibration_diagnostics_document(document)
+        payload = json.loads(text)
+        self.assertEqual(payload["benchmark"]["finite"], 1.5)
+        self.assertIsNone(payload["benchmark"]["non_finite"])
+        self.assertIsNone(payload["benchmark"]["nested"]["inf_value"])
+        self.assertNotIn("NaN", text)
+        self.assertNotIn("Infinity", text)
+
+    def test_benchmark_payload_does_not_mutate_caller_mapping(self) -> None:
+        benchmark = {
+            "ratio": float("nan"),
+            "items": [float("inf")],
+        }
+        build_calibration_diagnostics_document(
+            _quality_report(),
+            succeeded=True,
+            failure_reason=None,
+            benchmark=benchmark,
+        )
+        self.assertTrue(math.isnan(benchmark["ratio"]))
+        self.assertEqual(len(benchmark["items"]), 1)
+        self.assertTrue(math.isinf(benchmark["items"][0]))
+
+    def test_save_calibration_diagnostics_forwards_benchmark(self) -> None:
+        benchmark = {"fixture": "playground_static_4_tag", "repeat": 3}
+        result = CalibrationResult(
+            layout=mock.Mock(),
+            quality=_quality_report(),
+            failure_reason=None,
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "diagnostics.json"
+            save_calibration_diagnostics(path, result, benchmark=benchmark)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["benchmark"], benchmark)
 
     def test_atomic_write_reports_path_and_preserves_existing_file_on_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -116,11 +116,11 @@ Both `object-detect` and `annotation-tool` can track a printed ChArUco board and
 uv run object-detect \
   --source 0 \
   --calibration config/Camera/nexplaygroundcam/intrinsics.json \
-  --marker-model config/Model/remote1/marker_model.json \
+  --marker-model config/Model/playground_static_4_tag/marker_model.json \
   --dictionary 36h11 \
   --detection-sensitivity relaxed \
   --overlay-object-model \
-  --object-model config/Model/remote1/object_model.json \
+  --object-model config/Model/playground_static_4_tag/object_model.json \
   --board-frame \
   --board-model config/Board/charuco_h11_w8_25mm_4x4_50/board_model.json \
   --camera-motion static
@@ -130,12 +130,12 @@ uv run object-detect \
 uv run annotation-tool \
   --source 0 \
   --calibration config/Camera/nexplaygroundcam/intrinsics.json \
-  --marker-model config/Model/remote1/marker_model.json \
+  --marker-model config/Model/playground_static_4_tag/marker_model.json \
   --eraser-model config/Model/remote1/eraser_model.json \
   --dictionary 36h11 \
   --detection-sensitivity relaxed \
   --overlay-object-model \
-  --object-model config/Model/remote1/object_model.json \
+  --object-model config/Model/playground_static_4_tag/object_model.json \
   --board-frame \
   --board-model config/Board/charuco_h11_w8_25mm_4x4_50/board_model.json
 ```
@@ -151,6 +151,34 @@ Board overlays use the same XZ grid and XYZ axes as `object-visualize-board-fram
 With `--preview`, `--board-frame`, and `--overlay-object-model` together, `object-detect` also enables **Interactive Object Model Capture**: press **e** to enter a Board Coordinate keypoint in the terminal (`keypoint-id x_mm y_mm z_mm`) and preview it as a magenta target, **s** to save to `--object-model`, **q** to quit when saved, and **x** to discard unsaved edits and quit.
 
 On `object-detect`, `--no-visualize` disables detection and pose-projection overlays, including the board grid and labels; board pose is still solved each frame. During Interactive Object Model Capture, only the editing controls and status remain visible.
+
+### CAD overlay
+
+`object-detect` can render a GLB CAD mesh when fused pose is available. Registration is read from `cad_registration.json` in the same directory as `--cad-model`.
+
+- `--overlay-cad-model` draws a semi-transparent mesh on the camera frame (requires `--visualize`). Additive with pose projection overlays.
+- `--side2side-cad-model` opens a side-by-side preview: camera on the left, opaque CAD-only rendering on the right (black when pose is unavailable). Requires `--preview`. Still renders the CAD pane under `--no-visualize` (left pane stays raw).
+- With `--plot-graph`, layout order is **camera | CAD | skeleton chart**.
+
+```bash
+uv run object-detect \
+  --source 0 \
+  --calibration config/Camera/nexplaygroundcam/intrinsics.json \
+  --marker-model config/Model/remote1/marker_model.json \
+  --dictionary 36h11 \
+  --detection-sensitivity relaxed \
+  --overlay-object-model \
+  --object-model config/Model/remote1/object_model.json \
+  --overlay-cad-model \
+  --side2side-cad-model \
+  --cad-model config/Model/CAD/nexplayground_sim.glb
+```
+
+| Flag | Description |
+|------|-------------|
+| `--overlay-cad-model` | Semi-transparent `--cad-model` GLB on camera frame (requires `--visualize`) |
+| `--side2side-cad-model` | Side-by-side opaque CAD pane (requires `--preview` and `--cad-model`) |
+| `--cad-model` | GLB path; required with either CAD flag. Uses sibling `cad_registration.json` |
 
 ## Core API (no visualization)
 
@@ -239,6 +267,31 @@ For layouts with many markers, pass `--anchor-marker-ids` to bootstrap from a sm
 - **Q** — quit without writing
 
 By default, frames are recorded only when you press **C** with **at least two** expected marker IDs visible. Pass **`--auto`** to capture periodically at **`--sample-rate-hz`** (default 10 Hz) under the same two-marker rule; **C** still captures an extra frame in automatic mode. Capture sharp, diverse viewpoints rather than repeated stationary views. During solve, frames that cannot be assigned a consistent marker interpretation are rejected automatically; each marker pair used in the layout still needs at least **20** accepted co-visible frames (`--min-pair-inliers`) after rejection. You do not need to capture pairs in isolated batches. The HUD shows expected/visible IDs, captured sample count, live pair readiness (raw co-visibility and pass/weak status), graph connectivity from the reference marker, and last-solve frame acceptance when you press **S**.
+
+### Benchmark mode (video file)
+
+Pass **`--benchmark`** with a video-file **`--source`** to measure offline calibration throughput without preview or HUD. The tool reads the video once to EOF, captures frames deterministically at **`--sample-rate-hz`** (default 10 Hz) using the video's reported frame rate and the same two-marker visibility rule as **`--auto`**, then runs a single solve. **`--auto`** is unnecessary — benchmark mode implies automatic capture. **`--diagnostics-output`** is required; timings, frame counts, and environment metadata are written under a top-level **`benchmark`** object while existing quality diagnostics remain unchanged.
+
+```bash
+uv run object-calibrate-marker-model \
+  --benchmark \
+  --source data/calibration.mov \
+  --calibration config/Camera/nexplaygroundcam/intrinsics.json \
+  --dictionary 36h11 \
+  --detection-sensitivity relaxed \
+  --marker-size 0.07 \
+  --marker-size-for 4:0.03 25-26:0.02 \
+  --marker-ids 0 2 3 4 19 22-26 28 29 \
+  --reference-marker-id 19 \
+  --sample-rate-hz 10 \
+  --output config/Model/playground_static_4_tag/marker_model.json \
+  --diagnostics-output config/Model/playground_static_4_tag/marker_model_diagnostics.json \
+  --force
+```
+
+**Benchmark video:** match calibration **`image_size`** exactly; use a constant frame rate; prefer all-intra or lossless encoding; lock exposure, focus, and white balance; record diverse viewpoints with multiple expected markers co-visible per frame.
+
+Benchmark metrics report offline processing throughput (frames read, captures accepted, wall-clock time), not camera or source real-time FPS.
 
 **Scale caveat:** metric layout depends on the physical `--marker-size` (default edge length) and calibrated intrinsics. Use repeatable `--marker-size-for ID_OR_RANGE:SIZE` overrides when markers differ (e.g. `4:0.03 10-12:0.025`). Pair translation gates scale with `ratio * min(size_a, size_b)` per edge. Wrong sizes or scaled intrinsics will bias the solved geometry.
 
@@ -358,6 +411,9 @@ Live camera and video file CLIs use `--source`: pass a camera device index (e.g.
 | `object-detect` | `--marker-model` | Marker model JSON path |
 | `object-detect` | `--marker-id` | Use a specific marker id only |
 | `object-detect` | `--no-visualize` | Camera preview without overlays |
+| `object-detect` | `--overlay-cad-model` | Semi-transparent GLB CAD mesh overlay on camera frame |
+| `object-detect` | `--side2side-cad-model` | Side-by-side opaque CAD pane (`--preview` required) |
+| `object-detect` | `--cad-model` | GLB path; sibling `cad_registration.json` required |
 | `object-detect` / `annotation-tool` | `--board-frame` | Board Reference Frame grid, axes, and coordinate labels |
 | `object-detect` / `annotation-tool` | `--board-model` | ChArUco board model JSON (required with `--board-frame`) |
 | `object-detect` / `annotation-tool` | `--camera-motion` | `static` (default) or `dynamic` board pose retention |
@@ -369,6 +425,9 @@ Live camera and video file CLIs use `--source`: pass a camera device index (e.g.
 | `object-calibrate-marker-model` | `--marker-size` | Default physical tag edge length in meters |
 | `object-calibrate-marker-model` | `--marker-size-for` | Per-marker overrides (`ID_OR_RANGE:SIZE`, repeatable) |
 | `object-calibrate-marker-model` | `--min-pair-inliers` | Minimum co-visible frames per pair (default 20) |
+| `object-calibrate-marker-model` | `--benchmark` | Video-file throughput mode: one pass to EOF, no preview/HUD, deterministic capture, single solve |
+| `object-calibrate-marker-model` | `--diagnostics-output` | Diagnostics JSON (required with `--benchmark`); adds top-level `benchmark` timings/counts/environment |
+| `object-calibrate-marker-model` | `--auto` / `--sample-rate-hz` | Periodic capture at sample rate (default 10 Hz); `--auto` not needed with `--benchmark` |
 | `object-calibrate-marker-model` | `--output` / `--force` | Marker model JSON; refuse overwrite unless `--force` |
 | `object-calibrate-marker-model` | `--object-model` | Optional object model JSON; update mapped keypoints from solved footprints after a successful save |
 | `object-inspect-marker-model` | `--marker-model` / `--visualize` | Print or diagram an existing marker model |

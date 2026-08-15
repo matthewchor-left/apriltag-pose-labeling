@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 from object_apriltag.board_model import load_board_model
 from object_apriltag.board_pose import make_charuco_detector, select_board_pose, solve_board_pose
@@ -63,6 +64,11 @@ def main() -> None:
             "  --overlay-object-model   Object skeleton keypoints and edges (--object-model).\n"
             "  --overlay-eraser-model   Eraser plane quads (--eraser-model).\n"
             "  (neither)                RGB object axis arrows (--axis-length).\n"
+            "\n"
+            "CAD (--cad-model; registration from cad_registration.json next to --cad-model):\n"
+            "  --overlay-cad-model      Semi-transparent GLB on camera frame (--visualize on).\n"
+            "  --side2side-cad-model    Side-by-side preview: camera | opaque CAD pane (--preview).\n"
+            "  With --plot-graph: camera | CAD | skeleton chart.\n"
             "\n"
             "Object Model keypoint editing (requires --preview, --board-frame, "
             "--overlay-object-model):\n"
@@ -176,6 +182,32 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--overlay-cad-model",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "CAD overlay: render --cad-model GLB on the camera frame when fused pose exists. "
+            "Additive with pose projection styles."
+        ),
+    )
+    parser.add_argument(
+        "--side2side-cad-model",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Side-by-side preview: camera frame on the left, opaque CAD-only rendering on the "
+            "right (black when pose is unavailable). Requires --preview and --cad-model."
+        ),
+    )
+    parser.add_argument(
+        "--cad-model",
+        type=Path,
+        help=(
+            "GLB CAD model path. Required when --overlay-cad-model or --side2side-cad-model "
+            "is enabled."
+        ),
+    )
+    parser.add_argument(
         "--axis-length",
         type=float,
         default=0.08,
@@ -223,6 +255,20 @@ def main() -> None:
         raise RuntimeError("--eraser-model is required when --overlay-eraser-model is enabled.")
     if args.board_frame and args.board_model is None:
         raise RuntimeError("--board-model is required when --board-frame is enabled.")
+    needs_cad = args.overlay_cad_model or args.side2side_cad_model
+    if args.side2side_cad_model and not args.preview:
+        raise RuntimeError("--side2side-cad-model requires --preview.")
+    if needs_cad and args.cad_model is None:
+        raise RuntimeError(
+            "--cad-model is required when --overlay-cad-model or --side2side-cad-model is enabled."
+        )
+    cad_registration_path = (
+        args.cad_model.with_name("cad_registration.json") if args.cad_model is not None else None
+    )
+    if needs_cad and not args.cad_model.exists():
+        raise RuntimeError(f"CAD model file not found: {args.cad_model}")
+    if needs_cad and not cad_registration_path.exists():
+        raise RuntimeError(f"CAD registration file not found: {cad_registration_path}")
     if not args.calibration.exists():
         raise RuntimeError(
             f"Calibration file not found: {args.calibration}\n"
@@ -272,6 +318,23 @@ def main() -> None:
     board_model = load_board_model(args.board_model) if args.board_frame else None
     board_charuco = make_charuco_detector(board_model) if board_model is not None else None
     board_retained_pose = None
+    cad_model = None
+    cad_registration = None
+    draw_cad_model_overlay = None
+    render_cad_model_view = None
+    if needs_cad:
+        from object_apriltag.cad import load_cad_model, load_cad_registration
+
+        cad_model = load_cad_model(args.cad_model)
+        cad_registration = load_cad_registration(cad_registration_path)
+        if args.overlay_cad_model:
+            from object_apriltag.viz.cad_overlay import draw_cad_model_overlay as _draw_cad_overlay
+
+            draw_cad_model_overlay = _draw_cad_overlay
+        if args.side2side_cad_model:
+            from object_apriltag.viz.cad_overlay import render_cad_model_view as _render_cad_view
+
+            render_cad_model_view = _render_cad_view
 
     print(f"Using marker model: {args.marker_model} ({len(marker_model.marker_ids)} markers)")
     print(f"Marker size: {marker_size_m:.4f} m")
@@ -280,6 +343,9 @@ def main() -> None:
     if board_model is not None:
         print(f"Using board model: {args.board_model}")
         print(f"Board camera motion: {args.camera_motion}")
+    if cad_model is not None:
+        print(f"Using CAD model: {args.cad_model}")
+        print(f"Using CAD registration: {cad_registration_path}")
     print(f"Using camera calibration: {args.calibration}")
     if calibration_source:
         print(f"Calibration source: {calibration_source}")
@@ -386,6 +452,16 @@ def main() -> None:
                         dist_coeffs,
                         args.axis_length,
                     )
+                if draw_cad_model_overlay is not None and cad_model is not None and cad_registration is not None:
+                    draw_cad_model_overlay(
+                        preview_frame,
+                        pose,
+                        camera_matrix,
+                        dist_coeffs,
+                        marker_model,
+                        cad_model,
+                        cad_registration,
+                    )
                 if board_pose is not None:
                     if args.overlay_object_model and current_object_model is not None:
                         draw_object_model_board_coordinate_labels(
@@ -475,13 +551,31 @@ def main() -> None:
             if pose is not None and current_object_model is not None
             else {}
         )
-        if args.preview and args.plot_graph:
-            plot_bgr = render_pose_plots(world_points, current_object_model, DEFAULT_AXIS_LIMITS, figsize=plot_figsize)
-            display_frame = make_side_by_side(preview_frame, plot_bgr, preview_frame.shape[0])
-        elif args.preview:
-            display_frame = preview_frame
-        else:
-            display_frame = render_pose_plots(world_points, current_object_model, DEFAULT_AXIS_LIMITS, figsize=plot_figsize)
+        target_height = preview_frame.shape[0]
+        display_frame = preview_frame
+        if args.side2side_cad_model and render_cad_model_view is not None:
+            if pose is not None and cad_model is not None and cad_registration is not None:
+                cad_view_bgr = render_cad_model_view(
+                    preview_frame.shape[:2],
+                    pose,
+                    camera_matrix,
+                    dist_coeffs,
+                    marker_model,
+                    cad_model,
+                    cad_registration,
+                )
+            else:
+                height, width = preview_frame.shape[:2]
+                cad_view_bgr = np.zeros((height, width, 3), dtype=np.uint8)
+            display_frame = make_side_by_side(display_frame, cad_view_bgr, target_height)
+        if args.plot_graph:
+            plot_bgr = render_pose_plots(
+                world_points, current_object_model, DEFAULT_AXIS_LIMITS, figsize=plot_figsize
+            )
+            if args.preview:
+                display_frame = make_side_by_side(display_frame, plot_bgr, target_height)
+            else:
+                display_frame = plot_bgr
 
         cv2.imshow("Object AprilTag Detector", display_frame)
         key = cv2.waitKey(1) & 0xFF

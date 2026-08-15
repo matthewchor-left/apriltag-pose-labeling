@@ -52,5 +52,17 @@ class FrameSourceReadTests(unittest.TestCase):
         capture.set.assert_called_once()
 
 
+    def test_read_frame_does_not_loop_video_on_eof_when_disabled(self) -> None:
+        capture = mock.MagicMock()
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        capture.read.return_value = (False, None)
+
+        ok, returned = read_frame(capture, Path("clip.mov"), loop_on_eof=False)
+
+        self.assertFalse(ok)
+        self.assertIsNone(returned)
+        capture.set.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -25,7 +25,7 @@ from object_apriltag.pose import marker_corner_object_points
 
 MarkerPair = tuple[int, int]
 
-# ponytail: single-frame weak edges are not cross-frame consensus; raise if marker
+# single-frame weak edges are not cross-frame consensus; raise if marker
 # graphs grow and pairwise quorum needs tuning beyond this floor.
 _BEST_EFFORT_WEAK_EDGE_MIN_SUPPORT = 2
 
@@ -3707,7 +3707,7 @@ def _maybe_restore_weak_connectivity(
     remaining = list(sorted_candidates)
     restored_records: list[RestoredPairEdge] = []
 
-    # ponytail: greedy first-ranked bridging edge per iteration; upgrade path is
+    # greedy first-ranked bridging edge per iteration; upgrade path is
     # union-find + global min-cost bridge set if multi-component graphs get larger.
     while not set(required_ids).issubset(_connected_marker_ids(pair_consensus, reference_marker_id)):
         connected = _connected_marker_ids(pair_consensus, reference_marker_id)

@@ -58,11 +58,13 @@ def open_frame_source(
 def read_frame(
     capture: cv2.VideoCapture,
     source: FrameSource,
+    *,
+    loop_on_eof: bool = True,
 ) -> tuple[bool, np.ndarray | None]:
     ok, frame = capture.read()
-    if ok or is_camera_source(source):
+    if ok or is_camera_source(source) or not loop_on_eof:
         return ok, frame
-    # ponytail: loop video files on EOF for interactive CLIs; upgrade path is
+    # loop video files on EOF for interactive CLIs; upgrade path is
     # explicit pause/seek controls if scrubbing becomes a requirement.
     capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
     return capture.read()

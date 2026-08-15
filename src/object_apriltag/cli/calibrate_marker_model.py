@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 import math
+import platform
 import sys
 import time
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 import cv2
 import numpy as np
@@ -67,6 +70,10 @@ DEFAULT_REPROJECTION_RMS_GATE_PX = 2.0
 DEFAULT_PAIR_TRANSLATION_RMS_GATE_RATIO = 0.10
 DEFAULT_PAIR_ROTATION_RMS_GATE_DEG = 5.0
 DEFAULT_PAIR_READINESS_HUD_LINES = 8
+
+
+def _is_benchmark_mode(args: argparse.Namespace) -> bool:
+    return getattr(args, "benchmark", False) is True
 
 
 def parse_args() -> argparse.Namespace:
@@ -263,6 +270,14 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional JSON path for full post-solve calibration diagnostics.",
     )
+    parser.add_argument(
+        "--benchmark",
+        action="store_true",
+        help=(
+            "Headless single-pass benchmark over a video file. Requires "
+            "--diagnostics-output; auto-captures at --sample-rate-hz and solves once at EOF."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -301,8 +316,17 @@ def validate_args(
             object_model_sources = parse_keypoint_sources(document)
         except (ValueError, OSError) as error:
             raise RuntimeError(str(error)) from error
-    if args.overlay_object_model and not isinstance(args.object_model, Path):
+    if args.overlay_object_model is True and not isinstance(args.object_model, Path):
         raise RuntimeError("--object-model is required when --overlay-object-model is enabled.")
+    if _is_benchmark_mode(args):
+        if args.diagnostics_output is None:
+            raise RuntimeError("--diagnostics-output is required with --benchmark.")
+        if isinstance(getattr(args, "source", None), int):
+            raise RuntimeError("--benchmark requires a video file --source, not a camera index.")
+        if args.overlay_object_model is True:
+            raise RuntimeError(
+                "--overlay-object-model is preview-only and cannot be used with --benchmark."
+            )
 
     expected_ids, marker_ids_failure = parse_marker_id_spec(args.marker_ids)
     if marker_ids_failure is not None:
@@ -730,10 +754,15 @@ def print_success(result: CalibrationResult, output: Path) -> None:
 def write_calibration_diagnostics_if_requested(
     diagnostics_output: Path | None,
     result: CalibrationResult,
+    *,
+    benchmark: Mapping[str, Any] | None = None,
 ) -> None:
     if diagnostics_output is None or result.quality is None:
         return
-    path = save_calibration_diagnostics(diagnostics_output, result)
+    if benchmark is None:
+        path = save_calibration_diagnostics(diagnostics_output, result)
+    else:
+        path = save_calibration_diagnostics(diagnostics_output, result, benchmark=benchmark)
     print(f"Wrote calibration diagnostics: {path}")
 
 
@@ -754,15 +783,293 @@ def append_capture_observation(
     observations: list[FrameObservation],
     visible: dict[int, np.ndarray],
     *,
-    readiness_worker: LivePairReadinessWorker,
+    readiness_worker: LivePairReadinessWorker | None = None,
 ) -> FrameObservation:
     observation = FrameObservation(
         frame_id=len(observations),
         markers={marker_id: corners.copy() for marker_id, corners in visible.items()},
     )
     observations.append(observation)
-    readiness_worker.submit(observations)
+    if readiness_worker is not None:
+        readiness_worker.submit(observations)
     return observation
+
+
+def solve_calibration_from_observations(
+    observations: list[FrameObservation],
+    args: argparse.Namespace,
+    *,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+    expected_ids: list[int],
+    marker_sizes_m: dict[int, float],
+    settings: CalibrationSettings,
+    anchor_ids: tuple[int, ...] | None,
+    anchor_stop_after_expansion: bool,
+    best_effort: bool,
+    partial_output: bool,
+) -> CalibrationResult:
+    return calibrate_marker_layout(
+        observations,
+        camera_matrix,
+        dist_coeffs,
+        expected_marker_ids=expected_ids,
+        reference_marker_id=args.reference_marker_id,
+        marker_size_m=args.marker_size,
+        settings=settings,
+        anchor_marker_ids=anchor_ids,
+        anchor_stop_after_expansion=anchor_stop_after_expansion,
+        marker_sizes_m=marker_sizes_m,
+        best_effort=best_effort,
+        partial_output=partial_output,
+    )
+
+
+def apply_calibration_result(
+    args: argparse.Namespace,
+    result: CalibrationResult,
+    *,
+    benchmark: Mapping[str, Any] | None = None,
+) -> bool:
+    """Write outputs for a calibration result. Returns True when the model was saved."""
+    if result.layout is None:
+        print_refusal(result)
+        try:
+            write_calibration_diagnostics_if_requested(
+                args.diagnostics_output,
+                result,
+                benchmark=benchmark,
+            )
+        except RuntimeError as error:
+            print(error, file=sys.stderr)
+        return False
+
+    save_marker_model(args.output, result.layout)
+    print_success(result, args.output)
+    if isinstance(args.object_model, Path):
+        try:
+            update_object_model_from_layout(args.object_model, result.layout)
+        except (ValueError, OSError) as error:
+            raise RuntimeError(
+                f"Marker model saved to {args.output}, but object model "
+                f"update failed: {error}"
+            ) from error
+    try:
+        write_calibration_diagnostics_if_requested(
+            args.diagnostics_output,
+            result,
+            benchmark=benchmark,
+        )
+    except RuntimeError as error:
+        print(error, file=sys.stderr)
+    return True
+
+
+def _timing_seconds_from_ns(duration_ns: int) -> float:
+    seconds = max(0.0, duration_ns / 1_000_000_000)
+    if not math.isfinite(seconds):
+        return 0.0
+    return seconds
+
+
+def _benchmark_environment() -> dict[str, str]:
+    import scipy
+
+    return {
+        "python": platform.python_version(),
+        "opencv": cv2.__version__,
+        "numpy": np.__version__,
+        "scipy": scipy.__version__,
+        "platform": platform.platform(),
+    }
+
+
+def _build_benchmark_payload(
+    *,
+    source_path: Path,
+    reported_fps: float,
+    reported_frame_count: int,
+    image_size: tuple[int, int],
+    decoded_frames: int,
+    frames_with_expected_markers: int,
+    covisible_frames: int,
+    sampled_observations: int,
+    detected_markers: int,
+    open_source_ns: int,
+    decode_ns: int,
+    detection_ns: int,
+    ingest_total_ns: int,
+    calibration_solve_ns: int,
+    total_through_solve_ns: int,
+) -> dict[str, Any]:
+    ingest_seconds = _timing_seconds_from_ns(ingest_total_ns)
+    detection_seconds = _timing_seconds_from_ns(detection_ns)
+    pipeline_fps = decoded_frames / ingest_seconds if ingest_seconds > 0.0 else 0.0
+    detection_fps = decoded_frames / detection_seconds if detection_seconds > 0.0 else 0.0
+    if not math.isfinite(pipeline_fps):
+        pipeline_fps = 0.0
+    if not math.isfinite(detection_fps):
+        detection_fps = 0.0
+    return {
+        "source": {
+            "path": str(source_path),
+            "size_bytes": source_path.stat().st_size,
+            "reported_fps": reported_fps,
+            "reported_frame_count": reported_frame_count,
+            "image_size": [image_size[0], image_size[1]],
+        },
+        "counts": {
+            "decoded_frames": decoded_frames,
+            "frames_with_expected_markers": frames_with_expected_markers,
+            "covisible_frames": covisible_frames,
+            "sampled_observations": sampled_observations,
+            "detected_markers": detected_markers,
+        },
+        "timing_seconds": {
+            "open_source": _timing_seconds_from_ns(open_source_ns),
+            "decode": _timing_seconds_from_ns(decode_ns),
+            "detection": _timing_seconds_from_ns(detection_ns),
+            "ingest_total": ingest_seconds,
+            "calibration_solve": _timing_seconds_from_ns(calibration_solve_ns),
+            "total_through_solve": _timing_seconds_from_ns(total_through_solve_ns),
+        },
+        "throughput": {
+            "pipeline_frames_per_second": pipeline_fps,
+            "detection_frames_per_second": detection_fps,
+        },
+        "environment": _benchmark_environment(),
+    }
+
+
+def run_benchmark(args: argparse.Namespace) -> bool:
+    """Benchmark video ingest and calibration; return True when a model was saved."""
+    if not isinstance(args.source, Path):
+        raise RuntimeError("--benchmark requires a video file --source, not a camera index.")
+
+    total_start_ns = time.perf_counter_ns()
+    (
+        expected_ids,
+        marker_sizes_m,
+        settings,
+        anchor_ids,
+        anchor_stop_after_expansion,
+        best_effort,
+        partial_output,
+    ) = validate_args(args)
+    expected_id_set = set(expected_ids)
+
+    camera_matrix, dist_coeffs, image_width, image_height, calibration_source = load_intrinsics(
+        args.calibration
+    )
+    width, height = require_calibration_image_size(image_width, image_height, args.calibration)
+    detector = build_apriltag_detector(args.dictionary, args.detection_sensitivity)
+
+    print(f"Expected marker IDs: {expected_ids}")
+    print(f"Reference marker ID: {args.reference_marker_id}")
+    print(f"Benchmark capture: automatic at {args.sample_rate_hz:g} Hz (video time)")
+    print(f"Using calibration: {args.calibration}")
+    if calibration_source:
+        print(f"Calibration source: {calibration_source}")
+    print(format_frame_source(args.source))
+
+    open_start_ns = time.perf_counter_ns()
+    capture = open_frame_source(args.source, width=width, height=height)
+    open_source_ns = time.perf_counter_ns() - open_start_ns
+
+    try:
+        reported_fps = float(capture.get(cv2.CAP_PROP_FPS))
+        if not math.isfinite(reported_fps) or reported_fps <= 0.0:
+            raise RuntimeError(
+                f"Video reported FPS must be finite and positive; got {reported_fps!r}."
+            )
+        raw_frame_count = float(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+        reported_frame_count = (
+            int(raw_frame_count)
+            if math.isfinite(raw_frame_count) and raw_frame_count >= 0.0
+            else 0
+        )
+
+        observations: list[FrameObservation] = []
+        sample_interval = 1.0 / args.sample_rate_hz
+        next_sample_time = 0.0
+        pending_sample = False
+        frame_index = 0
+        decoded_frames = 0
+        frames_with_expected_markers = 0
+        covisible_frames = 0
+        detected_markers = 0
+        decode_ns = 0
+        detection_ns = 0
+
+        while True:
+            decode_start_ns = time.perf_counter_ns()
+            ok, frame = read_frame(capture, args.source, loop_on_eof=False)
+            decode_ns += time.perf_counter_ns() - decode_start_ns
+            if not ok or frame is None:
+                break
+
+            decoded_frames += 1
+            require_frame_size(frame.shape[1], frame.shape[0], width, height, args.calibration)
+
+            detection_start_ns = time.perf_counter_ns()
+            visible = detect_expected_markers(detector, frame, expected_id_set)
+            detection_ns += time.perf_counter_ns() - detection_start_ns
+
+            detected_markers += len(visible)
+            if visible:
+                frames_with_expected_markers += 1
+
+            video_time = frame_index / reported_fps
+            if len(visible) >= 2:
+                covisible_frames += 1
+                if pending_sample or video_time >= next_sample_time:
+                    append_capture_observation(observations, visible)
+                    next_sample_time = video_time + sample_interval
+                    pending_sample = False
+            elif video_time >= next_sample_time:
+                pending_sample = True
+
+            frame_index += 1
+
+        ingest_total_ns = time.perf_counter_ns() - total_start_ns
+
+        solve_start_ns = time.perf_counter_ns()
+        result = solve_calibration_from_observations(
+            observations,
+            args,
+            camera_matrix=camera_matrix,
+            dist_coeffs=dist_coeffs,
+            expected_ids=expected_ids,
+            marker_sizes_m=marker_sizes_m,
+            settings=settings,
+            anchor_ids=anchor_ids,
+            anchor_stop_after_expansion=anchor_stop_after_expansion,
+            best_effort=best_effort,
+            partial_output=partial_output,
+        )
+        calibration_solve_ns = time.perf_counter_ns() - solve_start_ns
+        total_through_solve_ns = time.perf_counter_ns() - total_start_ns
+
+        benchmark_payload = _build_benchmark_payload(
+            source_path=args.source,
+            reported_fps=reported_fps,
+            reported_frame_count=reported_frame_count,
+            image_size=(width, height),
+            decoded_frames=decoded_frames,
+            frames_with_expected_markers=frames_with_expected_markers,
+            covisible_frames=covisible_frames,
+            sampled_observations=len(observations),
+            detected_markers=detected_markers,
+            open_source_ns=open_source_ns,
+            decode_ns=decode_ns,
+            detection_ns=detection_ns,
+            ingest_total_ns=ingest_total_ns,
+            calibration_solve_ns=calibration_solve_ns,
+            total_through_solve_ns=total_through_solve_ns,
+        )
+        return apply_calibration_result(args, result, benchmark=benchmark_payload)
+    finally:
+        capture.release()
 
 
 def run_capture(args: argparse.Namespace) -> bool:
@@ -802,7 +1109,7 @@ def run_capture(args: argparse.Namespace) -> bool:
         print(f"Calibration source: {calibration_source}")
 
     keypoint_sources: dict[str, tuple[int, str, float]] | None = None
-    if args.overlay_object_model:
+    if args.overlay_object_model is True:
         _, object_model_document = load_object_model_document(args.object_model)
         keypoint_sources = parse_keypoint_sources(object_model_document)
 
@@ -894,45 +1201,24 @@ def run_capture(args: argparse.Namespace) -> bool:
                 status_line = "capture skipped: need at least 2 expected markers"
                 continue
             if key in (ord("s"), ord("S")):
-                result = calibrate_marker_layout(
+                result = solve_calibration_from_observations(
                     observations,
-                    camera_matrix,
-                    dist_coeffs,
-                    expected_marker_ids=expected_ids,
-                    reference_marker_id=args.reference_marker_id,
-                    marker_size_m=args.marker_size,
-                    settings=settings,
-                    anchor_marker_ids=anchor_ids,
-                    anchor_stop_after_expansion=anchor_stop_after_expansion,
+                    args,
+                    camera_matrix=camera_matrix,
+                    dist_coeffs=dist_coeffs,
+                    expected_ids=expected_ids,
                     marker_sizes_m=marker_sizes_m,
+                    settings=settings,
+                    anchor_ids=anchor_ids,
+                    anchor_stop_after_expansion=anchor_stop_after_expansion,
                     best_effort=best_effort,
                     partial_output=partial_output,
                 )
-                if result.layout is None:
-                    print_refusal(result)
-                    try:
-                        write_calibration_diagnostics_if_requested(args.diagnostics_output, result)
-                    except RuntimeError as error:
-                        print(error, file=sys.stderr)
-                    last_solve_quality = result.quality
-                    status_line = f"refused: {result.failure_reason}"
-                    continue
-
-                save_marker_model(args.output, result.layout)
-                print_success(result, args.output)
-                if isinstance(args.object_model, Path):
-                    try:
-                        update_object_model_from_layout(args.object_model, result.layout)
-                    except (ValueError, OSError) as error:
-                        raise RuntimeError(
-                            f"Marker model saved to {args.output}, but object model "
-                            f"update failed: {error}"
-                        ) from error
-                try:
-                    write_calibration_diagnostics_if_requested(args.diagnostics_output, result)
-                except RuntimeError as error:
-                    print(error, file=sys.stderr)
-                return True
+                if apply_calibration_result(args, result):
+                    return True
+                last_solve_quality = result.quality
+                status_line = f"refused: {result.failure_reason}"
+                continue
     finally:
         readiness_worker.shutdown(join_timeout=0.0)
         capture.release()
@@ -941,7 +1227,11 @@ def run_capture(args: argparse.Namespace) -> bool:
 
 def main() -> None:
     try:
-        run_capture(parse_args())
+        args = parse_args()
+        if _is_benchmark_mode(args):
+            run_benchmark(args)
+        else:
+            run_capture(args)
     except RuntimeError as error:
         print(error, file=sys.stderr)
         sys.exit(1)

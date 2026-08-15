@@ -3,232 +3,171 @@
   "succeeded": true,
   "failure_reason": null,
   "calibration_policy": "best_effort",
-  "outcome": "accepted",
+  "outcome": "provisional",
   "partial_output": false,
-  "failed_quality_gates": [],
+  "failed_quality_gates": [
+    "Marker 4 reprojection RMS 2.000 px exceeds 2.000 px gate."
+  ],
   "selected_checkpoint_stage": null,
   "failed_refinement_stage": null,
   "omitted_markers": [],
   "quality": {
-    "reprojection_rms_px": 1.2187351455832978,
+    "reprojection_rms_px": 1.3259991382284309,
     "per_marker_reprojection_rms_px": {
-      "1": 1.518713369371412,
-      "19": 0.8790295240496552,
-      "22": 0.8686247374239281,
-      "23": 1.1959563245850078,
-      "24": 1.3491751412062034,
-      "25": 1.507721752966104,
-      "26": 1.2034500320564665,
-      "27": 1.2549710561836986
+      "4": 2.000269049857097,
+      "19": 1.2093139810368607,
+      "22": 1.2365547794824725,
+      "23": 1.1795640158548863,
+      "24": 1.2280846084473847,
+      "25": 1.4104676473439095,
+      "26": 1.3164291851785799,
+      "27": 1.2719986461846038
     },
     "edges": [
       {
-        "marker_a": 1,
+        "marker_a": 4,
         "marker_b": 19,
-        "inlier_count": 65,
-        "translation_rms_m": 0.0011238676777308467,
-        "rotation_rms_deg": 1.1326197535074598
-      },
-      {
-        "marker_a": 1,
-        "marker_b": 22,
-        "inlier_count": 64,
-        "translation_rms_m": 0.0009501027298058965,
-        "rotation_rms_deg": 0.6652529119106878
-      },
-      {
-        "marker_a": 1,
-        "marker_b": 23,
-        "inlier_count": 54,
-        "translation_rms_m": 0.0012347738097839727,
-        "rotation_rms_deg": 1.1419286787262282
-      },
-      {
-        "marker_a": 1,
-        "marker_b": 24,
-        "inlier_count": 64,
-        "translation_rms_m": 0.0008601775920830172,
-        "rotation_rms_deg": 1.4767596167994803
-      },
-      {
-        "marker_a": 1,
-        "marker_b": 25,
-        "inlier_count": 37,
-        "translation_rms_m": 0.0010236536872320443,
-        "rotation_rms_deg": 0.47007108247732576
-      },
-      {
-        "marker_a": 1,
-        "marker_b": 26,
-        "inlier_count": 67,
-        "translation_rms_m": 0.0009019616854784083,
-        "rotation_rms_deg": 0.7697788292095276
-      },
-      {
-        "marker_a": 1,
-        "marker_b": 27,
-        "inlier_count": 64,
-        "translation_rms_m": 0.0008695400781490646,
-        "rotation_rms_deg": 1.3984227764476964
+        "inlier_count": 6,
+        "translation_rms_m": 0.0005777826672416878,
+        "rotation_rms_deg": 0.3005794191881051
       },
       {
         "marker_a": 19,
         "marker_b": 22,
-        "inlier_count": 106,
-        "translation_rms_m": 0.0009847772089630186,
-        "rotation_rms_deg": 1.379386442425447
+        "inlier_count": 70,
+        "translation_rms_m": 0.0011842386040190253,
+        "rotation_rms_deg": 1.123302730832423
       },
       {
         "marker_a": 19,
         "marker_b": 23,
-        "inlier_count": 94,
-        "translation_rms_m": 0.0012879512278623018,
-        "rotation_rms_deg": 1.440850996410813
+        "inlier_count": 63,
+        "translation_rms_m": 0.0012786611472112197,
+        "rotation_rms_deg": 1.2722168732347365
       },
       {
         "marker_a": 19,
         "marker_b": 24,
-        "inlier_count": 86,
-        "translation_rms_m": 0.0010555521859983237,
-        "rotation_rms_deg": 2.37110695416473
+        "inlier_count": 27,
+        "translation_rms_m": 0.0011362615775640304,
+        "rotation_rms_deg": 0.8834929985040072
       },
       {
         "marker_a": 19,
+        "marker_b": 25,
+        "inlier_count": 28,
+        "translation_rms_m": 0.0011385880137516268,
+        "rotation_rms_deg": 1.146022376774552
+      },
+      {
+        "marker_a": 19,
+        "marker_b": 26,
+        "inlier_count": 76,
+        "translation_rms_m": 0.0012182939748915415,
+        "rotation_rms_deg": 0.8789443566498485
+      },
+      {
+        "marker_a": 19,
+        "marker_b": 27,
+        "inlier_count": 45,
+        "translation_rms_m": 0.0010994894223705228,
+        "rotation_rms_deg": 0.9209206520548987
+      },
+      {
+        "marker_a": 22,
+        "marker_b": 23,
+        "inlier_count": 69,
+        "translation_rms_m": 0.0012323658610337196,
+        "rotation_rms_deg": 1.8687000405477163
+      },
+      {
+        "marker_a": 22,
+        "marker_b": 24,
+        "inlier_count": 27,
+        "translation_rms_m": 0.0013050426549596676,
+        "rotation_rms_deg": 1.0364641089039002
+      },
+      {
+        "marker_a": 22,
+        "marker_b": 25,
+        "inlier_count": 40,
+        "translation_rms_m": 0.0012317136730863832,
+        "rotation_rms_deg": 1.157229375620939
+      },
+      {
+        "marker_a": 22,
+        "marker_b": 26,
+        "inlier_count": 88,
+        "translation_rms_m": 0.0011630234230414478,
+        "rotation_rms_deg": 0.7453131813529397
+      },
+      {
+        "marker_a": 22,
+        "marker_b": 27,
+        "inlier_count": 31,
+        "translation_rms_m": 0.001387392148207842,
+        "rotation_rms_deg": 1.0443266309286072
+      },
+      {
+        "marker_a": 23,
+        "marker_b": 24,
+        "inlier_count": 20,
+        "translation_rms_m": 0.0011743940540593846,
+        "rotation_rms_deg": 1.0115708705042792
+      },
+      {
+        "marker_a": 23,
         "marker_b": 25,
         "inlier_count": 37,
-        "translation_rms_m": 0.0012481085335950782,
-        "rotation_rms_deg": 0.8292441515296219
-      },
-      {
-        "marker_a": 19,
-        "marker_b": 26,
-        "inlier_count": 108,
-        "translation_rms_m": 0.0008898167353669247,
-        "rotation_rms_deg": 1.6151239683194498
-      },
-      {
-        "marker_a": 19,
-        "marker_b": 27,
-        "inlier_count": 80,
-        "translation_rms_m": 0.0010815908697589967,
-        "rotation_rms_deg": 2.1356355552829953
-      },
-      {
-        "marker_a": 22,
-        "marker_b": 23,
-        "inlier_count": 93,
-        "translation_rms_m": 0.0012260742565395725,
-        "rotation_rms_deg": 1.0977872975805139
-      },
-      {
-        "marker_a": 22,
-        "marker_b": 24,
-        "inlier_count": 80,
-        "translation_rms_m": 0.0009868188037790923,
-        "rotation_rms_deg": 1.9135555140690772
-      },
-      {
-        "marker_a": 22,
-        "marker_b": 25,
-        "inlier_count": 49,
-        "translation_rms_m": 0.0013110847363318654,
-        "rotation_rms_deg": 0.7153637097642161
-      },
-      {
-        "marker_a": 22,
-        "marker_b": 26,
-        "inlier_count": 133,
-        "translation_rms_m": 0.0008179618869910441,
-        "rotation_rms_deg": 1.0931932939197155
-      },
-      {
-        "marker_a": 22,
-        "marker_b": 27,
-        "inlier_count": 72,
-        "translation_rms_m": 0.001151458640462075,
-        "rotation_rms_deg": 1.7702780514446075
-      },
-      {
-        "marker_a": 23,
-        "marker_b": 24,
-        "inlier_count": 58,
-        "translation_rms_m": 0.0012265341166233978,
-        "rotation_rms_deg": 2.3245973600867886
-      },
-      {
-        "marker_a": 23,
-        "marker_b": 25,
-        "inlier_count": 56,
-        "translation_rms_m": 0.0012425397265181126,
-        "rotation_rms_deg": 0.9037383437294334
+        "translation_rms_m": 0.0012253174554312418,
+        "rotation_rms_deg": 1.28894439452785
       },
       {
         "marker_a": 23,
         "marker_b": 26,
-        "inlier_count": 108,
-        "translation_rms_m": 0.0011759665574608649,
-        "rotation_rms_deg": 1.2897672798993693
+        "inlier_count": 90,
+        "translation_rms_m": 0.00107430174478305,
+        "rotation_rms_deg": 1.2638897792480288
       },
       {
         "marker_a": 23,
         "marker_b": 27,
-        "inlier_count": 61,
-        "translation_rms_m": 0.0013439859197045582,
-        "rotation_rms_deg": 2.020320510220589
-      },
-      {
-        "marker_a": 24,
-        "marker_b": 25,
-        "inlier_count": 36,
-        "translation_rms_m": 0.0011566756536150777,
-        "rotation_rms_deg": 0.6129119372565001
+        "inlier_count": 34,
+        "translation_rms_m": 0.0010732573171662503,
+        "rotation_rms_deg": 1.119765890165359
       },
       {
         "marker_a": 24,
         "marker_b": 26,
-        "inlier_count": 66,
-        "translation_rms_m": 0.0011009608684614783,
-        "rotation_rms_deg": 0.8703196744371288
-      },
-      {
-        "marker_a": 24,
-        "marker_b": 27,
-        "inlier_count": 73,
-        "translation_rms_m": 0.0011376776060277529,
-        "rotation_rms_deg": 1.8182927182043407
+        "inlier_count": 24,
+        "translation_rms_m": 0.001126898720326118,
+        "rotation_rms_deg": 1.1683347366410344
       },
       {
         "marker_a": 25,
         "marker_b": 26,
-        "inlier_count": 61,
-        "translation_rms_m": 0.0010705507813303624,
-        "rotation_rms_deg": 1.4517751535932384
-      },
-      {
-        "marker_a": 25,
-        "marker_b": 27,
-        "inlier_count": 35,
-        "translation_rms_m": 0.0012635106252156705,
-        "rotation_rms_deg": 1.0264070393987355
+        "inlier_count": 29,
+        "translation_rms_m": 0.001067782500891627,
+        "rotation_rms_deg": 1.099047569499826
       },
       {
         "marker_a": 26,
         "marker_b": 27,
-        "inlier_count": 71,
-        "translation_rms_m": 0.0013201520320801133,
-        "rotation_rms_deg": 1.714365345326321
+        "inlier_count": 38,
+        "translation_rms_m": 0.0011086660960295484,
+        "rotation_rms_deg": 0.8975140495235412
       }
     ],
-    "pair_translation_rms_max_m": 0.0013439859197045582,
-    "pair_rotation_rms_max_deg": 2.37110695416473,
-    "frame_count": 169,
-    "observation_count": 4912,
-    "inlier_corner_count": 4416,
-    "input_frame_count": 180,
+    "pair_translation_rms_max_m": 0.001387392148207842,
+    "pair_rotation_rms_max_deg": 1.8687000405477163,
+    "frame_count": 120,
+    "observation_count": 3064,
+    "inlier_corner_count": 2723,
+    "input_frame_count": 122,
     "rejected_frame_count": 0,
-    "accepted_frame_count": 169,
+    "accepted_frame_count": 120,
     "connected_marker_ids": [
-      1,
+      4,
       19,
       22,
       23,
@@ -248,432 +187,679 @@
     "by_cause": []
   },
   "assignment_rejection_records": [],
-  "dropped_pair_edges": [],
-  "restored_pair_edges": null,
+  "dropped_pair_edges": [
+    {
+      "marker_a": 24,
+      "marker_b": 25,
+      "stage": "initial_consensus",
+      "reason": "insufficient_inlier_frames",
+      "observed_count": 28,
+      "supported_count": 7,
+      "required_count": 20,
+      "translation_rms_m": 0.0014261983770855777,
+      "rotation_rms_deg": 0.8961904541987009,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 25,
+      "marker_b": 27,
+      "stage": "initial_consensus",
+      "reason": "insufficient_inlier_frames",
+      "observed_count": 40,
+      "supported_count": 10,
+      "required_count": 20,
+      "translation_rms_m": 0.001449298529694434,
+      "rotation_rms_deg": 1.3002465117699191,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 4,
+      "marker_b": 19,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 63,
+      "supported_count": 6,
+      "required_count": 20,
+      "translation_rms_m": 0.0012391540488056213,
+      "rotation_rms_deg": 0.7778406898571462,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 4,
+      "marker_b": 26,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 35,
+      "supported_count": 3,
+      "required_count": 20,
+      "translation_rms_m": 0.001393255419830151,
+      "rotation_rms_deg": 1.095944007383181,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 4,
+      "marker_b": 22,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 57,
+      "supported_count": 5,
+      "required_count": 20,
+      "translation_rms_m": 0.0012587200803412875,
+      "rotation_rms_deg": 1.4560701531645304,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 4,
+      "marker_b": 24,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 22,
+      "supported_count": 0,
+      "required_count": 20,
+      "translation_rms_m": 0.001214198828974018,
+      "rotation_rms_deg": 0.7243521644155376,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 4,
+      "marker_b": 23,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 36,
+      "supported_count": 5,
+      "required_count": 20,
+      "translation_rms_m": 0.0014228619232272306,
+      "rotation_rms_deg": 1.7545430290771127,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 4,
+      "marker_b": 25,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 20,
+      "supported_count": 0,
+      "required_count": 20,
+      "translation_rms_m": 0.0012335460726817058,
+      "rotation_rms_deg": 1.4756027583012732,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 4,
+      "marker_b": 27,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 24,
+      "supported_count": 0,
+      "required_count": 20,
+      "translation_rms_m": 0.001220750845221509,
+      "rotation_rms_deg": 1.5644446548309794,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 24,
+      "marker_b": 27,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 21,
+      "supported_count": 17,
+      "required_count": 20,
+      "translation_rms_m": 0.0010837932191069628,
+      "rotation_rms_deg": 1.6167263960648757,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    }
+  ],
+  "restored_pair_edges": [
+    {
+      "marker_a": 4,
+      "marker_b": 19,
+      "stage": "post_pruning",
+      "original_stage": "post_pruning",
+      "original_reason": "insufficient_support",
+      "observed_count": 63,
+      "supported_count": 6,
+      "required_count": 20,
+      "support_fraction": 0.09523809523809523,
+      "translation_rms_m": 0.0012391540488056213,
+      "rotation_rms_deg": 0.7778406898571462,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    }
+  ],
   "fallback_assignment_records": [
     {
       "frame_index": 0,
       "frame_id": 0,
       "visible_marker_ids": [
-        1,
-        19,
-        23,
-        26,
-        27
-      ],
-      "disagreement_cost": 29.691092943137527,
-      "marker_pair": [
+        4,
         19,
         26
       ],
-      "translation_error_m": 0.004604594441652298,
-      "rotation_error_deg": 2.3401589170363244
+      "disagreement_cost": 50.855539560017995,
+      "marker_pair": [
+        4,
+        26
+      ],
+      "translation_error_m": 0.009926947082634514,
+      "rotation_error_deg": 5.452814631561662
+    },
+    {
+      "frame_index": 1,
+      "frame_id": 1,
+      "visible_marker_ids": [
+        4,
+        19,
+        22,
+        24,
+        26
+      ],
+      "disagreement_cost": 21.147896055132094,
+      "marker_pair": [
+        22,
+        24
+      ],
+      "translation_error_m": 0.00602693497795287,
+      "rotation_error_deg": 3.750891434174625
+    },
+    {
+      "frame_index": 2,
+      "frame_id": 2,
+      "visible_marker_ids": [
+        4,
+        19,
+        22,
+        23,
+        24,
+        25,
+        26
+      ],
+      "disagreement_cost": 653.7038158983634,
+      "marker_pair": [
+        23,
+        24
+      ],
+      "translation_error_m": 0.026001801302846666,
+      "rotation_error_deg": 13.832840847391452
     },
     {
       "frame_index": 3,
       "frame_id": 3,
       "visible_marker_ids": [
+        4,
+        19,
+        22,
+        23,
         24,
+        25,
+        26,
         27
       ],
-      "disagreement_cost": 1.7686787587056076,
+      "disagreement_cost": 326.0596222536729,
       "marker_pair": [
+        23,
+        24
+      ],
+      "translation_error_m": 0.017904746334262357,
+      "rotation_error_deg": 7.602123932005114
+    },
+    {
+      "frame_index": 4,
+      "frame_id": 4,
+      "visible_marker_ids": [
+        4,
+        19,
+        22,
+        23,
         24,
+        25,
+        26,
         27
       ],
-      "translation_error_m": 0.002115216111498718,
-      "rotation_error_deg": 4.031575247715427
+      "disagreement_cost": 106.16206374417634,
+      "marker_pair": [
+        23,
+        24
+      ],
+      "translation_error_m": 0.009693580450378377,
+      "rotation_error_deg": 4.0352540004810145
+    },
+    {
+      "frame_index": 5,
+      "frame_id": 5,
+      "visible_marker_ids": [
+        4,
+        19,
+        22,
+        23,
+        25,
+        26
+      ],
+      "disagreement_cost": 405.86648358075433,
+      "marker_pair": [
+        4,
+        25
+      ],
+      "translation_error_m": 0.01956520953365429,
+      "rotation_error_deg": 0.6761655479790067
     },
     {
       "frame_index": 6,
       "frame_id": 6,
       "visible_marker_ids": [
+        4,
         19,
+        22,
         23,
         24,
-        27
+        25,
+        26
       ],
-      "disagreement_cost": 5.989719875064379,
+      "disagreement_cost": 17.439711651495724,
+      "marker_pair": [
+        4,
+        24
+      ],
+      "translation_error_m": 0.004716060499200733,
+      "rotation_error_deg": 0.7855830623916067
+    },
+    {
+      "frame_index": 7,
+      "frame_id": 7,
+      "visible_marker_ids": [
+        4,
+        19,
+        22,
+        23,
+        24,
+        25,
+        26
+      ],
+      "disagreement_cost": 32.73157100580798,
+      "marker_pair": [
+        4,
+        25
+      ],
+      "translation_error_m": 0.005467034072278398,
+      "rotation_error_deg": 0.28353500124196124
+    },
+    {
+      "frame_index": 8,
+      "frame_id": 8,
+      "visible_marker_ids": [
+        4,
+        19,
+        22,
+        23,
+        26
+      ],
+      "disagreement_cost": 14.621784072384997,
       "marker_pair": [
         19,
         23
       ],
-      "translation_error_m": 0.0025486009420821057,
-      "rotation_error_deg": 2.0420256648492487
+      "translation_error_m": 0.004512559442296209,
+      "rotation_error_deg": 1.329252987302324
     },
     {
       "frame_index": 9,
       "frame_id": 9,
       "visible_marker_ids": [
+        4,
         19,
+        22,
         23,
-        27
+        26
       ],
-      "disagreement_cost": 4.595988977283914,
+      "disagreement_cost": 4.64259458281631,
       "marker_pair": [
-        23,
-        27
-      ],
-      "translation_error_m": 0.003347977880221732,
-      "rotation_error_deg": 3.226701511004884
-    },
-    {
-      "frame_index": 10,
-      "frame_id": 10,
-      "visible_marker_ids": [
         19,
-        23,
-        26,
-        27
+        23
       ],
-      "disagreement_cost": 21.402866999596164,
-      "marker_pair": [
-        26,
-        27
-      ],
-      "translation_error_m": 0.006390660041489336,
-      "rotation_error_deg": 2.8939797585494245
+      "translation_error_m": 0.0025428381449242574,
+      "rotation_error_deg": 1.0037397771579004
     },
     {
       "frame_index": 11,
       "frame_id": 11,
       "visible_marker_ids": [
+        4,
         19,
+        22,
         23,
         24,
-        26,
-        27
+        25,
+        26
       ],
-      "disagreement_cost": 9.722879588202485,
+      "disagreement_cost": 37.15894527014466,
       "marker_pair": [
-        26,
-        27
+        23,
+        24
       ],
-      "translation_error_m": 0.0036345070728823754,
-      "rotation_error_deg": 3.7030005126047927
+      "translation_error_m": 0.005777211596285504,
+      "rotation_error_deg": 1.8902263224345426
     },
     {
       "frame_index": 12,
       "frame_id": 12,
       "visible_marker_ids": [
+        4,
         19,
         22,
         23,
-        24,
-        26,
-        27
+        25,
+        26
       ],
-      "disagreement_cost": 24.534949066403765,
+      "disagreement_cost": 56.00880751082968,
       "marker_pair": [
-        22,
-        27
+        4,
+        25
       ],
-      "translation_error_m": 0.005602719542870678,
-      "rotation_error_deg": 5.533638744971838
+      "translation_error_m": 0.00828846320047857,
+      "rotation_error_deg": 0.5471204697095353
     },
     {
       "frame_index": 13,
       "frame_id": 13,
       "visible_marker_ids": [
+        4,
         19,
         22,
         23,
-        24,
-        26,
-        27
+        25,
+        26
       ],
-      "disagreement_cost": 27.912474770977173,
+      "disagreement_cost": 12.055322397689082,
       "marker_pair": [
-        22,
-        27
+        4,
+        25
       ],
-      "translation_error_m": 0.006096482281997002,
-      "rotation_error_deg": 5.727653960399457
+      "translation_error_m": 0.0030829480566765006,
+      "rotation_error_deg": 0.9253912106082488
     },
     {
       "frame_index": 14,
       "frame_id": 14,
       "visible_marker_ids": [
+        4,
         19,
+        22,
         23,
-        24,
-        26,
-        27
+        25,
+        26
       ],
-      "disagreement_cost": 15.746809940244102,
+      "disagreement_cost": 12.609410636078417,
       "marker_pair": [
-        26,
-        27
+        4,
+        25
       ],
-      "translation_error_m": 0.004852689489733199,
-      "rotation_error_deg": 3.248667863705655
+      "translation_error_m": 0.0041915781620453,
+      "rotation_error_deg": 0.7046540193603805
     },
     {
       "frame_index": 15,
       "frame_id": 15,
       "visible_marker_ids": [
+        4,
         19,
+        22,
         23,
-        24,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 9.934982168951784,
+      "disagreement_cost": 3.0496043672855393,
       "marker_pair": [
-        26,
-        27
+        4,
+        26
       ],
-      "translation_error_m": 0.003735316859158503,
-      "rotation_error_deg": 3.906186892971333
+      "translation_error_m": 0.002162285317774707,
+      "rotation_error_deg": 0.2409918131804261
     },
     {
       "frame_index": 16,
       "frame_id": 16,
       "visible_marker_ids": [
+        4,
         19,
         22,
         23,
-        24,
         26,
         27
       ],
-      "disagreement_cost": 25.019447849747372,
+      "disagreement_cost": 19.29119899359969,
       "marker_pair": [
-        22,
+        4,
         27
       ],
-      "translation_error_m": 0.005326817238887775,
-      "rotation_error_deg": 5.532815636253037
+      "translation_error_m": 0.004627303784391779,
+      "rotation_error_deg": 0.284415271490744
     },
     {
       "frame_index": 17,
       "frame_id": 17,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
         26,
         27
       ],
-      "disagreement_cost": 23.85666859474497,
+      "disagreement_cost": 15.8945054212165,
       "marker_pair": [
-        22,
-        27
+        4,
+        26
       ],
-      "translation_error_m": 0.005434176338009088,
-      "rotation_error_deg": 4.433825614849787
+      "translation_error_m": 0.0037514804734114556,
+      "rotation_error_deg": 0.7303171609070577
     },
     {
       "frame_index": 18,
       "frame_id": 18,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
         26,
         27
       ],
-      "disagreement_cost": 12.271138122082528,
+      "disagreement_cost": 28.259335891596272,
       "marker_pair": [
-        22,
-        27
+        19,
+        23
       ],
-      "translation_error_m": 0.0033574963390216846,
-      "rotation_error_deg": 2.4709700539805963
+      "translation_error_m": 0.004197189927918813,
+      "rotation_error_deg": 1.1794873913069155
     },
     {
       "frame_index": 19,
       "frame_id": 19,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
         26,
         27
       ],
-      "disagreement_cost": 14.613626188176305,
+      "disagreement_cost": 35.5687966380795,
       "marker_pair": [
-        22,
+        4,
         27
       ],
-      "translation_error_m": 0.003906399585618266,
-      "rotation_error_deg": 2.935512836058368
+      "translation_error_m": 0.006747048325683293,
+      "rotation_error_deg": 1.5003630072473555
     },
     {
       "frame_index": 20,
       "frame_id": 20,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
         26,
         27
       ],
-      "disagreement_cost": 12.17683012362172,
+      "disagreement_cost": 27.035764816535753,
       "marker_pair": [
-        22,
+        4,
         27
       ],
-      "translation_error_m": 0.003424130984423533,
-      "rotation_error_deg": 3.267389348377671
+      "translation_error_m": 0.006115653107762063,
+      "rotation_error_deg": 0.9324083617941397
     },
     {
       "frame_index": 21,
       "frame_id": 21,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
         26,
         27
       ],
-      "disagreement_cost": 9.881198690018367,
+      "disagreement_cost": 36.75389550915099,
       "marker_pair": [
-        22,
-        23
+        23,
+        27
       ],
-      "translation_error_m": 0.00239873749534256,
-      "rotation_error_deg": 0.9517219043890726
+      "translation_error_m": 0.0062345045241866785,
+      "rotation_error_deg": 1.1012203505273745
     },
     {
       "frame_index": 22,
       "frame_id": 22,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
+        25,
         26,
         27
       ],
-      "disagreement_cost": 12.287641323976008,
+      "disagreement_cost": 14.624102471042237,
       "marker_pair": [
-        1,
-        23
+        19,
+        25
       ],
-      "translation_error_m": 0.002651666183128833,
-      "rotation_error_deg": 0.22319518632922333
+      "translation_error_m": 0.003984382561011025,
+      "rotation_error_deg": 0.3730143440878966
     },
     {
       "frame_index": 23,
       "frame_id": 23,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
+        25,
         26,
         27
       ],
-      "disagreement_cost": 11.630127010168948,
+      "disagreement_cost": 21.525587528736256,
       "marker_pair": [
-        22,
-        23
+        19,
+        25
       ],
-      "translation_error_m": 0.0030079452163095637,
-      "rotation_error_deg": 0.9611101575463061
+      "translation_error_m": 0.004147361920870863,
+      "rotation_error_deg": 0.995156149828177
     },
     {
       "frame_index": 24,
       "frame_id": 24,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
         25,
         26,
         27
       ],
-      "disagreement_cost": 56.41739354491142,
+      "disagreement_cost": 42.32574007156017,
       "marker_pair": [
         19,
         25
       ],
-      "translation_error_m": 0.006702550716962548,
-      "rotation_error_deg": 1.6284535328701675
+      "translation_error_m": 0.005680702889646178,
+      "rotation_error_deg": 0.7745246324875057
     },
     {
       "frame_index": 25,
       "frame_id": 25,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
-        25,
         26,
         27
       ],
-      "disagreement_cost": 47.751165558028696,
+      "disagreement_cost": 10.264741494502386,
       "marker_pair": [
-        24,
-        25
+        22,
+        23
       ],
-      "translation_error_m": 0.0055767459347910164,
-      "rotation_error_deg": 2.5200287508135
+      "translation_error_m": 0.0032323981663845047,
+      "rotation_error_deg": 1.5377907012469259
     },
     {
       "frame_index": 26,
       "frame_id": 26,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
-        25,
         26,
         27
       ],
-      "disagreement_cost": 13.829880302166496,
+      "disagreement_cost": 11.908542944296302,
       "marker_pair": [
-        24,
-        25
+        22,
+        23
       ],
-      "translation_error_m": 0.0028206157861963986,
-      "rotation_error_deg": 1.4911176651938924
+      "translation_error_m": 0.002980705888761479,
+      "rotation_error_deg": 1.9298566941732962
     },
     {
       "frame_index": 27,
       "frame_id": 27,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
-        25,
         26,
         27
       ],
-      "disagreement_cost": 104.827632891442,
+      "disagreement_cost": 15.44919017633358,
       "marker_pair": [
-        24,
-        25
+        22,
+        23
       ],
-      "translation_error_m": 0.013598758616768451,
-      "rotation_error_deg": 3.8883555701704604
+      "translation_error_m": 0.004464945047747438,
+      "rotation_error_deg": 1.4696804924943607
     },
     {
       "frame_index": 28,
       "frame_id": 28,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
@@ -682,185 +868,176 @@
         26,
         27
       ],
-      "disagreement_cost": 99.4476877769502,
+      "disagreement_cost": 20.84455450371974,
       "marker_pair": [
-        24,
+        19,
         25
       ],
-      "translation_error_m": 0.013492777516880649,
-      "rotation_error_deg": 3.8755550262176848
+      "translation_error_m": 0.004483415557470033,
+      "rotation_error_deg": 0.8260825797166391
     },
     {
       "frame_index": 29,
       "frame_id": 29,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
-        25,
         26,
         27
       ],
-      "disagreement_cost": 136.34153039922998,
+      "disagreement_cost": 10.65526109956178,
       "marker_pair": [
-        24,
-        25
+        22,
+        23
       ],
-      "translation_error_m": 0.017651142746700186,
-      "rotation_error_deg": 5.8836942337893365
+      "translation_error_m": 0.002588728584044022,
+      "rotation_error_deg": 2.1120994212312527
     },
     {
       "frame_index": 30,
       "frame_id": 30,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        25,
+        24,
         26,
         27
       ],
-      "disagreement_cost": 22.279936770397534,
+      "disagreement_cost": 13.825364712573279,
       "marker_pair": [
-        19,
-        25
+        22,
+        23
       ],
-      "translation_error_m": 0.005484659607725754,
-      "rotation_error_deg": 1.6631307879485215
+      "translation_error_m": 0.004073560094000177,
+      "rotation_error_deg": 2.2100109541931072
     },
     {
       "frame_index": 31,
       "frame_id": 31,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        25,
         26,
         27
       ],
-      "disagreement_cost": 64.51206321569258,
+      "disagreement_cost": 11.524634269021842,
       "marker_pair": [
-        19,
-        25
+        22,
+        23
       ],
-      "translation_error_m": 0.009247853492915922,
-      "rotation_error_deg": 2.057997177583872
+      "translation_error_m": 0.0033583582855760833,
+      "rotation_error_deg": 2.281493138142143
     },
     {
       "frame_index": 32,
       "frame_id": 32,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
-        25,
         26,
         27
       ],
-      "disagreement_cost": 124.22414139756688,
+      "disagreement_cost": 13.451077639004358,
       "marker_pair": [
-        24,
-        25
+        22,
+        23
       ],
-      "translation_error_m": 0.011313725510954166,
-      "rotation_error_deg": 6.625345496402248
+      "translation_error_m": 0.0029101460484719215,
+      "rotation_error_deg": 1.9922514700888543
     },
     {
       "frame_index": 33,
       "frame_id": 33,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
-        25,
         26,
         27
       ],
-      "disagreement_cost": 90.60803517262715,
+      "disagreement_cost": 13.822020576693502,
       "marker_pair": [
-        24,
-        27
+        22,
+        23
       ],
-      "translation_error_m": 0.008326264193286265,
-      "rotation_error_deg": 3.3979564955592743
+      "translation_error_m": 0.0035167367857164423,
+      "rotation_error_deg": 2.4919445466055326
     },
     {
       "frame_index": 34,
       "frame_id": 34,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
-        25,
         26,
         27
       ],
-      "disagreement_cost": 90.52057468009846,
+      "disagreement_cost": 21.152617372606947,
       "marker_pair": [
-        19,
-        25
+        23,
+        24
       ],
-      "translation_error_m": 0.011912374097226995,
-      "rotation_error_deg": 7.355577566956932
+      "translation_error_m": 0.004162996614885326,
+      "rotation_error_deg": 1.235922045549257
     },
     {
       "frame_index": 35,
       "frame_id": 35,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
         25,
         26,
         27
       ],
-      "disagreement_cost": 58.75767847880269,
+      "disagreement_cost": 30.06903294693132,
       "marker_pair": [
         19,
         25
       ],
-      "translation_error_m": 0.009916033481439218,
-      "rotation_error_deg": 5.3377092692391495
+      "translation_error_m": 0.005083050114141403,
+      "rotation_error_deg": 0.5663646990432967
     },
     {
       "frame_index": 36,
       "frame_id": 36,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
-        25,
         26,
         27
       ],
-      "disagreement_cost": 56.17327552499973,
+      "disagreement_cost": 14.1492530453539,
       "marker_pair": [
-        19,
-        25
+        22,
+        23
       ],
-      "translation_error_m": 0.008564941678823997,
-      "rotation_error_deg": 4.827447611967042
+      "translation_error_m": 0.0029208406324726112,
+      "rotation_error_deg": 1.8884593975831696
     },
     {
       "frame_index": 37,
       "frame_id": 37,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
@@ -869,378 +1046,383 @@
         26,
         27
       ],
-      "disagreement_cost": 41.695327391692715,
+      "disagreement_cost": 157.50907554866436,
       "marker_pair": [
-        24,
+        19,
         25
       ],
-      "translation_error_m": 0.00533306564455134,
-      "rotation_error_deg": 1.9194698871163602
+      "translation_error_m": 0.008380735768287515,
+      "rotation_error_deg": 0.5465664114156221
     },
     {
       "frame_index": 38,
       "frame_id": 38,
       "visible_marker_ids": [
-        1,
         19,
         22,
         23,
         24,
-        25,
-        26
+        26,
+        27
       ],
-      "disagreement_cost": 31.703080614227456,
+      "disagreement_cost": 28.909904466377903,
       "marker_pair": [
-        24,
-        25
+        23,
+        24
       ],
-      "translation_error_m": 0.005603050324536549,
-      "rotation_error_deg": 1.840386159943907
+      "translation_error_m": 0.005704082769584714,
+      "rotation_error_deg": 1.3035613510225412
     },
     {
       "frame_index": 39,
       "frame_id": 39,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
-        25,
-        26
+        26,
+        27
       ],
-      "disagreement_cost": 45.34519952746978,
+      "disagreement_cost": 43.1797462312307,
       "marker_pair": [
-        19,
-        25
+        4,
+        23
       ],
-      "translation_error_m": 0.005755875304591313,
-      "rotation_error_deg": 4.1775160900179875
+      "translation_error_m": 0.006001248005789542,
+      "rotation_error_deg": 1.6503463824711477
     },
     {
       "frame_index": 40,
       "frame_id": 40,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
-        25,
-        26
+        26,
+        27
       ],
-      "disagreement_cost": 35.72374609147242,
+      "disagreement_cost": 26.346245863071672,
       "marker_pair": [
-        24,
-        25
+        4,
+        23
       ],
-      "translation_error_m": 0.004935408742634095,
-      "rotation_error_deg": 1.635383189871878
+      "translation_error_m": 0.0046371278980957276,
+      "rotation_error_deg": 1.3584470542168716
     },
     {
       "frame_index": 41,
       "frame_id": 41,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
-        25,
-        26
+        26,
+        27
       ],
-      "disagreement_cost": 42.07632410659205,
+      "disagreement_cost": 42.35198175487338,
       "marker_pair": [
-        19,
+        4,
         22
       ],
-      "translation_error_m": 0.005362868325114659,
-      "rotation_error_deg": 6.1335147788457265
+      "translation_error_m": 0.0057751631505140915,
+      "rotation_error_deg": 1.2280971314231504
     },
     {
       "frame_index": 42,
       "frame_id": 42,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
-        25,
-        26
+        26,
+        27
       ],
-      "disagreement_cost": 36.687857814472046,
+      "disagreement_cost": 23.492755750695558,
       "marker_pair": [
-        24,
-        25
+        4,
+        23
       ],
-      "translation_error_m": 0.0054606221983897535,
-      "rotation_error_deg": 1.724288603248838
+      "translation_error_m": 0.0041668792712518735,
+      "rotation_error_deg": 1.23423910315104
     },
     {
       "frame_index": 43,
       "frame_id": 43,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
-        25,
-        26
+        26,
+        27
       ],
-      "disagreement_cost": 32.978548174539874,
+      "disagreement_cost": 30.952438821164623,
       "marker_pair": [
-        24,
-        25
+        4,
+        22
       ],
-      "translation_error_m": 0.005909137242566833,
-      "rotation_error_deg": 2.0652588439606916
+      "translation_error_m": 0.00446017677501849,
+      "rotation_error_deg": 1.1610209682891193
     },
     {
       "frame_index": 44,
       "frame_id": 44,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
-        25,
-        26
+        26,
+        27
       ],
-      "disagreement_cost": 56.985605538298785,
+      "disagreement_cost": 27.001057658493504,
       "marker_pair": [
-        19,
-        25
+        4,
+        22
       ],
-      "translation_error_m": 0.0075506560966584315,
-      "rotation_error_deg": 5.219597279596352
+      "translation_error_m": 0.004627879443116405,
+      "rotation_error_deg": 0.9728035763070465
     },
     {
       "frame_index": 45,
       "frame_id": 45,
       "visible_marker_ids": [
-        1,
         19,
         22,
         23,
         24,
-        25,
-        26
+        26,
+        27
       ],
-      "disagreement_cost": 39.61394504481023,
+      "disagreement_cost": 10.570648933031608,
       "marker_pair": [
-        24,
-        25
+        22,
+        23
       ],
-      "translation_error_m": 0.006694396705612075,
-      "rotation_error_deg": 1.7818816601881922
+      "translation_error_m": 0.003942078503126845,
+      "rotation_error_deg": 0.5340611458258815
     },
     {
       "frame_index": 46,
       "frame_id": 46,
       "visible_marker_ids": [
-        1,
         19,
         22,
         23,
         24,
-        25,
-        26
+        26,
+        27
       ],
-      "disagreement_cost": 36.32251091218963,
+      "disagreement_cost": 8.610764776825873,
       "marker_pair": [
-        24,
-        25
+        22,
+        23
       ],
-      "translation_error_m": 0.0059352847451997984,
-      "rotation_error_deg": 1.151685173962001
+      "translation_error_m": 0.00313163578454849,
+      "rotation_error_deg": 0.7191530369907939
     },
     {
       "frame_index": 47,
       "frame_id": 47,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
-        25,
-        26
+        26,
+        27
       ],
-      "disagreement_cost": 51.965226179792175,
+      "disagreement_cost": 14.51181630140537,
       "marker_pair": [
-        19,
-        25
+        4,
+        23
       ],
-      "translation_error_m": 0.00712711754128635,
-      "rotation_error_deg": 3.796687933488752
+      "translation_error_m": 0.0034212288757911324,
+      "rotation_error_deg": 1.564789249656071
     },
     {
       "frame_index": 48,
       "frame_id": 48,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
         25,
-        26
+        26,
+        27
       ],
-      "disagreement_cost": 71.39819301943999,
+      "disagreement_cost": 28.53949601942186,
       "marker_pair": [
         19,
         25
       ],
-      "translation_error_m": 0.009127868560646138,
-      "rotation_error_deg": 5.8925124499753085
+      "translation_error_m": 0.004978003418595272,
+      "rotation_error_deg": 1.113194117487312
     },
     {
       "frame_index": 49,
       "frame_id": 49,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
         25,
-        26
+        26,
+        27
       ],
-      "disagreement_cost": 48.942710918720834,
+      "disagreement_cost": 29.753164559762112,
       "marker_pair": [
         19,
         25
       ],
-      "translation_error_m": 0.007259367914981022,
-      "rotation_error_deg": 4.1995592886792235
+      "translation_error_m": 0.005825085258954923,
+      "rotation_error_deg": 0.9464639083894778
     },
     {
       "frame_index": 50,
       "frame_id": 50,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
-        25,
-        26
+        26,
+        27
       ],
-      "disagreement_cost": 71.93417942220474,
+      "disagreement_cost": 9.800578581381842,
       "marker_pair": [
-        19,
-        25
+        4,
+        23
       ],
-      "translation_error_m": 0.008857296478522335,
-      "rotation_error_deg": 4.26765697873813
+      "translation_error_m": 0.002840277832778898,
+      "rotation_error_deg": 1.4866005887403024
     },
     {
       "frame_index": 51,
       "frame_id": 51,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
         25,
-        26
+        26,
+        27
       ],
-      "disagreement_cost": 46.82284476745193,
+      "disagreement_cost": 23.055271794760685,
       "marker_pair": [
         19,
         25
       ],
-      "translation_error_m": 0.006175181917904992,
-      "rotation_error_deg": 3.345812543400463
+      "translation_error_m": 0.00431602829781806,
+      "rotation_error_deg": 1.0527054937692462
     },
     {
       "frame_index": 52,
       "frame_id": 52,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
+        24,
         25,
-        26
+        26,
+        27
       ],
-      "disagreement_cost": 11.95954277000437,
+      "disagreement_cost": 31.865753013291307,
       "marker_pair": [
         19,
         25
       ],
-      "translation_error_m": 0.0032232934194571182,
-      "rotation_error_deg": 1.9497293803680902
+      "translation_error_m": 0.005132120272599763,
+      "rotation_error_deg": 1.1477823805503604
     },
     {
       "frame_index": 53,
       "frame_id": 53,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
         25,
-        26
+        26,
+        27
       ],
-      "disagreement_cost": 16.593117091165738,
+      "disagreement_cost": 32.927336263663705,
       "marker_pair": [
-        24,
-        25
+        23,
+        24
       ],
-      "translation_error_m": 0.0041383170580742605,
-      "rotation_error_deg": 1.2863041082234934
+      "translation_error_m": 0.004908180528675292,
+      "rotation_error_deg": 1.0825526710765165
     },
     {
       "frame_index": 54,
       "frame_id": 54,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
         25,
+        26,
+        27
+      ],
+      "disagreement_cost": 24.509362155974863,
+      "marker_pair": [
+        25,
         26
       ],
-      "disagreement_cost": 16.48224463115034,
-      "marker_pair": [
-        24,
-        25
-      ],
-      "translation_error_m": 0.004625553690416912,
-      "rotation_error_deg": 1.0716606051313449
+      "translation_error_m": 0.004302151914835401,
+      "rotation_error_deg": 0.9728115523054581
     },
     {
       "frame_index": 55,
       "frame_id": 55,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
         25,
-        26
+        26,
+        27
       ],
-      "disagreement_cost": 15.311658235048714,
+      "disagreement_cost": 41.96761190331049,
       "marker_pair": [
         24,
-        25
+        26
       ],
-      "translation_error_m": 0.004392570812445347,
-      "rotation_error_deg": 1.1442380422029266
+      "translation_error_m": 0.005421355171617466,
+      "rotation_error_deg": 1.9050858377662594
     },
     {
       "frame_index": 56,
       "frame_id": 56,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
@@ -1248,39 +1430,38 @@
         25,
         26
       ],
-      "disagreement_cost": 17.945046267276823,
+      "disagreement_cost": 111.44326876236914,
       "marker_pair": [
-        24,
+        4,
         25
       ],
-      "translation_error_m": 0.005342395663670853,
-      "rotation_error_deg": 1.717179104308819
+      "translation_error_m": 0.009108345185315605,
+      "rotation_error_deg": 0.6443861639122678
     },
     {
       "frame_index": 57,
       "frame_id": 57,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
-        25,
         26
       ],
-      "disagreement_cost": 20.36451606697648,
+      "disagreement_cost": 30.926601954178743,
       "marker_pair": [
-        24,
-        25
+        23,
+        24
       ],
-      "translation_error_m": 0.005418177568918561,
-      "rotation_error_deg": 1.6929934898349304
+      "translation_error_m": 0.00642567935397583,
+      "rotation_error_deg": 3.2628553364264183
     },
     {
       "frame_index": 58,
       "frame_id": 58,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
@@ -1288,39 +1469,38 @@
         25,
         26
       ],
-      "disagreement_cost": 24.10566181782907,
+      "disagreement_cost": 28.57924843520854,
       "marker_pair": [
-        24,
-        25
+        23,
+        24
       ],
-      "translation_error_m": 0.006473465188795843,
-      "rotation_error_deg": 2.5194271665637946
+      "translation_error_m": 0.0054599503995328156,
+      "rotation_error_deg": 3.3978872269967964
     },
     {
       "frame_index": 59,
       "frame_id": 59,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
         25,
         26
       ],
-      "disagreement_cost": 25.758469800825676,
+      "disagreement_cost": 16.195343397873796,
       "marker_pair": [
-        24,
-        25
+        4,
+        26
       ],
-      "translation_error_m": 0.0060253316681023105,
-      "rotation_error_deg": 1.681654327479048
+      "translation_error_m": 0.003496666612588198,
+      "rotation_error_deg": 2.232765976892274
     },
     {
       "frame_index": 60,
       "frame_id": 60,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
@@ -1328,2011 +1508,1101 @@
         25,
         26
       ],
-      "disagreement_cost": 19.727656470918447,
+      "disagreement_cost": 22.10003174147523,
       "marker_pair": [
-        24,
-        25
+        4,
+        24
       ],
-      "translation_error_m": 0.005068924156879535,
-      "rotation_error_deg": 2.0327798654049714
+      "translation_error_m": 0.005089003597147568,
+      "rotation_error_deg": 0.6559360830916999
     },
     {
       "frame_index": 61,
       "frame_id": 61,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
         25,
         26
       ],
-      "disagreement_cost": 18.762466357870874,
+      "disagreement_cost": 7.77629970719277,
       "marker_pair": [
-        24,
+        23,
         25
       ],
-      "translation_error_m": 0.005109339664757744,
-      "rotation_error_deg": 2.1458319909967907
+      "translation_error_m": 0.003347301351305093,
+      "rotation_error_deg": 2.559875775400786
     },
     {
       "frame_index": 62,
       "frame_id": 62,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
         25,
         26
       ],
-      "disagreement_cost": 14.521450753097433,
+      "disagreement_cost": 22.079981054680726,
       "marker_pair": [
-        24,
+        23,
         25
       ],
-      "translation_error_m": 0.004364266677141087,
-      "rotation_error_deg": 1.35226198861007
+      "translation_error_m": 0.005450532457225692,
+      "rotation_error_deg": 3.552974697520606
     },
     {
       "frame_index": 63,
       "frame_id": 63,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
         25,
         26
       ],
-      "disagreement_cost": 21.155334329320393,
+      "disagreement_cost": 30.0988541141713,
       "marker_pair": [
-        24,
+        23,
         25
       ],
-      "translation_error_m": 0.004575276263680131,
-      "rotation_error_deg": 1.2540845630350974
+      "translation_error_m": 0.00594178984444727,
+      "rotation_error_deg": 2.5632756781754718
     },
     {
       "frame_index": 64,
       "frame_id": 64,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         25,
-        26
+        26,
+        27
       ],
-      "disagreement_cost": 7.056480115543443,
+      "disagreement_cost": 27.077196013837867,
       "marker_pair": [
         22,
-        25
+        27
       ],
-      "translation_error_m": 0.0023344563945003434,
-      "rotation_error_deg": 1.2845655185857359
+      "translation_error_m": 0.0047776011683355124,
+      "rotation_error_deg": 0.8054008391106073
     },
     {
       "frame_index": 65,
       "frame_id": 65,
       "visible_marker_ids": [
-        1,
         19,
-        23
+        22,
+        23,
+        25,
+        26,
+        27
       ],
-      "disagreement_cost": 3.861280750257003,
+      "disagreement_cost": 15.794049563143092,
       "marker_pair": [
         19,
-        23
+        25
       ],
-      "translation_error_m": 0.0027267086825990224,
-      "rotation_error_deg": 4.112920140877849
+      "translation_error_m": 0.003958104138716118,
+      "rotation_error_deg": 0.9388076990403799
     },
     {
       "frame_index": 66,
       "frame_id": 66,
       "visible_marker_ids": [
         19,
-        26
+        22,
+        23,
+        25,
+        26,
+        27
       ],
-      "disagreement_cost": 1.4359396861668776,
+      "disagreement_cost": 14.243983116381884,
       "marker_pair": [
-        19,
-        26
+        22,
+        27
       ],
-      "translation_error_m": 0.0020318647256856773,
-      "rotation_error_deg": 3.177346063523158
+      "translation_error_m": 0.0035958577570849967,
+      "rotation_error_deg": 0.8643002197042452
     },
     {
       "frame_index": 67,
       "frame_id": 67,
       "visible_marker_ids": [
-        1,
         19,
+        22,
         23,
         25,
-        26
+        26,
+        27
       ],
-      "disagreement_cost": 17.389911748430393,
+      "disagreement_cost": 24.409392283922376,
       "marker_pair": [
-        25,
-        26
+        22,
+        27
       ],
-      "translation_error_m": 0.001031738915954168,
-      "rotation_error_deg": 8.876870004681951
+      "translation_error_m": 0.0053081386656708895,
+      "rotation_error_deg": 0.30203123403770166
     },
     {
       "frame_index": 68,
       "frame_id": 68,
       "visible_marker_ids": [
-        1,
+        4,
         19,
+        22,
         23,
-        25,
-        26
+        26,
+        27
       ],
-      "disagreement_cost": 13.57552399237634,
+      "disagreement_cost": 34.04712145167938,
       "marker_pair": [
-        25,
-        26
+        4,
+        27
       ],
-      "translation_error_m": 0.0009889610857198852,
-      "rotation_error_deg": 7.598970995299591
+      "translation_error_m": 0.005819156264071408,
+      "rotation_error_deg": 3.0634132830226704
     },
     {
       "frame_index": 69,
       "frame_id": 69,
       "visible_marker_ids": [
-        1,
+        4,
         19,
+        22,
         23,
         25,
-        26
+        27
       ],
-      "disagreement_cost": 17.702277383562055,
+      "disagreement_cost": 56.195470985800505,
       "marker_pair": [
-        25,
-        26
+        4,
+        25
       ],
-      "translation_error_m": 0.0012751650337291152,
-      "rotation_error_deg": 8.374873540341152
+      "translation_error_m": 0.008520268202594052,
+      "rotation_error_deg": 1.9369971887791388
     },
     {
       "frame_index": 70,
       "frame_id": 70,
       "visible_marker_ids": [
-        1,
+        4,
         19,
+        22,
         23,
         25,
-        26
+        27
       ],
-      "disagreement_cost": 29.933699086250385,
+      "disagreement_cost": 30.305735218312414,
       "marker_pair": [
-        19,
-        25
+        4,
+        23
       ],
-      "translation_error_m": 0.005271819833291291,
-      "rotation_error_deg": 2.1355117506830386
+      "translation_error_m": 0.006548125155872701,
+      "rotation_error_deg": 1.7640320701776568
     },
     {
       "frame_index": 71,
       "frame_id": 71,
       "visible_marker_ids": [
-        1,
+        4,
         19,
+        22,
+        23,
+        25,
         27
       ],
-      "disagreement_cost": 6.10261538475203,
+      "disagreement_cost": 52.79513064108886,
       "marker_pair": [
-        19,
-        27
+        4,
+        25
       ],
-      "translation_error_m": 0.003278310608332308,
-      "rotation_error_deg": 5.015374767009665
+      "translation_error_m": 0.0069312861683387015,
+      "rotation_error_deg": 2.005786384825504
     },
     {
       "frame_index": 72,
       "frame_id": 72,
       "visible_marker_ids": [
+        4,
         19,
         22,
         23,
-        24,
-        26,
+        25,
         27
       ],
-      "disagreement_cost": 101.5225431458127,
+      "disagreement_cost": 86.5994513574217,
       "marker_pair": [
-        23,
-        24
+        4,
+        23
       ],
-      "translation_error_m": 0.008219984861127124,
-      "rotation_error_deg": 4.668196750896086
+      "translation_error_m": 0.010267269100455934,
+      "rotation_error_deg": 1.798178723999239
     },
     {
       "frame_index": 73,
       "frame_id": 73,
       "visible_marker_ids": [
+        4,
         19,
         22,
         23,
-        24,
         25,
-        26,
         27
       ],
-      "disagreement_cost": 110.54630777619592,
+      "disagreement_cost": 86.4801810727026,
       "marker_pair": [
-        24,
+        4,
         25
       ],
-      "translation_error_m": 0.009501592074846493,
-      "rotation_error_deg": 2.8401073507371692
+      "translation_error_m": 0.010660972059552068,
+      "rotation_error_deg": 2.6354818168695986
     },
     {
       "frame_index": 74,
       "frame_id": 74,
       "visible_marker_ids": [
+        4,
         19,
         22,
         23,
         25,
-        26,
         27
       ],
-      "disagreement_cost": 17.769250385649453,
+      "disagreement_cost": 93.2072353829162,
       "marker_pair": [
-        19,
+        4,
         25
       ],
-      "translation_error_m": 0.005228100150698026,
-      "rotation_error_deg": 2.33354767706463
+      "translation_error_m": 0.011642004150703425,
+      "rotation_error_deg": 2.340846349082953
     },
     {
       "frame_index": 75,
       "frame_id": 75,
       "visible_marker_ids": [
+        4,
         19,
         22,
         23,
         25,
-        26,
         27
       ],
-      "disagreement_cost": 9.096978506500367,
+      "disagreement_cost": 108.49035594995782,
       "marker_pair": [
-        19,
+        4,
         25
       ],
-      "translation_error_m": 0.003107499465523591,
-      "rotation_error_deg": 1.9253247417054782
+      "translation_error_m": 0.011861850740468312,
+      "rotation_error_deg": 2.540084044322414
     },
     {
       "frame_index": 76,
       "frame_id": 76,
       "visible_marker_ids": [
+        4,
         19,
         22,
         23,
-        24,
         25,
-        26,
         27
       ],
-      "disagreement_cost": 84.40006393440615,
+      "disagreement_cost": 148.64567487071412,
       "marker_pair": [
-        24,
-        25
+        23,
+        27
       ],
-      "translation_error_m": 0.013216059763001008,
-      "rotation_error_deg": 5.679128304069291
+      "translation_error_m": 0.01154881115773786,
+      "rotation_error_deg": 4.4180019228090455
     },
     {
       "frame_index": 77,
       "frame_id": 77,
       "visible_marker_ids": [
+        4,
         19,
         22,
         23,
         25,
-        26,
         27
       ],
-      "disagreement_cost": 14.399822996887927,
+      "disagreement_cost": 51.12224356766136,
       "marker_pair": [
-        22,
-        27
+        4,
+        25
       ],
-      "translation_error_m": 0.0027996893488273205,
-      "rotation_error_deg": 4.465841452134072
+      "translation_error_m": 0.006857381571661646,
+      "rotation_error_deg": 2.2116433674506215
     },
     {
       "frame_index": 78,
       "frame_id": 78,
       "visible_marker_ids": [
+        4,
         19,
         22,
         23,
         25,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 21.324854181264985,
+      "disagreement_cost": 65.08486215169614,
       "marker_pair": [
-        19,
-        25
+        23,
+        26
       ],
-      "translation_error_m": 0.003983761644916662,
-      "rotation_error_deg": 1.1438042430026953
+      "translation_error_m": 0.006527494611853481,
+      "rotation_error_deg": 5.262537115617928
     },
     {
       "frame_index": 79,
       "frame_id": 79,
       "visible_marker_ids": [
+        4,
         19,
         22,
         23,
         25,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 22.376985249955823,
+      "disagreement_cost": 55.33801134641153,
       "marker_pair": [
-        26,
-        27
+        23,
+        26
       ],
-      "translation_error_m": 0.0032942469823033084,
-      "rotation_error_deg": 8.17300258335311
+      "translation_error_m": 0.006946672255920002,
+      "rotation_error_deg": 4.155523173739214
     },
     {
       "frame_index": 80,
       "frame_id": 80,
       "visible_marker_ids": [
+        4,
         19,
         22,
         23,
-        24,
         25,
         26,
         27
       ],
-      "disagreement_cost": 26.792657717700646,
+      "disagreement_cost": 64.86452063692045,
       "marker_pair": [
-        24,
+        26,
         27
       ],
-      "translation_error_m": 0.0018023545832121992,
-      "rotation_error_deg": 8.018083739527963
+      "translation_error_m": 0.008110909883283677,
+      "rotation_error_deg": 3.1164106424593196
     },
     {
       "frame_index": 81,
       "frame_id": 81,
       "visible_marker_ids": [
+        4,
         19,
         22,
         23,
-        24,
         25,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 25.17995597099268,
+      "disagreement_cost": 14.02546369229164,
       "marker_pair": [
-        19,
+        22,
         25
       ],
-      "translation_error_m": 0.0035039238355441577,
-      "rotation_error_deg": 1.394699064523093
+      "translation_error_m": 0.0036265220208505683,
+      "rotation_error_deg": 0.8626934203423071
     },
     {
       "frame_index": 82,
       "frame_id": 82,
       "visible_marker_ids": [
+        4,
         19,
         22,
         23,
-        24,
         25,
         26,
         27
       ],
-      "disagreement_cost": 94.73467868368392,
+      "disagreement_cost": 32.53207397547226,
       "marker_pair": [
-        24,
-        25
+        22,
+        27
       ],
-      "translation_error_m": 0.012529977844184895,
-      "rotation_error_deg": 3.642502325204758
+      "translation_error_m": 0.00591718386006207,
+      "rotation_error_deg": 3.1789418242697973
     },
     {
       "frame_index": 83,
       "frame_id": 83,
       "visible_marker_ids": [
-        1,
         19,
         22,
         23,
-        24,
         25,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 68.60595669097064,
+      "disagreement_cost": 11.264463086980468,
       "marker_pair": [
-        19,
-        25
+        22,
+        23
       ],
-      "translation_error_m": 0.005962546392888179,
-      "rotation_error_deg": 1.860499216091539
+      "translation_error_m": 0.0028649294094601446,
+      "rotation_error_deg": 4.117860550929336
     },
     {
       "frame_index": 84,
       "frame_id": 84,
       "visible_marker_ids": [
-        1,
         19,
         22,
         23,
-        24,
         25,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 41.02731255349341,
+      "disagreement_cost": 74.96691027989708,
       "marker_pair": [
-        1,
-        23
+        19,
+        25
       ],
-      "translation_error_m": 0.003659564259926045,
-      "rotation_error_deg": 0.9622612228878975
+      "translation_error_m": 0.011197874471153703,
+      "rotation_error_deg": 2.6461631670858434
     },
     {
       "frame_index": 85,
       "frame_id": 85,
       "visible_marker_ids": [
-        1,
         19,
         22,
         23,
-        24,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 97.3795677301587,
+      "disagreement_cost": 8.86270138151466,
       "marker_pair": [
-        22,
-        27
+        19,
+        26
       ],
-      "translation_error_m": 0.009188402881380252,
-      "rotation_error_deg": 4.610028004613361
+      "translation_error_m": 0.0031888558967774583,
+      "rotation_error_deg": 1.0678086057437066
     },
     {
       "frame_index": 86,
       "frame_id": 86,
       "visible_marker_ids": [
-        1,
         19,
         22,
         23,
-        24,
         25,
         26,
         27
       ],
-      "disagreement_cost": 141.01863656900179,
+      "disagreement_cost": 7.697053195133731,
       "marker_pair": [
         22,
         27
       ],
-      "translation_error_m": 0.010428060235728545,
-      "rotation_error_deg": 5.1039197418146225
+      "translation_error_m": 0.003331550044593645,
+      "rotation_error_deg": 2.3857769898297363
     },
     {
       "frame_index": 87,
       "frame_id": 87,
       "visible_marker_ids": [
-        1,
         19,
         22,
         23,
         24,
+        25,
         26,
         27
       ],
-      "disagreement_cost": 16.322120079234384,
+      "disagreement_cost": 86.4019472717352,
       "marker_pair": [
-        1,
-        23
+        22,
+        27
       ],
-      "translation_error_m": 0.004049665326014638,
-      "rotation_error_deg": 1.0678953810687757
+      "translation_error_m": 0.008631456694639068,
+      "rotation_error_deg": 4.128783587918788
     },
     {
       "frame_index": 88,
       "frame_id": 88,
       "visible_marker_ids": [
-        1,
         19,
         22,
         23,
         24,
+        25,
         26,
         27
       ],
-      "disagreement_cost": 13.916081724532205,
+      "disagreement_cost": 59.21523953701015,
       "marker_pair": [
-        1,
-        23
+        23,
+        27
       ],
-      "translation_error_m": 0.0034543799449308016,
-      "rotation_error_deg": 1.0666481037663043
+      "translation_error_m": 0.006847856908747754,
+      "rotation_error_deg": 0.7590307763100529
     },
     {
       "frame_index": 89,
       "frame_id": 89,
       "visible_marker_ids": [
-        1,
         19,
         22,
         23,
         24,
+        25,
         26,
         27
       ],
-      "disagreement_cost": 19.87063767957358,
+      "disagreement_cost": 199.38722814612024,
       "marker_pair": [
-        1,
-        23
+        23,
+        24
       ],
-      "translation_error_m": 0.0030969674221623528,
-      "rotation_error_deg": 1.2779838513001462
+      "translation_error_m": 0.018118889680965512,
+      "rotation_error_deg": 8.480158475113763
     },
     {
       "frame_index": 90,
       "frame_id": 90,
       "visible_marker_ids": [
-        1,
-        19,
         22,
         23,
         24,
+        25,
         26,
         27
       ],
-      "disagreement_cost": 29.312606136954948,
+      "disagreement_cost": 464.1730517573855,
       "marker_pair": [
-        22,
+        23,
         24
       ],
-      "translation_error_m": 0.004041661581568694,
-      "rotation_error_deg": 1.7943581405457165
+      "translation_error_m": 0.03226315177706336,
+      "rotation_error_deg": 13.997247248696752
     },
     {
       "frame_index": 91,
       "frame_id": 91,
       "visible_marker_ids": [
-        1,
-        19,
         22,
         23,
         24,
+        25,
         26,
         27
       ],
-      "disagreement_cost": 36.3042037145805,
+      "disagreement_cost": 73.176553532739,
       "marker_pair": [
-        1,
-        23
+        23,
+        24
       ],
-      "translation_error_m": 0.005237710915164853,
-      "rotation_error_deg": 0.5583877500004166
+      "translation_error_m": 0.012423758371238894,
+      "rotation_error_deg": 7.2075602541463235
     },
     {
       "frame_index": 92,
       "frame_id": 92,
       "visible_marker_ids": [
-        1,
         19,
         22,
         23,
-        24,
         25,
         26,
         27
       ],
-      "disagreement_cost": 83.82831559071384,
+      "disagreement_cost": 89.09075419276839,
       "marker_pair": [
-        1,
-        25
+        26,
+        27
       ],
-      "translation_error_m": 0.007658245722999862,
-      "rotation_error_deg": 0.8040155665662748
+      "translation_error_m": 0.00860808944758797,
+      "rotation_error_deg": 4.970447505200343
     },
     {
       "frame_index": 93,
       "frame_id": 93,
       "visible_marker_ids": [
-        1,
         19,
         22,
         23,
-        24,
         25,
         26,
         27
       ],
-      "disagreement_cost": 64.57328178903845,
+      "disagreement_cost": 20.72900561267601,
       "marker_pair": [
-        1,
+        19,
         25
       ],
-      "translation_error_m": 0.006894685434198317,
-      "rotation_error_deg": 0.8090014596382887
+      "translation_error_m": 0.00450966151355122,
+      "rotation_error_deg": 2.2133693120687137
     },
     {
       "frame_index": 94,
       "frame_id": 94,
       "visible_marker_ids": [
-        1,
         19,
         22,
         23,
-        24,
-        25,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 72.15385719951759,
+      "disagreement_cost": 5.944267791196189,
       "marker_pair": [
-        1,
-        25
-      ],
-      "translation_error_m": 0.007237783148261558,
-      "rotation_error_deg": 0.2684286665938474
-    },
-    {
-      "frame_index": 95,
-      "frame_id": 95,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
         23,
-        24,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 45.0310726922165,
-      "marker_pair": [
-        1,
-        23
-      ],
-      "translation_error_m": 0.005377353434403325,
-      "rotation_error_deg": 1.2142474425804024
+      "translation_error_m": 0.0035037983608559365,
+      "rotation_error_deg": 1.5113332379445439
     },
     {
       "frame_index": 96,
       "frame_id": 96,
       "visible_marker_ids": [
-        1,
         19,
         22,
         23,
-        24,
-        26,
-        27
+        25,
+        26
       ],
-      "disagreement_cost": 34.10344810892913,
+      "disagreement_cost": 6.447974796140049,
       "marker_pair": [
-        1,
+        19,
         23
       ],
-      "translation_error_m": 0.0048524648326539865,
-      "rotation_error_deg": 1.0319853535404273
+      "translation_error_m": 0.0036018743515651326,
+      "rotation_error_deg": 1.190370098222242
     },
     {
       "frame_index": 97,
       "frame_id": 97,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
         25,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 74.83225925940658,
+      "disagreement_cost": 15.746661599158028,
       "marker_pair": [
-        1,
+        4,
         25
       ],
-      "translation_error_m": 0.006718057538204324,
-      "rotation_error_deg": 0.7931070314148764
+      "translation_error_m": 0.004257434469908283,
+      "rotation_error_deg": 1.6740811564812361
     },
     {
       "frame_index": 98,
       "frame_id": 98,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 48.66713224988195,
+      "disagreement_cost": 7.218982214289097,
       "marker_pair": [
-        22,
-        24
+        4,
+        26
       ],
-      "translation_error_m": 0.005428796810020459,
-      "rotation_error_deg": 4.1312325231126374
-    },
-    {
-      "frame_index": 99,
-      "frame_id": 99,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        26,
-        27
-      ],
-      "disagreement_cost": 84.0528513213397,
-      "marker_pair": [
-        22,
-        27
-      ],
-      "translation_error_m": 0.007708667165497227,
-      "rotation_error_deg": 4.442662318680446
+      "translation_error_m": 0.002773892569007746,
+      "rotation_error_deg": 1.1539453702337719
     },
     {
       "frame_index": 100,
       "frame_id": 100,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
-        26,
-        27
+        25,
+        26
       ],
-      "disagreement_cost": 132.45747035582272,
+      "disagreement_cost": 22.449219795062064,
       "marker_pair": [
-        22,
-        27
+        23,
+        24
       ],
-      "translation_error_m": 0.008633308533152837,
-      "rotation_error_deg": 5.380911060807348
+      "translation_error_m": 0.004739377331492389,
+      "rotation_error_deg": 2.6283744888511746
     },
     {
       "frame_index": 101,
       "frame_id": 101,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
-        26,
-        27
+        25,
+        26
       ],
-      "disagreement_cost": 149.0550605352817,
+      "disagreement_cost": 17.761288347400633,
       "marker_pair": [
-        22,
-        27
+        4,
+        24
       ],
-      "translation_error_m": 0.008380117562021725,
-      "rotation_error_deg": 12.681013619185348
+      "translation_error_m": 0.005623218548095332,
+      "rotation_error_deg": 1.1026476062248127
     },
     {
       "frame_index": 102,
       "frame_id": 102,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
-        26,
-        27
-      ],
-      "disagreement_cost": 133.76174851908937,
-      "marker_pair": [
-        24,
+        25,
         26
       ],
-      "translation_error_m": 0.008085555234063275,
-      "rotation_error_deg": 7.246738502538048
+      "disagreement_cost": 68.8618571796301,
+      "marker_pair": [
+        23,
+        24
+      ],
+      "translation_error_m": 0.008157180527453426,
+      "rotation_error_deg": 0.1302686196680538
     },
     {
       "frame_index": 103,
       "frame_id": 103,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
         24,
         25,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 199.87469472948808,
+      "disagreement_cost": 18.05170753712985,
       "marker_pair": [
-        24,
-        25
+        4,
+        24
       ],
-      "translation_error_m": 0.01757573297853653,
-      "rotation_error_deg": 7.067420175136517
+      "translation_error_m": 0.005384874282417605,
+      "rotation_error_deg": 1.0909907137595196
     },
     {
       "frame_index": 104,
       "frame_id": 104,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        25,
-        26,
-        27
+        24,
+        26
       ],
-      "disagreement_cost": 16.973325956207248,
+      "disagreement_cost": 45.010032041183734,
       "marker_pair": [
-        23,
-        27
+        4,
+        24
       ],
-      "translation_error_m": 0.0038480291300942576,
-      "rotation_error_deg": 2.557276102838264
+      "translation_error_m": 0.0075779803737154984,
+      "rotation_error_deg": 1.2660891400104948
     },
     {
       "frame_index": 105,
       "frame_id": 105,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
         25,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 133.9986499206014,
+      "disagreement_cost": 82.42687691353609,
       "marker_pair": [
-        19,
-        27
+        4,
+        25
       ],
-      "translation_error_m": 0.011912092461141584,
-      "rotation_error_deg": 13.050564627001568
+      "translation_error_m": 0.008857606452589357,
+      "rotation_error_deg": 0.6508750644829158
     },
     {
       "frame_index": 106,
       "frame_id": 106,
       "visible_marker_ids": [
-        1,
+        4,
+        19,
         22,
         23,
-        24,
-        26,
-        27
+        25,
+        26
       ],
-      "disagreement_cost": 11.994954926942125,
+      "disagreement_cost": 12.631148090545178,
       "marker_pair": [
-        1,
-        27
+        22,
+        25
       ],
-      "translation_error_m": 0.0025427842906868008,
-      "rotation_error_deg": 1.4021682574299577
+      "translation_error_m": 0.003806950545535991,
+      "rotation_error_deg": 0.6172210170783775
     },
     {
       "frame_index": 107,
       "frame_id": 107,
       "visible_marker_ids": [
-        1,
+        4,
+        19,
         22,
         23,
         24,
-        26,
-        27
+        25,
+        26
       ],
-      "disagreement_cost": 21.06505996545719,
+      "disagreement_cost": 79.70793087972199,
       "marker_pair": [
-        22,
-        27
+        23,
+        24
       ],
-      "translation_error_m": 0.004642680075950981,
-      "rotation_error_deg": 2.2936333116142156
+      "translation_error_m": 0.010278119330976209,
+      "rotation_error_deg": 4.556196771502827
     },
     {
       "frame_index": 108,
       "frame_id": 108,
       "visible_marker_ids": [
-        1,
+        4,
+        19,
         22,
         23,
-        24,
         25,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 18.579706697597288,
+      "disagreement_cost": 30.2372734461472,
       "marker_pair": [
-        25,
-        27
+        4,
+        25
       ],
-      "translation_error_m": 0.0033975252978327925,
-      "rotation_error_deg": 0.9857046233917727
+      "translation_error_m": 0.005016147040555522,
+      "rotation_error_deg": 0.8719260971816026
     },
     {
       "frame_index": 109,
       "frame_id": 109,
       "visible_marker_ids": [
-        1,
+        4,
+        19,
+        22,
         23,
-        24,
-        26,
-        27
+        25,
+        26
       ],
-      "disagreement_cost": 11.898748398074991,
+      "disagreement_cost": 21.528302594500587,
       "marker_pair": [
-        23,
-        24
+        4,
+        26
       ],
-      "translation_error_m": 0.0029594948614110527,
-      "rotation_error_deg": 3.7126660772467264
+      "translation_error_m": 0.005046154798003986,
+      "rotation_error_deg": 1.8944312535191652
     },
     {
       "frame_index": 110,
       "frame_id": 110,
       "visible_marker_ids": [
-        1,
+        4,
+        19,
         22,
         23,
-        24,
         25,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 25.251394265452824,
+      "disagreement_cost": 25.859494279511182,
       "marker_pair": [
-        25,
-        27
+        4,
+        26
       ],
-      "translation_error_m": 0.003669853068184835,
-      "rotation_error_deg": 3.683138621213055
+      "translation_error_m": 0.004931556273861371,
+      "rotation_error_deg": 2.316584126590182
     },
     {
       "frame_index": 111,
       "frame_id": 111,
       "visible_marker_ids": [
-        1,
+        19,
         22,
         23,
-        24,
         25,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 14.34174283635856,
+      "disagreement_cost": 5.931604388400743,
       "marker_pair": [
-        23,
-        24
+        22,
+        23
       ],
-      "translation_error_m": 0.0027431173319297777,
-      "rotation_error_deg": 1.6779088161596234
+      "translation_error_m": 0.0029447418574404553,
+      "rotation_error_deg": 2.2164015048127435
     },
     {
       "frame_index": 112,
       "frame_id": 112,
       "visible_marker_ids": [
-        1,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 15.655652239639409,
-      "marker_pair": [
-        25,
-        27
-      ],
-      "translation_error_m": 0.003513149406501905,
-      "rotation_error_deg": 0.4485568639553305
-    },
-    {
-      "frame_index": 114,
-      "frame_id": 114,
-      "visible_marker_ids": [
-        1,
         19,
         22,
         23,
-        24,
         25,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 8.635673465444084,
+      "disagreement_cost": 16.152224862047255,
       "marker_pair": [
-        19,
+        23,
         25
       ],
-      "translation_error_m": 0.0026673010014257714,
-      "rotation_error_deg": 0.8429387901847855
+      "translation_error_m": 0.0038041425110252845,
+      "rotation_error_deg": 2.5792766981802346
+    },
+    {
+      "frame_index": 113,
+      "frame_id": 113,
+      "visible_marker_ids": [
+        19,
+        22,
+        23,
+        25,
+        26
+      ],
+      "disagreement_cost": 5.410636168410847,
+      "marker_pair": [
+        19,
+        22
+      ],
+      "translation_error_m": 0.002379750066486675,
+      "rotation_error_deg": 0.3963138099718635
     },
     {
       "frame_index": 115,
       "frame_id": 115,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
         25,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 8.407276096397867,
+      "disagreement_cost": 114.32878267374144,
       "marker_pair": [
-        22,
-        25
+        4,
+        26
       ],
-      "translation_error_m": 0.002360492850086246,
-      "rotation_error_deg": 0.4598679196960629
+      "translation_error_m": 0.010030906191577451,
+      "rotation_error_deg": 5.464164969090696
     },
     {
       "frame_index": 116,
       "frame_id": 116,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
         25,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 10.703123221064365,
+      "disagreement_cost": 11.419368903943464,
       "marker_pair": [
-        22,
-        25
+        4,
+        26
       ],
-      "translation_error_m": 0.003322950325701004,
-      "rotation_error_deg": 0.7709330395638846
+      "translation_error_m": 0.004009630101133645,
+      "rotation_error_deg": 2.625040823400818
     },
     {
       "frame_index": 117,
       "frame_id": 117,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
         25,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 8.707927173377396,
+      "disagreement_cost": 30.712775613834626,
       "marker_pair": [
-        1,
-        23
+        19,
+        25
       ],
-      "translation_error_m": 0.002009722437048572,
-      "rotation_error_deg": 1.1938521024297803
+      "translation_error_m": 0.004412938065811465,
+      "rotation_error_deg": 1.09415512658676
     },
     {
       "frame_index": 118,
       "frame_id": 118,
       "visible_marker_ids": [
-        1,
         19,
         22,
         23,
-        24,
         25,
-        26,
-        27
+        26
       ],
-      "disagreement_cost": 9.646868072456735,
+      "disagreement_cost": 6.879207618411788,
       "marker_pair": [
-        26,
-        27
+        19,
+        22
       ],
-      "translation_error_m": 0.002614113471578877,
-      "rotation_error_deg": 1.280438134410494
+      "translation_error_m": 0.0029976420947390265,
+      "rotation_error_deg": 0.8530605678515031
+    },
+    {
+      "frame_index": 119,
+      "frame_id": 119,
+      "visible_marker_ids": [
+        4,
+        19,
+        22,
+        23,
+        25,
+        26
+      ],
+      "disagreement_cost": 81.41972602178765,
+      "marker_pair": [
+        4,
+        25
+      ],
+      "translation_error_m": 0.008056169502674505,
+      "rotation_error_deg": 1.3195268638843702
     },
     {
       "frame_index": 120,
       "frame_id": 120,
       "visible_marker_ids": [
-        1,
+        4,
         19,
         22,
         23,
-        24,
         25,
         26,
         27
       ],
-      "disagreement_cost": 12.240295389488573,
+      "disagreement_cost": 45.305321784688196,
       "marker_pair": [
-        23,
-        24
+        4,
+        27
       ],
-      "translation_error_m": 0.002936395815490529,
-      "rotation_error_deg": 1.6096275352137077
+      "translation_error_m": 0.009537835171071303,
+      "rotation_error_deg": 2.4758051536843224
     },
     {
       "frame_index": 121,
       "frame_id": 121,
       "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 17.362933982251608,
-      "marker_pair": [
-        19,
-        25
-      ],
-      "translation_error_m": 0.003775534315425953,
-      "rotation_error_deg": 0.2593249377643599
-    },
-    {
-      "frame_index": 122,
-      "frame_id": 122,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 43.093210759624526,
-      "marker_pair": [
-        19,
-        23
-      ],
-      "translation_error_m": 0.006376804071014747,
-      "rotation_error_deg": 3.585640503477642
-    },
-    {
-      "frame_index": 125,
-      "frame_id": 125,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 9.022465589847119,
-      "marker_pair": [
-        23,
-        24
-      ],
-      "translation_error_m": 0.0025812975484673425,
-      "rotation_error_deg": 0.28459244565745806
-    },
-    {
-      "frame_index": 126,
-      "frame_id": 126,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 13.005690799205667,
-      "marker_pair": [
-        1,
-        25
-      ],
-      "translation_error_m": 0.002910334513634015,
-      "rotation_error_deg": 0.14726141288003206
-    },
-    {
-      "frame_index": 127,
-      "frame_id": 127,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 10.735795120209819,
-      "marker_pair": [
-        23,
-        24
-      ],
-      "translation_error_m": 0.003440263935956426,
-      "rotation_error_deg": 0.6133212180644583
-    },
-    {
-      "frame_index": 128,
-      "frame_id": 128,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 14.55891430801066,
-      "marker_pair": [
-        26,
-        27
-      ],
-      "translation_error_m": 0.0027800051854201817,
-      "rotation_error_deg": 0.6987294784348227
-    },
-    {
-      "frame_index": 129,
-      "frame_id": 129,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 15.528964418562387,
-      "marker_pair": [
-        26,
-        27
-      ],
-      "translation_error_m": 0.003033242660111648,
-      "rotation_error_deg": 0.6727474798845017
-    },
-    {
-      "frame_index": 130,
-      "frame_id": 130,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 10.969629213219905,
-      "marker_pair": [
-        23,
-        24
-      ],
-      "translation_error_m": 0.0023057361030739726,
-      "rotation_error_deg": 1.0733486627042184
-    },
-    {
-      "frame_index": 131,
-      "frame_id": 131,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 20.10468240854904,
-      "marker_pair": [
-        19,
-        24
-      ],
-      "translation_error_m": 0.0030624852920930943,
-      "rotation_error_deg": 0.8430002274760624
-    },
-    {
-      "frame_index": 132,
-      "frame_id": 132,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 11.408038165367893,
-      "marker_pair": [
-        19,
-        25
-      ],
-      "translation_error_m": 0.002358889007488745,
-      "rotation_error_deg": 0.9059781660624279
-    },
-    {
-      "frame_index": 133,
-      "frame_id": 133,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 9.19030491610531,
-      "marker_pair": [
-        19,
-        25
-      ],
-      "translation_error_m": 0.002122196518428704,
-      "rotation_error_deg": 0.6559524182197827
-    },
-    {
-      "frame_index": 134,
-      "frame_id": 134,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 22.03890180710218,
-      "marker_pair": [
-        23,
-        24
-      ],
-      "translation_error_m": 0.0047592039638768135,
-      "rotation_error_deg": 0.9095599594291087
-    },
-    {
-      "frame_index": 135,
-      "frame_id": 135,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 12.494074584162284,
-      "marker_pair": [
-        22,
-        25
-      ],
-      "translation_error_m": 0.002591047210075339,
-      "rotation_error_deg": 0.5389843685850451
-    },
-    {
-      "frame_index": 136,
-      "frame_id": 136,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 12.957758806481433,
-      "marker_pair": [
-        23,
-        24
-      ],
-      "translation_error_m": 0.003345309405767865,
-      "rotation_error_deg": 0.3575649477874867
-    },
-    {
-      "frame_index": 137,
-      "frame_id": 137,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 28.266026014444904,
-      "marker_pair": [
-        19,
-        25
-      ],
-      "translation_error_m": 0.005560804347268485,
-      "rotation_error_deg": 1.4421009326911454
-    },
-    {
-      "frame_index": 138,
-      "frame_id": 138,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 24.618845143233244,
-      "marker_pair": [
-        23,
-        24
-      ],
-      "translation_error_m": 0.004498502759494409,
-      "rotation_error_deg": 0.7552261421456131
-    },
-    {
-      "frame_index": 139,
-      "frame_id": 139,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 19.918019851690463,
-      "marker_pair": [
-        23,
-        24
-      ],
-      "translation_error_m": 0.004092651167040038,
-      "rotation_error_deg": 0.6496484106998855
-    },
-    {
-      "frame_index": 140,
-      "frame_id": 140,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 23.280922692760694,
-      "marker_pair": [
-        23,
-        24
-      ],
-      "translation_error_m": 0.004437324208655887,
-      "rotation_error_deg": 0.28143402759898023
-    },
-    {
-      "frame_index": 141,
-      "frame_id": 141,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 23.964760394345465,
-      "marker_pair": [
-        24,
-        25
-      ],
-      "translation_error_m": 0.003965729295144656,
-      "rotation_error_deg": 1.2100929001452005
-    },
-    {
-      "frame_index": 143,
-      "frame_id": 143,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 11.267075265199955,
-      "marker_pair": [
-        23,
-        24
-      ],
-      "translation_error_m": 0.0029781194564786934,
-      "rotation_error_deg": 0.5528010309173395
-    },
-    {
-      "frame_index": 144,
-      "frame_id": 144,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 34.26871726859556,
-      "marker_pair": [
-        24,
-        25
-      ],
-      "translation_error_m": 0.005870829875852786,
-      "rotation_error_deg": 1.5266241818870283
-    },
-    {
-      "frame_index": 145,
-      "frame_id": 145,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 18.371774869862154,
-      "marker_pair": [
-        23,
-        24
-      ],
-      "translation_error_m": 0.0037159960337554174,
-      "rotation_error_deg": 0.5754888843683961
-    },
-    {
-      "frame_index": 146,
-      "frame_id": 146,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 26.43743749486331,
-      "marker_pair": [
-        23,
-        24
-      ],
-      "translation_error_m": 0.004241658383135188,
-      "rotation_error_deg": 0.7450441327534559
-    },
-    {
-      "frame_index": 147,
-      "frame_id": 147,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 22.519449692700075,
-      "marker_pair": [
-        23,
-        24
-      ],
-      "translation_error_m": 0.004057543360885719,
-      "rotation_error_deg": 0.3966347738040618
-    },
-    {
-      "frame_index": 148,
-      "frame_id": 148,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 15.59484187102076,
-      "marker_pair": [
-        22,
-        25
-      ],
-      "translation_error_m": 0.003343542476138842,
-      "rotation_error_deg": 0.8598788694165388
-    },
-    {
-      "frame_index": 149,
-      "frame_id": 149,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 30.527087186067014,
-      "marker_pair": [
-        23,
-        24
-      ],
-      "translation_error_m": 0.004587351486135473,
-      "rotation_error_deg": 1.0471376482946202
-    },
-    {
-      "frame_index": 150,
-      "frame_id": 150,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 52.33330676716007,
-      "marker_pair": [
-        23,
-        24
-      ],
-      "translation_error_m": 0.00680268597690668,
-      "rotation_error_deg": 0.3865380995653365
-    },
-    {
-      "frame_index": 151,
-      "frame_id": 151,
-      "visible_marker_ids": [
-        1,
-        23,
-        26
-      ],
-      "disagreement_cost": 17.848989688071445,
-      "marker_pair": [
-        1,
-        26
-      ],
-      "translation_error_m": 0.005914429710480722,
-      "rotation_error_deg": 1.2621401668810037
-    },
-    {
-      "frame_index": 152,
-      "frame_id": 152,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 79.47294568544955,
-      "marker_pair": [
-        23,
-        24
-      ],
-      "translation_error_m": 0.007230796616824319,
-      "rotation_error_deg": 0.9765339671955223
-    },
-    {
-      "frame_index": 153,
-      "frame_id": 153,
-      "visible_marker_ids": [
-        1,
-        23,
-        26,
-        27
-      ],
-      "disagreement_cost": 49.09111956326356,
-      "marker_pair": [
-        23,
-        27
-      ],
-      "translation_error_m": 0.008750992057933475,
-      "rotation_error_deg": 2.9652733648292315
-    },
-    {
-      "frame_index": 154,
-      "frame_id": 154,
-      "visible_marker_ids": [
-        1,
-        22,
-        23,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 28.316779919917657,
-      "marker_pair": [
-        25,
-        27
-      ],
-      "translation_error_m": 0.004951503337353275,
-      "rotation_error_deg": 3.7433674074748406
-    },
-    {
-      "frame_index": 155,
-      "frame_id": 155,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 15.952621714177628,
-      "marker_pair": [
-        1,
-        25
-      ],
-      "translation_error_m": 0.0030684379324532776,
-      "rotation_error_deg": 0.18943543945866614
-    },
-    {
-      "frame_index": 156,
-      "frame_id": 156,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 15.613702868462202,
-      "marker_pair": [
-        1,
-        25
-      ],
-      "translation_error_m": 0.0032126856918693546,
-      "rotation_error_deg": 0.6508503904885056
-    },
-    {
-      "frame_index": 157,
-      "frame_id": 157,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 47.19881498417354,
-      "marker_pair": [
-        1,
-        25
-      ],
-      "translation_error_m": 0.00491943751607293,
-      "rotation_error_deg": 0.30256747665334593
-    },
-    {
-      "frame_index": 158,
-      "frame_id": 158,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        26,
-        27
-      ],
-      "disagreement_cost": 49.623765590191496,
-      "marker_pair": [
-        23,
-        24
-      ],
-      "translation_error_m": 0.00703622272964148,
-      "rotation_error_deg": 5.203594740188192
-    },
-    {
-      "frame_index": 159,
-      "frame_id": 159,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 50.68343994837344,
-      "marker_pair": [
-        25,
-        27
-      ],
-      "translation_error_m": 0.0058592565742559295,
-      "rotation_error_deg": 0.9239827152418231
-    },
-    {
-      "frame_index": 160,
-      "frame_id": 160,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 63.09832288012057,
-      "marker_pair": [
-        24,
-        25
-      ],
-      "translation_error_m": 0.012571917146772455,
-      "rotation_error_deg": 4.4167654990531595
-    },
-    {
-      "frame_index": 161,
-      "frame_id": 161,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 68.42006667678282,
-      "marker_pair": [
-        24,
-        25
-      ],
-      "translation_error_m": 0.012151191752045112,
-      "rotation_error_deg": 4.986184490495711
-    },
-    {
-      "frame_index": 162,
-      "frame_id": 162,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 120.18192957592078,
-      "marker_pair": [
-        24,
-        25
-      ],
-      "translation_error_m": 0.014725085500452735,
-      "rotation_error_deg": 2.917189584437407
-    },
-    {
-      "frame_index": 163,
-      "frame_id": 163,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 132.55932094195285,
-      "marker_pair": [
-        24,
-        25
-      ],
-      "translation_error_m": 0.01657773972254527,
-      "rotation_error_deg": 3.3614588299230244
-    },
-    {
-      "frame_index": 164,
-      "frame_id": 164,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 252.73340867428578,
-      "marker_pair": [
-        24,
-        25
-      ],
-      "translation_error_m": 0.024285289832704882,
-      "rotation_error_deg": 6.939972312545357
-    },
-    {
-      "frame_index": 165,
-      "frame_id": 165,
-      "visible_marker_ids": [
-        1,
         19,
         22,
         23,
@@ -3340,265 +2610,13 @@
         26,
         27
       ],
-      "disagreement_cost": 39.62338826652952,
+      "disagreement_cost": 31.08327569894313,
       "marker_pair": [
-        25,
-        27
-      ],
-      "translation_error_m": 0.006211624196159002,
-      "rotation_error_deg": 1.6512049264783788
-    },
-    {
-      "frame_index": 166,
-      "frame_id": 166,
-      "visible_marker_ids": [
-        1,
-        19,
         22,
-        23,
-        25,
-        26,
         27
       ],
-      "disagreement_cost": 6.032727599947365,
-      "marker_pair": [
-        19,
-        25
-      ],
-      "translation_error_m": 0.0026166150954713687,
-      "rotation_error_deg": 1.6465877652733145
-    },
-    {
-      "frame_index": 167,
-      "frame_id": 167,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 132.078082447983,
-      "marker_pair": [
-        24,
-        25
-      ],
-      "translation_error_m": 0.01725530380535599,
-      "rotation_error_deg": 5.811241015069271
-    },
-    {
-      "frame_index": 168,
-      "frame_id": 168,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 22.325834063949728,
-      "marker_pair": [
-        25,
-        27
-      ],
-      "translation_error_m": 0.004925666833215273,
-      "rotation_error_deg": 1.8209392605898307
-    },
-    {
-      "frame_index": 169,
-      "frame_id": 169,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 105.10948789733384,
-      "marker_pair": [
-        24,
-        25
-      ],
-      "translation_error_m": 0.015430003508820653,
-      "rotation_error_deg": 5.820847141392304
-    },
-    {
-      "frame_index": 170,
-      "frame_id": 170,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 148.06942347943166,
-      "marker_pair": [
-        24,
-        25
-      ],
-      "translation_error_m": 0.018795628893436347,
-      "rotation_error_deg": 5.6404433950856765
-    },
-    {
-      "frame_index": 171,
-      "frame_id": 171,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 95.77215845911401,
-      "marker_pair": [
-        24,
-        25
-      ],
-      "translation_error_m": 0.014774392712780731,
-      "rotation_error_deg": 4.685322319956703
-    },
-    {
-      "frame_index": 172,
-      "frame_id": 172,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 126.005261195689,
-      "marker_pair": [
-        24,
-        25
-      ],
-      "translation_error_m": 0.017151925017105808,
-      "rotation_error_deg": 5.510587926882654
-    },
-    {
-      "frame_index": 173,
-      "frame_id": 173,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 210.9225558909446,
-      "marker_pair": [
-        24,
-        25
-      ],
-      "translation_error_m": 0.020623853026341867,
-      "rotation_error_deg": 5.495295538362584
-    },
-    {
-      "frame_index": 174,
-      "frame_id": 174,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27
-      ],
-      "disagreement_cost": 102.15950774996284,
-      "marker_pair": [
-        24,
-        25
-      ],
-      "translation_error_m": 0.015267494377733075,
-      "rotation_error_deg": 5.2221046685434365
-    },
-    {
-      "frame_index": 175,
-      "frame_id": 175,
-      "visible_marker_ids": [
-        1,
-        19,
-        22,
-        23,
-        24,
-        26,
-        27
-      ],
-      "disagreement_cost": 29.57088731417363,
-      "marker_pair": [
-        24,
-        26
-      ],
-      "translation_error_m": 0.004812472504486422,
-      "rotation_error_deg": 4.197792574236717
-    },
-    {
-      "frame_index": 177,
-      "frame_id": 177,
-      "visible_marker_ids": [
-        19,
-        24
-      ],
-      "disagreement_cost": 1159.1439154914842,
-      "marker_pair": [
-        19,
-        24
-      ],
-      "translation_error_m": 0.06651207104549663,
-      "rotation_error_deg": 36.462315066787355
-    },
-    {
-      "frame_index": 178,
-      "frame_id": 178,
-      "visible_marker_ids": [
-        19,
-        24
-      ],
-      "disagreement_cost": 1167.1665233943952,
-      "marker_pair": [
-        19,
-        24
-      ],
-      "translation_error_m": 0.06674119292007034,
-      "rotation_error_deg": 36.59570169291855
-    },
-    {
-      "frame_index": 179,
-      "frame_id": 179,
-      "visible_marker_ids": [
-        19,
-        24
-      ],
-      "disagreement_cost": 1167.3323742930468,
-      "marker_pair": [
-        19,
-        24
-      ],
-      "translation_error_m": 0.06676269861327844,
-      "rotation_error_deg": 36.40669332732112
+      "translation_error_m": 0.007181090598911839,
+      "rotation_error_deg": 0.9365035409159264
     }
   ],
   "anchor_core": null

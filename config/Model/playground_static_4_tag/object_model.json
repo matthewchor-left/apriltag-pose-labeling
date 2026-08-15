@@ -1,0 +1,106 @@
+{
+  "units": "meters",
+  "coordinate_frame": "marker_model",
+  "keypoint_sources": {
+    "top-front-left": {
+      "marker_id": 25,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "top-front-right": {
+      "marker_id": 26,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "top-back-left": {
+      "marker_id": 24,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "top-back-right": {
+      "marker_id": 23,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "front-center": {
+      "marker_id": 22,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "left-center": {
+      "marker_id": 19,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "right-center": {
+      "marker_id": 28,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "back-center": {
+      "marker_id": 29,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    }
+  },
+  "keypoints": {
+    "top-front-left": [
+      0.053059087698998066,
+      0.028399787044131958,
+      -0.0015736452785741432
+    ],
+    "top-front-right": [
+      0.05483621865177002,
+      0.02442230697731708,
+      0.07023866719027626
+    ],
+    "top-back-left": [
+      0.05347508224075729,
+      -0.0449015073240821,
+      -0.004780028235477594
+    ],
+    "top-back-right": [
+      0.054105920264721524,
+      -0.04782798738312484,
+      0.06644813650725663
+    ],
+    "front-center": [
+      0.020071494862803744,
+      0.027085674151948857,
+      0.03427228329002427
+    ],
+    "left-center": [
+      0.013999999776482582,
+      -0.013999999552965164,
+      0.0
+    ],
+    "right-center": [
+      0.019331720910751977,
+      -0.01136965187958934,
+      0.07032863694008648
+    ],
+    "back-center": [
+      0.014852250462619145,
+      -0.043351636645667456,
+      0.02982021846219767
+    ]
+  },
+  "skeleton": [
+    [
+      "top-front-left",
+      "top-front-right"
+    ],
+    [
+      "top-back-left",
+      "top-back-right"
+    ],
+    [
+      "top-front-left",
+      "top-back-left"
+    ],
+    [
+      "top-front-right",
+      "top-back-right"
+    ]
+  ]
+}

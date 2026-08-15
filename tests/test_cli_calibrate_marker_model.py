@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 import numpy as np
+import cv2
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CALIBRATION = REPO_ROOT / "config/Camera/nexplaygroundcam/intrinsics.json"
@@ -85,6 +86,7 @@ class CliHelpTests(unittest.TestCase):
         self.assertIn("--sample-rate-hz", help_text)
         self.assertIn("ignored in manual mode", help_text)
         self.assertIn("--diagnostics-output", help_text)
+        self.assertIn("--benchmark", help_text)
         self.assertIn("--object-model", help_text)
         self.assertIn("--overlay-object-model", help_text)
         self.assertIn("keypoint_sources", help_text)
@@ -427,6 +429,320 @@ class CalibrateMarkerModelValidationTests(unittest.TestCase):
                     with self.assertRaises(RuntimeError) as ctx:
                         validate_args(args)
                     self.assertIn("--sample-rate-hz", str(ctx.exception))
+
+
+class CalibrateMarkerModelBenchmarkValidationTests(unittest.TestCase):
+    def _validation_args(self, tmp_dir: str, **overrides: object) -> mock.Mock:
+        calibration = Path(tmp_dir) / "intrinsics.json"
+        _write_intrinsics(calibration)
+        video = Path(tmp_dir) / "clip.mov"
+        video.write_bytes(b"\x00" * 64)
+        args = mock.Mock(
+            calibration=calibration,
+            output=Path(tmp_dir) / "out.json",
+            force=True,
+            marker_ids=["0", "1"],
+            reference_marker_id=0,
+            marker_size=0.07,
+            sample_rate_hz=2.0,
+            auto=False,
+            min_pair_inliers=20,
+            reprojection_rms_gate_px=2.0,
+            pair_translation_rms_gate_ratio=0.10,
+            pair_rotation_rms_gate_deg=5.0,
+            diagnostics_output=Path(tmp_dir) / "diagnostics.json",
+            anchor_marker_ids=None,
+            anchor_stop_after_expansion=False,
+            best_effort=False,
+            partial_output=False,
+            marker_size_for=None,
+            object_model=None,
+            overlay_object_model=False,
+            source=video,
+            benchmark=True,
+        )
+        for key, value in overrides.items():
+            setattr(args, key, value)
+        return args
+
+    def test_benchmark_requires_diagnostics_output(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import validate_args
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            args = self._validation_args(tmp_dir, diagnostics_output=None)
+            with self.assertRaises(RuntimeError) as ctx:
+                validate_args(args)
+            self.assertIn("--diagnostics-output", str(ctx.exception))
+
+    def test_benchmark_rejects_camera_source(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import validate_args
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            args = self._validation_args(tmp_dir, source=0)
+            with self.assertRaises(RuntimeError) as ctx:
+                validate_args(args)
+            self.assertIn("video file", str(ctx.exception))
+
+    def test_benchmark_rejects_overlay_object_model(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import validate_args
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            object_model = Path(tmp_dir) / "object_model.json"
+            _write_object_model(
+                object_model,
+                keypoint_sources={"top": {"marker_id": 1, "corner": "top_left"}},
+            )
+            args = self._validation_args(
+                tmp_dir,
+                object_model=object_model,
+                overlay_object_model=True,
+            )
+            with self.assertRaises(RuntimeError) as ctx:
+                validate_args(args)
+            self.assertIn("--overlay-object-model", str(ctx.exception))
+
+
+class CalibrateMarkerModelBenchmarkTests(unittest.TestCase):
+    def _run_benchmark(
+        self,
+        *,
+        visible_by_frame: list[dict[int, np.ndarray]],
+        calibrate_result: object | None = None,
+        reported_fps: float = 10.0,
+        diagnostics_output: Path | None = None,
+    ) -> tuple[mock.Mock, mock.Mock, list, mock.Mock, mock.Mock, mock.Mock, mock.Mock, bool, mock.Mock]:
+        from object_apriltag.cli.calibrate_marker_model import run_benchmark
+
+        width, height = 640, 480
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            calibration = tmp_path / "intrinsics.json"
+            output = tmp_path / "marker_model.json"
+            video = tmp_path / "clip.mov"
+            video.write_bytes(b"\x00" * 128)
+            _write_intrinsics(calibration, width=width, height=height)
+            if diagnostics_output is None:
+                diagnostics_output = tmp_path / "diagnostics.json"
+
+            args = mock.Mock(
+                source=video,
+                benchmark=True,
+                calibration=calibration,
+                dictionary="36h11",
+                detection_sensitivity="default",
+                marker_size=0.07,
+                marker_ids=["0", "1"],
+                reference_marker_id=0,
+                output=output,
+                force=True,
+                auto=False,
+                sample_rate_hz=2.0,
+                min_pair_inliers=20,
+                reprojection_rms_gate_px=2.0,
+                pair_translation_rms_gate_ratio=0.10,
+                pair_rotation_rms_gate_deg=5.0,
+                diagnostics_output=diagnostics_output,
+                anchor_marker_ids=None,
+                anchor_stop_after_expansion=False,
+                best_effort=False,
+                partial_output=False,
+                marker_size_for=None,
+                object_model=None,
+                overlay_object_model=False,
+            )
+
+            frame = np.zeros((height, width, 3), dtype=np.uint8)
+            reads: list[tuple[bool, np.ndarray | None]] = [
+                (True, frame.copy()) for _ in visible_by_frame
+            ]
+            reads.append((False, None))
+            capture = mock.MagicMock()
+            capture.isOpened.return_value = True
+            capture.read.side_effect = reads
+
+            def capture_get(prop: float) -> float:
+                if prop == cv2.CAP_PROP_FPS:
+                    return reported_fps
+                if prop == cv2.CAP_PROP_FRAME_COUNT:
+                    return float(len(visible_by_frame))
+                return 0.0
+
+            capture.get.side_effect = capture_get
+
+            detector = mock.MagicMock()
+
+            def detect_markers(_gray):
+                frame_index = detector.detectMarkers.call_count - 1
+                visible = visible_by_frame[frame_index]
+                if not visible:
+                    return [], None, None
+                corners = [corner.reshape(1, 4, 2) for corner in visible.values()]
+                ids = np.array([[marker_id] for marker_id in visible], dtype=np.int32)
+                return corners, ids, None
+
+            detector.detectMarkers.side_effect = detect_markers
+
+            accepted_layout = mock.Mock()
+            accepted_layout.marker_ids = {0, 1}
+            calibrate_mock = mock.Mock(
+                return_value=calibrate_result
+                if calibrate_result is not None
+                else mock.Mock(
+                    layout=accepted_layout,
+                    failure_reason=None,
+                    outcome="accepted",
+                    quality=_quality_report_mock(),
+                )
+            )
+
+            with (
+                mock.patch("object_apriltag.cli.calibrate_marker_model.cv2.VideoCapture", return_value=capture),
+                mock.patch(
+                    "object_apriltag.cli.calibrate_marker_model.build_apriltag_detector",
+                    return_value=detector,
+                ),
+                mock.patch(
+                    "object_apriltag.cli.calibrate_marker_model.calibrate_marker_layout",
+                    calibrate_mock,
+                ),
+                mock.patch("object_apriltag.cli.calibrate_marker_model.save_marker_model") as save_mock,
+                mock.patch(
+                    "object_apriltag.cli.calibrate_marker_model.save_calibration_diagnostics",
+                    return_value=diagnostics_output,
+                ) as save_diagnostics_mock,
+                mock.patch(
+                    "object_apriltag.cli.calibrate_marker_model.LivePairReadinessWorker",
+                ) as worker_cls,
+                mock.patch("object_apriltag.cli.calibrate_marker_model.cv2.imshow") as imshow_mock,
+                mock.patch("object_apriltag.cli.calibrate_marker_model.cv2.waitKey") as wait_key_mock,
+                mock.patch(
+                    "object_apriltag.cli.calibrate_marker_model.cv2.destroyAllWindows",
+                ) as destroy_mock,
+                mock.patch("builtins.print"),
+            ):
+                saved = run_benchmark(args)
+            return (
+                calibrate_mock,
+                save_mock,
+                calibrate_mock.call_args_list[0].args[0],
+                worker_cls,
+                imshow_mock,
+                wait_key_mock,
+                destroy_mock,
+                saved,
+                save_diagnostics_mock,
+            )
+
+    def test_benchmark_never_uses_gui_or_readiness_worker(self) -> None:
+        visible = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 4
+        *_, worker_cls, imshow_mock, wait_key_mock, destroy_mock, _, __ = self._run_benchmark(
+            visible_by_frame=visible,
+        )
+        worker_cls.assert_not_called()
+        imshow_mock.assert_not_called()
+        wait_key_mock.assert_not_called()
+        destroy_mock.assert_not_called()
+
+    def test_benchmark_rejects_invalid_reported_fps(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import run_benchmark
+
+        width, height = 640, 480
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            calibration = tmp_path / "intrinsics.json"
+            output = tmp_path / "marker_model.json"
+            video = tmp_path / "clip.mov"
+            video.write_bytes(b"\x00" * 128)
+            _write_intrinsics(calibration, width=width, height=height)
+            args = mock.Mock(
+                source=video,
+                benchmark=True,
+                calibration=calibration,
+                dictionary="36h11",
+                detection_sensitivity="default",
+                marker_size=0.07,
+                marker_ids=["0", "1"],
+                reference_marker_id=0,
+                output=output,
+                force=True,
+                auto=False,
+                sample_rate_hz=2.0,
+                min_pair_inliers=20,
+                reprojection_rms_gate_px=2.0,
+                pair_translation_rms_gate_ratio=0.10,
+                pair_rotation_rms_gate_deg=5.0,
+                diagnostics_output=tmp_path / "diagnostics.json",
+                anchor_marker_ids=None,
+                anchor_stop_after_expansion=False,
+                best_effort=False,
+                partial_output=False,
+                marker_size_for=None,
+                object_model=None,
+                overlay_object_model=False,
+            )
+            capture = mock.MagicMock()
+            capture.isOpened.return_value = True
+            capture.get.return_value = 0.0
+            with (
+                mock.patch("object_apriltag.cli.calibrate_marker_model.cv2.VideoCapture", return_value=capture),
+                mock.patch("object_apriltag.cli.calibrate_marker_model.build_apriltag_detector"),
+                mock.patch("builtins.print"),
+            ):
+                with self.assertRaises(RuntimeError) as ctx:
+                    run_benchmark(args)
+            self.assertIn("FPS", str(ctx.exception))
+            capture.release.assert_called_once()
+
+    def test_benchmark_samples_deterministically_by_video_time(self) -> None:
+        visible_by_frame = (
+            [{0: _marker_corners(0)}] * 5
+            + [{0: _marker_corners(0), 1: _marker_corners(1)}] * 11
+        )
+        _, _, observations, *_ = self._run_benchmark(
+            visible_by_frame=visible_by_frame,
+            reported_fps=10.0,
+        )
+        self.assertEqual(len(observations), 3)
+        for observation in observations:
+            self.assertEqual(sorted(observation.markers), [0, 1])
+
+    def test_benchmark_solves_exactly_once_at_eof(self) -> None:
+        visible = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 6
+        calibrate_mock, save_mock, _, *_, saved, _ = self._run_benchmark(visible_by_frame=visible)
+        calibrate_mock.assert_called_once()
+        save_mock.assert_called_once()
+        self.assertTrue(saved)
+
+    def test_benchmark_refusal_writes_diagnostics_with_payload(self) -> None:
+        refused = mock.Mock(
+            layout=None,
+            failure_reason="refused",
+            quality=_quality_report_mock(
+                frame_count=0,
+                inlier_corner_count=0,
+                reprojection_rms_px=float("inf"),
+            ),
+        )
+        visible = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 6
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            diagnostics_path = Path(tmp_dir) / "diagnostics.json"
+            calibrate_mock, save_mock, observations, *_, save_diagnostics_mock = self._run_benchmark(
+                visible_by_frame=visible,
+                calibrate_result=refused,
+                diagnostics_output=diagnostics_path,
+            )
+            self.assertEqual(len(observations), 2)
+            calibrate_mock.assert_called_once()
+            save_mock.assert_not_called()
+            save_diagnostics_mock.assert_called_once()
+            benchmark_payload = save_diagnostics_mock.call_args.kwargs["benchmark"]
+            self.assertIn("source", benchmark_payload)
+            self.assertIn("counts", benchmark_payload)
+            self.assertIn("timing_seconds", benchmark_payload)
+            self.assertIn("throughput", benchmark_payload)
+            self.assertIn("environment", benchmark_payload)
+            self.assertEqual(benchmark_payload["counts"]["sampled_observations"], 2)
 
 
 def _write_object_model(path: Path, *, keypoint_sources: dict | None) -> None:

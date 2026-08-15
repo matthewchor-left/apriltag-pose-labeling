@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any, Callable
 
 import numpy as np
@@ -27,7 +28,7 @@ from object_apriltag.marker_layout_calibration import (
     RestoredPairEdge,
 )
 
-CALIBRATION_DIAGNOSTICS_VERSION = 7
+CALIBRATION_DIAGNOSTICS_VERSION = 8
 
 
 def format_reprojection_rms_px(value: float) -> str:
@@ -211,6 +212,28 @@ def _json_safe_float(value: float | None) -> float | None:
     if not np.isfinite(numeric):
         return None
     return numeric
+
+
+def _json_safe_benchmark_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {key: _json_safe_benchmark_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe_benchmark_value(item) for item in value]
+    if isinstance(value, (bool, str)) or value is None:
+        return value
+    if isinstance(value, (int, np.integer)) and not isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (float, np.floating)):
+        return _json_safe_float(float(value))
+    return value
+
+
+def _normalize_benchmark_payload(
+    benchmark: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    if benchmark is None:
+        return None
+    return _json_safe_benchmark_value(dict(benchmark))
 
 
 def _measurement_distribution_to_dict(
@@ -455,9 +478,11 @@ def build_calibration_diagnostics_document(
     failed_refinement_stage: str | None = None,
     omitted_markers: tuple[OmittedMarkerDiagnostic, ...] = (),
     partial_output: bool = False,
+    benchmark: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "version": CALIBRATION_DIAGNOSTICS_VERSION,
+        "benchmark": _normalize_benchmark_payload(benchmark),
         "succeeded": succeeded,
         "failure_reason": failure_reason,
         "calibration_policy": calibration_policy,
@@ -492,6 +517,7 @@ def save_calibration_diagnostics(
     result: CalibrationResult,
     *,
     serialize_fn: Callable[[dict[str, Any]], str] | None = None,
+    benchmark: Mapping[str, Any] | None = None,
 ) -> Path:
     if result.quality is None:
         raise RuntimeError("Cannot write calibration diagnostics without a quality report.")
@@ -508,6 +534,7 @@ def save_calibration_diagnostics(
         failed_refinement_stage=result.failed_refinement_stage,
         omitted_markers=result.omitted_markers,
         partial_output=result.partial_output,
+        benchmark=benchmark,
     )
     serialize = serialize_fn or serialize_calibration_diagnostics_document
     try:
