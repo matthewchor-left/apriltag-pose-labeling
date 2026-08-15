@@ -12,13 +12,15 @@ from object_apriltag.layout import CORNER_NAMES
 from object_apriltag.marker_layout_calibration import (
     CalibrationSettings,
     FrameObservation,
-    _MarkerCandidate,
-    _evaluate_complete_assignment,
     calibrate_marker_layout,
     parse_anchor_marker_ids,
     parse_marker_id_spec,
+)
+from object_apriltag.marker_layout_calibration.assignment import (
+    evaluate_complete_assignment,
     resolve_frame_ippe_assignment,
 )
+from object_apriltag.marker_layout_calibration.solve_primitives import MarkerCandidate
 from tests.test_marker_layout_calibration import (
     _chain_marker_poses,
     _default_camera,
@@ -29,13 +31,13 @@ from tests.test_marker_layout_calibration import (
 )
 
 
-def _dummy_candidate(marker_id: int, branch: int) -> _MarkerCandidate:
+def _dummy_candidate(marker_id: int, branch: int) -> MarkerCandidate:
     rotation = np.eye(3, dtype=np.float64)
     if branch % 2 == 1:
         flip, _ = __import__("cv2").Rodrigues(np.array([np.pi, 0.0, 0.0], dtype=np.float64))
         rotation = flip
     translation = np.array([0.0, 0.0, 0.5 + 0.01 * marker_id], dtype=np.float64)
-    return _MarkerCandidate(
+    return MarkerCandidate(
         rvec=np.zeros((3, 1), dtype=np.float64),
         tvec=translation.reshape(3, 1),
         rotation=rotation,
@@ -83,7 +85,7 @@ class AnchorAssignmentComplexityTests(unittest.TestCase):
         pair_consensus = {}
         settings = CalibrationSettings()
         evaluation_count = 0
-        original = _evaluate_complete_assignment
+        original = evaluate_complete_assignment
 
         def counting_evaluate(*args, **kwargs):
             nonlocal evaluation_count
@@ -91,7 +93,7 @@ class AnchorAssignmentComplexityTests(unittest.TestCase):
             return original(*args, **kwargs)
 
         with mock.patch(
-            "object_apriltag.marker_layout_calibration._evaluate_complete_assignment",
+            "object_apriltag.marker_layout_calibration.assignment.evaluate_complete_assignment",
             side_effect=counting_evaluate,
         ):
             resolve_frame_ippe_assignment(

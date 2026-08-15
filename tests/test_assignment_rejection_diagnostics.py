@@ -9,21 +9,25 @@ import numpy as np
 
 from object_apriltag.marker_layout_calibration import (
     CalibrationSettings,
+    FrameObservation,
+    calibrate_marker_layout,
+)
+from object_apriltag.marker_layout_calibration.assignment import (
     FrameAssignmentRejection,
     FrameAssignmentRejectionRecord,
-    FrameObservation,
-    _MarkerCandidate,
-    _PairConsensus,
-    _collect_pair_hypotheses,
-    _estimate_frame_candidates,
-    _estimate_pair_consensus,
-    _normalize_observations,
+    assign_ippe_candidates,
     build_assignment_rejection_records,
-    calibrate_marker_layout,
     resolve_frame_ippe_assignment,
     summarize_assignment_rejection_records,
     summarize_assignment_rejections,
 )
+from object_apriltag.marker_layout_calibration.discrete_graph import (
+    collect_pair_hypotheses,
+    estimate_frame_candidates,
+    estimate_pair_consensus,
+    normalize_observations,
+)
+from object_apriltag.marker_layout_calibration.solve_primitives import MarkerCandidate, PairConsensus
 from object_apriltag.pose import marker_corner_object_points
 from tests.test_marker_layout_calibration import (
     _uniform_marker_sizes,
@@ -40,10 +44,10 @@ def _make_candidate(
     translation: np.ndarray,
     *,
     rotation: np.ndarray | None = None,
-) -> _MarkerCandidate:
+) -> MarkerCandidate:
     rotation = np.eye(3) if rotation is None else rotation
     rvec, _ = cv2.Rodrigues(rotation)
-    return _MarkerCandidate(
+    return MarkerCandidate(
         rvec=rvec.reshape(3),
         tvec=translation.astype(np.float64),
         rotation=rotation.astype(np.float64),
@@ -57,9 +61,9 @@ def _identity_consensus(
     translation_ba: np.ndarray,
     *,
     rotation_ba: np.ndarray | None = None,
-) -> _PairConsensus:
+) -> PairConsensus:
     rotation = np.eye(3) if rotation_ba is None else rotation_ba
-    return _PairConsensus(
+    return PairConsensus(
         marker_a=marker_a,
         marker_b=marker_b,
         rotation_ba=rotation,
@@ -90,17 +94,17 @@ class FrameAssignmentRejectionTests(unittest.TestCase):
             ]
             _rotate_marker_corners(observations, [corrupt_frame_index], marker_id=1)
 
-        normalized = _normalize_observations(observations, self.expected_ids)
+        normalized = normalize_observations(observations, self.expected_ids)
         marker_sizes_m = _uniform_marker_sizes(self.expected_ids, self.marker_size_m)
         object_points_by_marker = _uniform_object_points_by_marker(self.expected_ids, self.marker_size_m)
-        frame_candidates = _estimate_frame_candidates(
+        frame_candidates = estimate_frame_candidates(
             normalized,
             object_points_by_marker,
             self.camera_matrix,
             self.dist_coeffs,
         )
-        pair_hypotheses = _collect_pair_hypotheses(frame_candidates, self.expected_ids)
-        pair_consensus, pair_failure, _ = _estimate_pair_consensus(
+        pair_hypotheses = collect_pair_hypotheses(frame_candidates, self.expected_ids)
+        pair_consensus, pair_failure, _ = estimate_pair_consensus(
             pair_hypotheses,
             self.expected_ids,
             reference_marker_id=0,
@@ -339,7 +343,7 @@ class AssignmentSearchTraversalTests(unittest.TestCase):
         from math import prod
         from unittest import mock
 
-        import object_apriltag.marker_layout_calibration as calibration
+        import object_apriltag.marker_layout_calibration.assignment as assignment
 
         translation_01 = np.array([0.12, 0.0, -0.05], dtype=np.float64)
         bad_translation = translation_01 + np.array([0.20, 0.0, 0.0], dtype=np.float64)
@@ -354,9 +358,9 @@ class AssignmentSearchTraversalTests(unittest.TestCase):
         expected_evaluations = prod(len(options) for options in candidates.values())
 
         with mock.patch.object(
-            calibration,
-            "_evaluate_complete_assignment",
-            wraps=calibration._evaluate_complete_assignment,
+            assignment,
+            "evaluate_complete_assignment",
+            wraps=assignment.evaluate_complete_assignment,
         ) as evaluate_mock:
             result = resolve_frame_ippe_assignment(
                 candidates,
@@ -370,20 +374,20 @@ class AssignmentSearchTraversalTests(unittest.TestCase):
         self.assertEqual(evaluate_mock.call_count, expected_evaluations)
 
     def test_rejected_frames_record_one_rejection_per_rejected_frame(self) -> None:
-        from object_apriltag.marker_layout_calibration import _assign_ippe_candidates
+        from object_apriltag.marker_layout_calibration.assignment import assign_ippe_candidates
 
         observations = _synth_pair_with_corrupt_frames(25, frozenset({2, 7, 11, 16, 22}))
-        normalized = _normalize_observations(observations, [0, 1])
+        normalized = normalize_observations(observations, [0, 1])
         object_points_by_marker = _uniform_object_points_by_marker([0, 1], self.marker_size_m)
         camera_matrix, dist_coeffs = _default_camera()
-        frame_candidates = _estimate_frame_candidates(
+        frame_candidates = estimate_frame_candidates(
             normalized,
             object_points_by_marker,
             camera_matrix,
             dist_coeffs,
         )
-        pair_hypotheses = _collect_pair_hypotheses(frame_candidates, [0, 1])
-        pair_consensus, pair_failure, _ = _estimate_pair_consensus(
+        pair_hypotheses = collect_pair_hypotheses(frame_candidates, [0, 1])
+        pair_consensus, pair_failure, _ = estimate_pair_consensus(
             pair_hypotheses,
             [0, 1],
             reference_marker_id=0,
@@ -392,7 +396,7 @@ class AssignmentSearchTraversalTests(unittest.TestCase):
         )
         self.assertIsNone(pair_failure)
 
-        _, rejected_frames, rejections, _ = _assign_ippe_candidates(
+        _, rejected_frames, rejections, _ = assign_ippe_candidates(
             frame_candidates,
             pair_consensus,
             self.settings,
@@ -497,7 +501,7 @@ class AssignmentRejectionDistributionTests(unittest.TestCase):
 
     def test_build_records_from_assignment_results(self) -> None:
         observations = _synth_pair_with_corrupt_frames(5, frozenset({1}))
-        normalized = _normalize_observations(observations, [0, 1])
+        normalized = normalize_observations(observations, [0, 1])
         rejections = (
             FrameAssignmentRejection(
                 reason="translation_gate",

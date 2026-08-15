@@ -25,16 +25,16 @@ from object_apriltag.marker_layout_calibration import (
     CalibrationSettings,
     EdgeDiagnostics,
     FrameObservation,
-    _check_quality_gates,
-    _pair_translation_gate,
     calibrate_marker_layout,
-    parse_marker_size_override_spec,
     resolve_marker_sizes_for_calibration,
 )
+from object_apriltag.marker_layout_calibration.finalize import check_quality_gates
+from object_apriltag.marker_layout_calibration.input import parse_marker_size_override_spec
+from object_apriltag.marker_layout_calibration.solve_quality import pair_translation_gate
 from object_apriltag.pose import estimate_fused_pose, marker_corner_object_points
 from tests.test_marker_layout_calibration import (
     _default_camera,
-    _reference_gauge_pose,
+    reference_gauge_pose,
     _two_marker_poses,
     synthesize_observations,
 )
@@ -201,8 +201,8 @@ class MixedRuntimeFusionTests(unittest.TestCase):
     def test_fusion_uses_per_marker_sizes(self) -> None:
         default_size = 0.07
         small_size = 0.05
-        ref_rotation, ref_translation = _reference_gauge_pose(default_size)
-        small_rotation, small_translation = _reference_gauge_pose(small_size)
+        ref_rotation, ref_translation = reference_gauge_pose(default_size)
+        small_rotation, small_translation = reference_gauge_pose(small_size)
         small_translation = small_translation + np.array([0.12, 0.0, 0.0], dtype=np.float64)
         footprints = {
             0: footprint_from_dict(0, _square_payload(default_size / 2)),
@@ -271,7 +271,7 @@ class PairGateScalingTests(unittest.TestCase):
     def test_pair_gate_uses_min_marker_size(self) -> None:
         settings = CalibrationSettings()
         sizes = {0: 0.07, 1: 0.05}
-        gate = _pair_translation_gate(settings, sizes, (0, 1))
+        gate = pair_translation_gate(settings, sizes, (0, 1))
         self.assertAlmostEqual(gate, settings.pair_translation_rms_gate_ratio * 0.05)
 
     def test_quality_gate_evaluates_each_edge_against_pair_gate(self) -> None:
@@ -279,7 +279,7 @@ class PairGateScalingTests(unittest.TestCase):
         sizes = {0: 0.07, 1: 0.05}
         translation_rms_m = 0.006
         self.assertLess(translation_rms_m, settings.pair_translation_rms_gate_ratio * 0.07)
-        self.assertGreater(translation_rms_m, _pair_translation_gate(settings, sizes, (0, 1)))
+        self.assertGreater(translation_rms_m, pair_translation_gate(settings, sizes, (0, 1)))
         quality = CalibrationQualityReport(
             reprojection_rms_px=0.0,
             per_marker_reprojection_rms_px={0: 0.0, 1: 0.0},
@@ -304,7 +304,7 @@ class PairGateScalingTests(unittest.TestCase):
             missing_expected_ids=frozenset(),
             unused_expected_ids=frozenset(),
         )
-        failure = _check_quality_gates(quality, settings, sizes, [0, 1])
+        failure = check_quality_gates(quality, settings, sizes, [0, 1])
         self.assertIsNotNone(failure)
         assert failure is not None
         self.assertIn("translation RMS", failure)

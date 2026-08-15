@@ -13,22 +13,32 @@
     },
     "counts": {
       "decoded_frames": 3045,
-      "frames_with_expected_markers": 2776,
-      "covisible_frames": 2404,
-      "sampled_observations": 390,
-      "detected_markers": 10653
+      "detector_invocations": 483,
+      "frames_skipped_before_detection": 2562,
+      "frames_with_expected_markers": 441,
+      "covisible_frames": 385,
+      "sampled_observations": 385,
+      "detected_markers": 1701
     },
     "timing_seconds": {
-      "open_source": 0.018524333,
-      "decode": 0.978845846,
-      "detection": 180.600554984,
-      "ingest_total": 181.613446834,
-      "calibration_solve": 229.729813459,
-      "total_through_solve": 411.343261584
+      "open_source": 0.023816083,
+      "decode": 1.255276727,
+      "detection": 29.089804007,
+      "ingest_total": 30.376102917,
+      "calibration_solve": 284.527392709,
+      "total_through_solve": 314.903497,
+      "solve_stages": {
+        "ippe_candidate_generation": 0.052473834017291665,
+        "initial_pair_consensus": 2.361839749966748,
+        "strict_assignment": 0.4764135427540168,
+        "fallback_assignment": 0.5277869149576873,
+        "initial_bundle_adjustment": 280.6138469580328,
+        "pruning": 0.033863832941278815
+      }
     },
     "throughput": {
-      "pipeline_frames_per_second": 16.766379654603544,
-      "detection_frames_per_second": 16.86041330421031
+      "pipeline_frames_per_second": 100.2432737445021,
+      "detector_invocations_per_second": 16.603755731175557
     },
     "environment": {
       "python": "3.14.6",
@@ -36,7 +46,18 @@
       "numpy": "2.5.0",
       "scipy": "1.18.0",
       "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O"
-    }
+    },
+    "optimizer_runs": [
+      {
+        "stage": "initial_bundle_adjustment",
+        "nfev": 441,
+        "njev": 441,
+        "status": 3,
+        "cost": 40231.06323087475,
+        "active_frame_count": 382,
+        "inlier_corner_count": 6556
+      }
+    ]
   },
   "succeeded": true,
   "failure_reason": null,
@@ -44,95 +65,95 @@
   "outcome": "provisional",
   "partial_output": false,
   "failed_quality_gates": [
-    "Global reprojection RMS 16.972 px exceeds 2.000 px gate.",
-    "Marker 0 reprojection RMS 5.100 px exceeds 2.000 px gate.",
-    "Marker 2 reprojection RMS 7.213 px exceeds 2.000 px gate.",
-    "Marker 3 reprojection RMS 24.809 px exceeds 2.000 px gate.",
-    "Marker 4 reprojection RMS 9.856 px exceeds 2.000 px gate.",
-    "Marker 19 reprojection RMS 22.386 px exceeds 2.000 px gate.",
-    "Marker 22 reprojection RMS 10.770 px exceeds 2.000 px gate.",
-    "Marker 23 reprojection RMS 21.940 px exceeds 2.000 px gate.",
-    "Marker 24 reprojection RMS 4.162 px exceeds 2.000 px gate.",
-    "Marker 25 reprojection RMS 5.354 px exceeds 2.000 px gate.",
-    "Marker 26 reprojection RMS 25.311 px exceeds 2.000 px gate.",
-    "Marker 28 reprojection RMS 27.626 px exceeds 2.000 px gate.",
-    "Marker 29 reprojection RMS 20.732 px exceeds 2.000 px gate."
+    "Global reprojection RMS 16.776 px exceeds 2.000 px gate.",
+    "Marker 0 reprojection RMS 5.147 px exceeds 2.000 px gate.",
+    "Marker 2 reprojection RMS 6.889 px exceeds 2.000 px gate.",
+    "Marker 3 reprojection RMS 22.678 px exceeds 2.000 px gate.",
+    "Marker 4 reprojection RMS 8.632 px exceeds 2.000 px gate.",
+    "Marker 19 reprojection RMS 22.567 px exceeds 2.000 px gate.",
+    "Marker 22 reprojection RMS 10.685 px exceeds 2.000 px gate.",
+    "Marker 23 reprojection RMS 21.872 px exceeds 2.000 px gate.",
+    "Marker 24 reprojection RMS 4.299 px exceeds 2.000 px gate.",
+    "Marker 25 reprojection RMS 5.372 px exceeds 2.000 px gate.",
+    "Marker 26 reprojection RMS 25.326 px exceeds 2.000 px gate.",
+    "Marker 28 reprojection RMS 27.369 px exceeds 2.000 px gate.",
+    "Marker 29 reprojection RMS 20.861 px exceeds 2.000 px gate."
   ],
   "selected_checkpoint_stage": "initial_bundle_adjustment",
   "failed_refinement_stage": "post_pruning_refit",
   "omitted_markers": [],
   "quality": {
-    "reprojection_rms_px": 16.972238766996767,
+    "reprojection_rms_px": 16.7761939729227,
     "per_marker_reprojection_rms_px": {
-      "0": 5.099765259724987,
-      "2": 7.2133063479183805,
-      "3": 24.808626287008185,
-      "4": 9.856458590405875,
-      "19": 22.386075760381598,
-      "22": 10.76998054731588,
-      "23": 21.939599047001956,
-      "24": 4.161767197572129,
-      "25": 5.353726007816413,
-      "26": 25.311115709111352,
-      "28": 27.625704414830377,
-      "29": 20.731964004062963
+      "0": 5.14723906027914,
+      "2": 6.888670104730811,
+      "3": 22.678360561564105,
+      "4": 8.631530235322984,
+      "19": 22.56707712606607,
+      "22": 10.684876743910515,
+      "23": 21.871792550961096,
+      "24": 4.2990322619235615,
+      "25": 5.372493150014722,
+      "26": 25.325860026898305,
+      "28": 27.369048032761768,
+      "29": 20.860867575418517
     },
     "edges": [
       {
         "marker_a": 0,
         "marker_b": 2,
-        "inlier_count": 49,
-        "translation_rms_m": 0.0030270683637811597,
-        "rotation_rms_deg": 0.8110137749023337
+        "inlier_count": 50,
+        "translation_rms_m": 0.0030667931229705694,
+        "rotation_rms_deg": 0.8089436900304005
       },
       {
         "marker_a": 0,
         "marker_b": 3,
-        "inlier_count": 21,
-        "translation_rms_m": 0.0023361613193082463,
-        "rotation_rms_deg": 0.36510124016908657
+        "inlier_count": 22,
+        "translation_rms_m": 0.002496582869285854,
+        "rotation_rms_deg": 0.41286192109497233
       },
       {
         "marker_a": 0,
         "marker_b": 22,
-        "inlier_count": 26,
-        "translation_rms_m": 0.001253329813366449,
-        "rotation_rms_deg": 1.4202042828069346
+        "inlier_count": 22,
+        "translation_rms_m": 0.001284178519856762,
+        "rotation_rms_deg": 1.277857238370658
       },
       {
         "marker_a": 0,
         "marker_b": 23,
         "inlier_count": 21,
-        "translation_rms_m": 0.0011349928042809247,
-        "rotation_rms_deg": 0.4570435977336074
+        "translation_rms_m": 0.001200074509735323,
+        "rotation_rms_deg": 0.4641932430581835
       },
       {
         "marker_a": 0,
         "marker_b": 24,
-        "inlier_count": 20,
-        "translation_rms_m": 0.0013497396143513968,
-        "rotation_rms_deg": 0.49664772814865327
+        "inlier_count": 22,
+        "translation_rms_m": 0.0014730616868884451,
+        "rotation_rms_deg": 0.651765334752516
       },
       {
         "marker_a": 0,
         "marker_b": 25,
-        "inlier_count": 34,
-        "translation_rms_m": 0.0014310095794286815,
-        "rotation_rms_deg": 0.7776358662856283
+        "inlier_count": 32,
+        "translation_rms_m": 0.00139489230365681,
+        "rotation_rms_deg": 0.5669304067671357
       },
       {
         "marker_a": 0,
         "marker_b": 26,
-        "inlier_count": 23,
-        "translation_rms_m": 0.00126651087202781,
-        "rotation_rms_deg": 0.5329542471122612
+        "inlier_count": 24,
+        "translation_rms_m": 0.001283229626130589,
+        "rotation_rms_deg": 0.4909093213308077
       },
       {
         "marker_a": 2,
         "marker_b": 3,
-        "inlier_count": 25,
-        "translation_rms_m": 0.003526872672884133,
-        "rotation_rms_deg": 0.7937154641049042
+        "inlier_count": 23,
+        "translation_rms_m": 0.0030829035126218956,
+        "rotation_rms_deg": 0.719935704452271
       },
       {
         "marker_a": 2,
@@ -144,51 +165,51 @@
       {
         "marker_a": 2,
         "marker_b": 22,
-        "inlier_count": 51,
-        "translation_rms_m": 0.0011428515266968893,
-        "rotation_rms_deg": 2.082627490615618
+        "inlier_count": 52,
+        "translation_rms_m": 0.0012486951722269469,
+        "rotation_rms_deg": 2.108274230526821
       },
       {
         "marker_a": 2,
         "marker_b": 25,
-        "inlier_count": 27,
-        "translation_rms_m": 0.0016144074545227122,
-        "rotation_rms_deg": 1.0838337555952677
+        "inlier_count": 30,
+        "translation_rms_m": 0.0015847128129605368,
+        "rotation_rms_deg": 1.0639041809112104
       },
       {
         "marker_a": 2,
         "marker_b": 26,
-        "inlier_count": 29,
-        "translation_rms_m": 0.0014460314310985008,
-        "rotation_rms_deg": 0.9163413777102221
+        "inlier_count": 26,
+        "translation_rms_m": 0.0013609522449041843,
+        "rotation_rms_deg": 0.8475675511953091
       },
       {
         "marker_a": 3,
         "marker_b": 22,
-        "inlier_count": 59,
-        "translation_rms_m": 0.0011455002542328343,
-        "rotation_rms_deg": 1.408205008664716
+        "inlier_count": 57,
+        "translation_rms_m": 0.0010943298447907038,
+        "rotation_rms_deg": 1.3928813232190265
       },
       {
         "marker_a": 3,
         "marker_b": 23,
-        "inlier_count": 27,
-        "translation_rms_m": 0.0012125666557943485,
-        "rotation_rms_deg": 0.40798753092134443
+        "inlier_count": 30,
+        "translation_rms_m": 0.0011871520062023465,
+        "rotation_rms_deg": 0.3673801844820245
       },
       {
         "marker_a": 3,
         "marker_b": 26,
-        "inlier_count": 50,
-        "translation_rms_m": 0.0011814626155291325,
-        "rotation_rms_deg": 0.3982094865245202
+        "inlier_count": 49,
+        "translation_rms_m": 0.0012342211445877166,
+        "rotation_rms_deg": 0.4368666472141394
       },
       {
         "marker_a": 3,
         "marker_b": 28,
-        "inlier_count": 12,
-        "translation_rms_m": 0.001122730968419802,
-        "rotation_rms_deg": 1.1310546470609464
+        "inlier_count": 13,
+        "translation_rms_m": 0.001108935474822245,
+        "rotation_rms_deg": 1.0480206059546533
       },
       {
         "marker_a": 4,
@@ -235,44 +256,44 @@
       {
         "marker_a": 22,
         "marker_b": 23,
-        "inlier_count": 23,
-        "translation_rms_m": 0.0014493401101010363,
-        "rotation_rms_deg": 0.932604251689771
+        "inlier_count": 20,
+        "translation_rms_m": 0.0013095307720396012,
+        "rotation_rms_deg": 0.8083381257160875
       },
       {
         "marker_a": 22,
         "marker_b": 25,
         "inlier_count": 35,
-        "translation_rms_m": 0.0013957399354687457,
-        "rotation_rms_deg": 1.8912806502307402
+        "translation_rms_m": 0.0014047137196957595,
+        "rotation_rms_deg": 1.9193444548732679
       },
       {
         "marker_a": 22,
         "marker_b": 26,
         "inlier_count": 65,
-        "translation_rms_m": 0.001288785861952213,
-        "rotation_rms_deg": 1.9679444483772992
+        "translation_rms_m": 0.0013047993702937524,
+        "rotation_rms_deg": 1.8535396729737836
       },
       {
         "marker_a": 23,
         "marker_b": 24,
-        "inlier_count": 45,
-        "translation_rms_m": 0.001226218678823778,
-        "rotation_rms_deg": 1.4770058887149207
+        "inlier_count": 46,
+        "translation_rms_m": 0.001225599325867934,
+        "rotation_rms_deg": 1.4905315750307626
       },
       {
         "marker_a": 23,
         "marker_b": 25,
-        "inlier_count": 38,
-        "translation_rms_m": 0.0012114071566470274,
-        "rotation_rms_deg": 1.0166903609805555
+        "inlier_count": 37,
+        "translation_rms_m": 0.0013157214093201914,
+        "rotation_rms_deg": 1.0766212015295968
       },
       {
         "marker_a": 23,
         "marker_b": 26,
-        "inlier_count": 79,
-        "translation_rms_m": 0.0012544679975258505,
-        "rotation_rms_deg": 0.6402513063789214
+        "inlier_count": 81,
+        "translation_rms_m": 0.0011859990696318926,
+        "rotation_rms_deg": 0.7183170684456253
       },
       {
         "marker_a": 23,
@@ -298,19 +319,19 @@
       {
         "marker_a": 25,
         "marker_b": 26,
-        "inlier_count": 67,
-        "translation_rms_m": 0.001121920749112483,
-        "rotation_rms_deg": 0.8781613755788749
+        "inlier_count": 66,
+        "translation_rms_m": 0.001090386375896124,
+        "rotation_rms_deg": 0.8318607960315278
       }
     ],
-    "pair_translation_rms_max_m": 0.003526872672884133,
-    "pair_rotation_rms_max_deg": 2.082627490615618,
-    "frame_count": 385,
-    "observation_count": 6612,
-    "inlier_corner_count": 6572,
-    "input_frame_count": 390,
-    "rejected_frame_count": 5,
-    "accepted_frame_count": 385,
+    "pair_translation_rms_max_m": 0.0030829035126218956,
+    "pair_rotation_rms_max_deg": 2.108274230526821,
+    "frame_count": 382,
+    "observation_count": 6580,
+    "inlier_corner_count": 6556,
+    "input_frame_count": 385,
+    "rejected_frame_count": 3,
+    "accepted_frame_count": 382,
     "connected_marker_ids": [
       0,
       2,
@@ -329,11 +350,11 @@
     "unused_expected_ids": []
   },
   "assignment_rejections": {
-    "total_rejected": 5,
+    "total_rejected": 3,
     "by_reason": [
       [
         "no_constrained_pair",
-        5
+        3
       ]
     ],
     "by_pair": [],
@@ -341,20 +362,18 @@
       {
         "reason": "no_constrained_pair",
         "marker_pair": null,
-        "count": 5
+        "count": 3
       }
     ],
     "by_cause": [
       {
         "reason": "no_constrained_pair",
         "marker_pair": null,
-        "count": 5,
+        "count": 3,
         "sample_frame_ids": [
-          189,
-          193,
-          196,
-          199,
-          319
+          192,
+          198,
+          314
         ],
         "translation_error_m": null,
         "rotation_error_deg": null,
@@ -367,8 +386,8 @@
   },
   "assignment_rejection_records": [
     {
-      "frame_index": 189,
-      "frame_id": 189,
+      "frame_index": 192,
+      "frame_id": 192,
       "visible_marker_ids": [
         26,
         28
@@ -381,36 +400,8 @@
       "rotation_gate_deg": null
     },
     {
-      "frame_index": 193,
-      "frame_id": 193,
-      "visible_marker_ids": [
-        26,
-        28
-      ],
-      "reason": "no_constrained_pair",
-      "marker_pair": null,
-      "translation_error_m": null,
-      "rotation_error_deg": null,
-      "translation_gate_m": null,
-      "rotation_gate_deg": null
-    },
-    {
-      "frame_index": 196,
-      "frame_id": 196,
-      "visible_marker_ids": [
-        26,
-        28
-      ],
-      "reason": "no_constrained_pair",
-      "marker_pair": null,
-      "translation_error_m": null,
-      "rotation_error_deg": null,
-      "translation_gate_m": null,
-      "rotation_gate_deg": null
-    },
-    {
-      "frame_index": 199,
-      "frame_id": 199,
+      "frame_index": 198,
+      "frame_id": 198,
       "visible_marker_ids": [
         23,
         28
@@ -423,8 +414,8 @@
       "rotation_gate_deg": null
     },
     {
-      "frame_index": 319,
-      "frame_id": 319,
+      "frame_index": 314,
+      "frame_id": 314,
       "visible_marker_ids": [
         26,
         28
@@ -509,10 +500,10 @@
       "stage": "initial_consensus",
       "reason": "insufficient_inlier_frames",
       "observed_count": 39,
-      "supported_count": 13,
+      "supported_count": 12,
       "required_count": 20,
-      "translation_rms_m": 0.0013200960505249002,
-      "rotation_rms_deg": 0.6667245740656023,
+      "translation_rms_m": 0.001113288833659023,
+      "rotation_rms_deg": 0.48099507411056713,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -521,7 +512,7 @@
       "marker_b": 24,
       "stage": "initial_consensus",
       "reason": "insufficient_inlier_frames",
-      "observed_count": 55,
+      "observed_count": 56,
       "supported_count": 14,
       "required_count": 20,
       "translation_rms_m": 0.0013822638259476953,
@@ -625,11 +616,11 @@
       "marker_b": 24,
       "stage": "initial_consensus",
       "reason": "insufficient_inlier_frames",
-      "observed_count": 60,
-      "supported_count": 12,
+      "observed_count": 59,
+      "supported_count": 10,
       "required_count": 20,
-      "translation_rms_m": 0.0014474620816146387,
-      "rotation_rms_deg": 1.7958372407458556,
+      "translation_rms_m": 0.0015777479880474436,
+      "rotation_rms_deg": 1.7605750036752799,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -641,8 +632,8 @@
       "observed_count": 41,
       "supported_count": 15,
       "required_count": 20,
-      "translation_rms_m": 0.0012485330144790224,
-      "rotation_rms_deg": 1.076577319386376,
+      "translation_rms_m": 0.001312130518572587,
+      "rotation_rms_deg": 1.0951344359704835,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -651,11 +642,11 @@
       "marker_b": 28,
       "stage": "initial_consensus",
       "reason": "insufficient_inlier_frames",
-      "observed_count": 32,
-      "supported_count": 12,
+      "observed_count": 31,
+      "supported_count": 13,
       "required_count": 20,
-      "translation_rms_m": 0.001122730968419802,
-      "rotation_rms_deg": 1.1310546470609464,
+      "translation_rms_m": 0.001108935474822245,
+      "rotation_rms_deg": 1.0480206059546533,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -664,11 +655,11 @@
       "marker_b": 28,
       "stage": "initial_consensus",
       "reason": "insufficient_inlier_frames",
-      "observed_count": 35,
-      "supported_count": 6,
+      "observed_count": 37,
+      "supported_count": 9,
       "required_count": 20,
-      "translation_rms_m": 0.0013065480437245778,
-      "rotation_rms_deg": 0.9862020064206569,
+      "translation_rms_m": 0.0011854404296652511,
+      "rotation_rms_deg": 0.9992522032162201,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -677,11 +668,11 @@
       "marker_b": 28,
       "stage": "initial_consensus",
       "reason": "insufficient_observed_frames",
-      "observed_count": 18,
-      "supported_count": 18,
+      "observed_count": 17,
+      "supported_count": 17,
       "required_count": 20,
-      "translation_rms_m": 0.0011747647711946765,
-      "rotation_rms_deg": 1.4404116877118804,
+      "translation_rms_m": 0.0004604435700767114,
+      "rotation_rms_deg": 0.4157319554567854,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -703,11 +694,11 @@
       "marker_b": 28,
       "stage": "initial_consensus",
       "reason": "insufficient_inlier_frames",
-      "observed_count": 40,
+      "observed_count": 41,
       "supported_count": 11,
       "required_count": 20,
-      "translation_rms_m": 0.0013849128515801006,
-      "rotation_rms_deg": 0.8892959082531757,
+      "translation_rms_m": 0.0012145235577645322,
+      "rotation_rms_deg": 0.8542906835805663,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -742,11 +733,11 @@
       "marker_b": 24,
       "stage": "initial_consensus",
       "reason": "insufficient_observed_frames",
-      "observed_count": 16,
-      "supported_count": 16,
+      "observed_count": 15,
+      "supported_count": 15,
       "required_count": 20,
-      "translation_rms_m": 0.0009720904238576512,
-      "rotation_rms_deg": 0.4353851256113624,
+      "translation_rms_m": 0.0012499944278210305,
+      "rotation_rms_deg": 0.43166660629446013,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -755,11 +746,11 @@
       "marker_b": 28,
       "stage": "assignment_support",
       "reason": "insufficient_support",
-      "observed_count": 12,
-      "supported_count": 12,
+      "observed_count": 13,
+      "supported_count": 13,
       "required_count": 20,
-      "translation_rms_m": 0.001122730968419802,
-      "rotation_rms_deg": 1.1310546470609464,
+      "translation_rms_m": 0.001108935474822245,
+      "rotation_rms_deg": 1.0480206059546533,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -768,11 +759,11 @@
       "marker_b": 24,
       "stage": "post_pruning",
       "reason": "insufficient_support",
-      "observed_count": 45,
+      "observed_count": 46,
       "supported_count": 0,
       "required_count": 20,
-      "translation_rms_m": 0.001226218678823778,
-      "rotation_rms_deg": 1.4770058887149207,
+      "translation_rms_m": 0.001225599325867934,
+      "rotation_rms_deg": 1.4905315750307626,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -821,7 +812,7 @@
       "stage": "post_pruning",
       "reason": "insufficient_support",
       "observed_count": 30,
-      "supported_count": 2,
+      "supported_count": 0,
       "required_count": 20,
       "translation_rms_m": 0.0012704546868559808,
       "rotation_rms_deg": 1.232593063176606,
@@ -834,7 +825,7 @@
       "stage": "post_pruning",
       "reason": "insufficient_support",
       "observed_count": 44,
-      "supported_count": 1,
+      "supported_count": 0,
       "required_count": 20,
       "translation_rms_m": 0.00138941567449379,
       "rotation_rms_deg": 1.2392413768131252,
@@ -886,7 +877,7 @@
       "stage": "post_pruning",
       "reason": "insufficient_support",
       "observed_count": 23,
-      "supported_count": 7,
+      "supported_count": 6,
       "required_count": 20,
       "translation_rms_m": 0.0010925495973492147,
       "rotation_rms_deg": 0.7847750789270166,
@@ -911,11 +902,11 @@
       "marker_b": 25,
       "stage": "post_pruning",
       "reason": "insufficient_support",
-      "observed_count": 27,
-      "supported_count": 0,
+      "observed_count": 30,
+      "supported_count": 1,
       "required_count": 20,
-      "translation_rms_m": 0.0016144074545227122,
-      "rotation_rms_deg": 1.0838337555952677,
+      "translation_rms_m": 0.0015847128129605368,
+      "rotation_rms_deg": 1.0639041809112104,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -924,11 +915,11 @@
       "marker_b": 2,
       "stage": "post_pruning",
       "reason": "insufficient_support",
-      "observed_count": 49,
+      "observed_count": 50,
       "supported_count": 0,
       "required_count": 20,
-      "translation_rms_m": 0.0030270683637811597,
-      "rotation_rms_deg": 0.8110137749023337,
+      "translation_rms_m": 0.0030667931229705694,
+      "rotation_rms_deg": 0.8089436900304005,
       "translation_gate_m": 0.007000000000000001,
       "rotation_gate_deg": 5.0
     },
@@ -938,10 +929,10 @@
       "stage": "post_pruning",
       "reason": "insufficient_support",
       "observed_count": 21,
-      "supported_count": 2,
+      "supported_count": 1,
       "required_count": 20,
-      "translation_rms_m": 0.0011349928042809247,
-      "rotation_rms_deg": 0.4570435977336074,
+      "translation_rms_m": 0.001200074509735323,
+      "rotation_rms_deg": 0.4641932430581835,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -950,11 +941,11 @@
       "marker_b": 24,
       "stage": "post_pruning",
       "reason": "insufficient_support",
-      "observed_count": 20,
+      "observed_count": 22,
       "supported_count": 1,
       "required_count": 20,
-      "translation_rms_m": 0.0013497396143513968,
-      "rotation_rms_deg": 0.49664772814865327,
+      "translation_rms_m": 0.0014730616868884451,
+      "rotation_rms_deg": 0.651765334752516,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -963,11 +954,11 @@
       "marker_b": 25,
       "stage": "post_pruning",
       "reason": "insufficient_support",
-      "observed_count": 34,
-      "supported_count": 4,
+      "observed_count": 32,
+      "supported_count": 3,
       "required_count": 20,
-      "translation_rms_m": 0.0014310095794286815,
-      "rotation_rms_deg": 0.7776358662856283,
+      "translation_rms_m": 0.00139489230365681,
+      "rotation_rms_deg": 0.5669304067671357,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -976,11 +967,11 @@
       "marker_b": 26,
       "stage": "post_pruning",
       "reason": "insufficient_support",
-      "observed_count": 23,
-      "supported_count": 4,
+      "observed_count": 24,
+      "supported_count": 0,
       "required_count": 20,
-      "translation_rms_m": 0.00126651087202781,
-      "rotation_rms_deg": 0.5329542471122612,
+      "translation_rms_m": 0.001283229626130589,
+      "rotation_rms_deg": 0.4909093213308077,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -989,11 +980,11 @@
       "marker_b": 26,
       "stage": "post_pruning",
       "reason": "insufficient_support",
-      "observed_count": 29,
+      "observed_count": 26,
       "supported_count": 0,
       "required_count": 20,
-      "translation_rms_m": 0.0014460314310985008,
-      "rotation_rms_deg": 0.9163413777102221,
+      "translation_rms_m": 0.0013609522449041843,
+      "rotation_rms_deg": 0.8475675511953091,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -1002,11 +993,11 @@
       "marker_b": 22,
       "stage": "post_pruning",
       "reason": "insufficient_support",
-      "observed_count": 51,
-      "supported_count": 0,
+      "observed_count": 52,
+      "supported_count": 1,
       "required_count": 20,
-      "translation_rms_m": 0.0011428515266968893,
-      "rotation_rms_deg": 2.082627490615618,
+      "translation_rms_m": 0.0012486951722269469,
+      "rotation_rms_deg": 2.108274230526821,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -1015,11 +1006,11 @@
       "marker_b": 23,
       "stage": "post_pruning",
       "reason": "insufficient_support",
-      "observed_count": 23,
-      "supported_count": 16,
+      "observed_count": 20,
+      "supported_count": 18,
       "required_count": 20,
-      "translation_rms_m": 0.0014493401101010363,
-      "rotation_rms_deg": 0.932604251689771,
+      "translation_rms_m": 0.0013095307720396012,
+      "rotation_rms_deg": 0.8083381257160875,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -1029,10 +1020,10 @@
       "stage": "post_pruning",
       "reason": "insufficient_support",
       "observed_count": 35,
-      "supported_count": 18,
+      "supported_count": 16,
       "required_count": 20,
-      "translation_rms_m": 0.0013957399354687457,
-      "rotation_rms_deg": 1.8912806502307402,
+      "translation_rms_m": 0.0014047137196957595,
+      "rotation_rms_deg": 1.9193444548732679,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -1041,11 +1032,11 @@
       "marker_b": 22,
       "stage": "post_pruning",
       "reason": "insufficient_support",
-      "observed_count": 26,
-      "supported_count": 6,
+      "observed_count": 22,
+      "supported_count": 4,
       "required_count": 20,
-      "translation_rms_m": 0.001253329813366449,
-      "rotation_rms_deg": 1.4202042828069346,
+      "translation_rms_m": 0.001284178519856762,
+      "rotation_rms_deg": 1.277857238370658,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -1054,11 +1045,11 @@
       "marker_b": 3,
       "stage": "post_pruning",
       "reason": "insufficient_support",
-      "observed_count": 25,
+      "observed_count": 23,
       "supported_count": 0,
       "required_count": 20,
-      "translation_rms_m": 0.003526872672884133,
-      "rotation_rms_deg": 0.7937154641049042,
+      "translation_rms_m": 0.0030829035126218956,
+      "rotation_rms_deg": 0.719935704452271,
       "translation_gate_m": 0.007000000000000001,
       "rotation_gate_deg": 5.0
     },
@@ -1067,11 +1058,11 @@
       "marker_b": 22,
       "stage": "post_pruning",
       "reason": "insufficient_support",
-      "observed_count": 59,
-      "supported_count": 12,
+      "observed_count": 57,
+      "supported_count": 10,
       "required_count": 20,
-      "translation_rms_m": 0.0011455002542328343,
-      "rotation_rms_deg": 1.408205008664716,
+      "translation_rms_m": 0.0010943298447907038,
+      "rotation_rms_deg": 1.3928813232190265,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -1080,11 +1071,11 @@
       "marker_b": 26,
       "stage": "post_pruning",
       "reason": "insufficient_support",
-      "observed_count": 50,
-      "supported_count": 8,
+      "observed_count": 49,
+      "supported_count": 9,
       "required_count": 20,
-      "translation_rms_m": 0.0011814626155291325,
-      "rotation_rms_deg": 0.3982094865245202,
+      "translation_rms_m": 0.0012342211445877166,
+      "rotation_rms_deg": 0.4368666472141394,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -1093,11 +1084,11 @@
       "marker_b": 23,
       "stage": "post_pruning",
       "reason": "insufficient_support",
-      "observed_count": 27,
-      "supported_count": 9,
+      "observed_count": 30,
+      "supported_count": 7,
       "required_count": 20,
-      "translation_rms_m": 0.0012125666557943485,
-      "rotation_rms_deg": 0.40798753092134443,
+      "translation_rms_m": 0.0011871520062023465,
+      "rotation_rms_deg": 0.3673801844820245,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -1106,11 +1097,11 @@
       "marker_b": 3,
       "stage": "post_pruning",
       "reason": "insufficient_support",
-      "observed_count": 21,
-      "supported_count": 1,
+      "observed_count": 22,
+      "supported_count": 0,
       "required_count": 20,
-      "translation_rms_m": 0.0023361613193082463,
-      "rotation_rms_deg": 0.36510124016908657,
+      "translation_rms_m": 0.002496582869285854,
+      "rotation_rms_deg": 0.41286192109497233,
       "translation_gate_m": 0.007000000000000001,
       "rotation_gate_deg": 5.0
     },
@@ -1119,11 +1110,11 @@
       "marker_b": 28,
       "stage": "post_pruning",
       "reason": "insufficient_support",
-      "observed_count": 12,
+      "observed_count": 13,
       "supported_count": 0,
       "required_count": 20,
-      "translation_rms_m": 0.001122730968419802,
-      "rotation_rms_deg": 1.1310546470609464,
+      "translation_rms_m": 0.001108935474822245,
+      "rotation_rms_deg": 1.0480206059546533,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     }
@@ -1135,12 +1126,12 @@
       "stage": "initial_consensus",
       "original_stage": "initial_consensus",
       "original_reason": "insufficient_inlier_frames",
-      "observed_count": 32,
-      "supported_count": 12,
+      "observed_count": 31,
+      "supported_count": 13,
       "required_count": 20,
-      "support_fraction": 0.375,
-      "translation_rms_m": 0.001122730968419802,
-      "rotation_rms_deg": 1.1310546470609464,
+      "support_fraction": 0.41935483870967744,
+      "translation_rms_m": 0.001108935474822245,
+      "rotation_rms_deg": 1.0480206059546533,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     },
@@ -1150,12 +1141,12 @@
       "stage": "assignment_support",
       "original_stage": "assignment_support",
       "original_reason": "insufficient_support",
-      "observed_count": 12,
-      "supported_count": 12,
+      "observed_count": 13,
+      "supported_count": 13,
       "required_count": 20,
       "support_fraction": 1.0,
-      "translation_rms_m": 0.001122730968419802,
-      "rotation_rms_deg": 1.1310546470609464,
+      "translation_rms_m": 0.001108935474822245,
+      "rotation_rms_deg": 1.0480206059546533,
       "translation_gate_m": 0.002,
       "rotation_gate_deg": 5.0
     }
@@ -1171,7 +1162,7 @@
         26,
         29
       ],
-      "disagreement_cost": 51.85372772932393,
+      "disagreement_cost": 52.018862289973505,
       "marker_pair": [
         24,
         25
@@ -1189,7 +1180,7 @@
         26,
         29
       ],
-      "disagreement_cost": 56.96118442828917,
+      "disagreement_cost": 57.20556704276274,
       "marker_pair": [
         24,
         25
@@ -1207,7 +1198,7 @@
         26,
         29
       ],
-      "disagreement_cost": 56.75751491040192,
+      "disagreement_cost": 57.01602629626652,
       "marker_pair": [
         24,
         25
@@ -1224,7 +1215,7 @@
         26,
         29
       ],
-      "disagreement_cost": 6.367064684664377,
+      "disagreement_cost": 6.358489358050693,
       "marker_pair": [
         23,
         29
@@ -1241,7 +1232,7 @@
         26,
         29
       ],
-      "disagreement_cost": 12.139932643338389,
+      "disagreement_cost": 12.141206911412603,
       "marker_pair": [
         23,
         29
@@ -1259,7 +1250,7 @@
         26,
         29
       ],
-      "disagreement_cost": 32.425102806861226,
+      "disagreement_cost": 32.563159664082306,
       "marker_pair": [
         24,
         25
@@ -1276,7 +1267,7 @@
         25,
         29
       ],
-      "disagreement_cost": 41.66184426833877,
+      "disagreement_cost": 41.87335839828559,
       "marker_pair": [
         24,
         25
@@ -1294,7 +1285,7 @@
         26,
         29
       ],
-      "disagreement_cost": 38.54566361492489,
+      "disagreement_cost": 38.81718942915173,
       "marker_pair": [
         24,
         25
@@ -1311,7 +1302,7 @@
         25,
         29
       ],
-      "disagreement_cost": 61.48893626931107,
+      "disagreement_cost": 61.68331266591806,
       "marker_pair": [
         23,
         29
@@ -1327,7 +1318,7 @@
         24,
         29
       ],
-      "disagreement_cost": 18.821765631923338,
+      "disagreement_cost": 18.843080740788515,
       "marker_pair": [
         23,
         29
@@ -1344,7 +1335,7 @@
         24,
         29
       ],
-      "disagreement_cost": 15.874013007763544,
+      "disagreement_cost": 15.881322613065034,
       "marker_pair": [
         23,
         29
@@ -1361,7 +1352,7 @@
         24,
         29
       ],
-      "disagreement_cost": 31.670520044284917,
+      "disagreement_cost": 31.679990860843557,
       "marker_pair": [
         23,
         29
@@ -1394,7 +1385,7 @@
         24,
         29
       ],
-      "disagreement_cost": 40.192204565348995,
+      "disagreement_cost": 40.19216740067751,
       "marker_pair": [
         23,
         29
@@ -1412,7 +1403,7 @@
         24,
         29
       ],
-      "disagreement_cost": 66.25216588594922,
+      "disagreement_cost": 66.25943069540108,
       "marker_pair": [
         23,
         29
@@ -1464,7 +1455,7 @@
         24,
         29
       ],
-      "disagreement_cost": 31.52070387729589,
+      "disagreement_cost": 31.530823446891237,
       "marker_pair": [
         23,
         29
@@ -1499,7 +1490,7 @@
         24,
         29
       ],
-      "disagreement_cost": 41.011509402629116,
+      "disagreement_cost": 41.02105708234586,
       "marker_pair": [
         23,
         29
@@ -1602,7 +1593,7 @@
         24,
         29
       ],
-      "disagreement_cost": 78.0879831163265,
+      "disagreement_cost": 78.09255011507817,
       "marker_pair": [
         23,
         29
@@ -1700,7 +1691,7 @@
         24,
         29
       ],
-      "disagreement_cost": 16.425019301938338,
+      "disagreement_cost": 16.437209293211023,
       "marker_pair": [
         23,
         29
@@ -1766,7 +1757,7 @@
         24,
         29
       ],
-      "disagreement_cost": 320.55410776737546,
+      "disagreement_cost": 320.5594607919426,
       "marker_pair": [
         4,
         19
@@ -1784,7 +1775,7 @@
         24,
         29
       ],
-      "disagreement_cost": 28.295718202313147,
+      "disagreement_cost": 28.300401495247353,
       "marker_pair": [
         23,
         29
@@ -1802,7 +1793,7 @@
         24,
         29
       ],
-      "disagreement_cost": 31.59717184906662,
+      "disagreement_cost": 31.604515547431376,
       "marker_pair": [
         23,
         29
@@ -1820,7 +1811,7 @@
         24,
         29
       ],
-      "disagreement_cost": 41.31606629442649,
+      "disagreement_cost": 41.3242779006834,
       "marker_pair": [
         23,
         29
@@ -1855,7 +1846,7 @@
         24,
         29
       ],
-      "disagreement_cost": 32.08214678162064,
+      "disagreement_cost": 32.09276425994942,
       "marker_pair": [
         23,
         29
@@ -1890,7 +1881,7 @@
         24,
         29
       ],
-      "disagreement_cost": 15.128950678304818,
+      "disagreement_cost": 15.13798186871684,
       "marker_pair": [
         23,
         29
@@ -1910,7 +1901,7 @@
         25,
         29
       ],
-      "disagreement_cost": 64.72652785460511,
+      "disagreement_cost": 65.12453067060306,
       "marker_pair": [
         24,
         25
@@ -1928,7 +1919,7 @@
         24,
         25
       ],
-      "disagreement_cost": 37.37830378262193,
+      "disagreement_cost": 37.47622517074705,
       "marker_pair": [
         24,
         25
@@ -1947,7 +1938,7 @@
         24,
         25
       ],
-      "disagreement_cost": 44.42364344930396,
+      "disagreement_cost": 44.698217499431436,
       "marker_pair": [
         24,
         25
@@ -1966,7 +1957,7 @@
         24,
         25
       ],
-      "disagreement_cost": 37.082967441892386,
+      "disagreement_cost": 37.133408168758976,
       "marker_pair": [
         24,
         25
@@ -1983,7 +1974,7 @@
         24,
         25
       ],
-      "disagreement_cost": 37.266006676818236,
+      "disagreement_cost": 37.338213200622846,
       "marker_pair": [
         24,
         25
@@ -2000,7 +1991,7 @@
         24,
         25
       ],
-      "disagreement_cost": 30.69466000158942,
+      "disagreement_cost": 30.747809882796563,
       "marker_pair": [
         24,
         25
@@ -2018,7 +2009,7 @@
         24,
         25
       ],
-      "disagreement_cost": 39.15898049078416,
+      "disagreement_cost": 39.165897428992956,
       "marker_pair": [
         24,
         25
@@ -2035,7 +2026,7 @@
         24,
         25
       ],
-      "disagreement_cost": 34.5442000405253,
+      "disagreement_cost": 34.526118188194374,
       "marker_pair": [
         24,
         25
@@ -2053,7 +2044,7 @@
         24,
         25
       ],
-      "disagreement_cost": 40.05989898083151,
+      "disagreement_cost": 39.98280752186214,
       "marker_pair": [
         24,
         25
@@ -2072,7 +2063,7 @@
         24,
         25
       ],
-      "disagreement_cost": 31.831398846397637,
+      "disagreement_cost": 31.474153740014504,
       "marker_pair": [
         24,
         25
@@ -2091,7 +2082,7 @@
         24,
         25
       ],
-      "disagreement_cost": 28.272391989796613,
+      "disagreement_cost": 28.26740674204901,
       "marker_pair": [
         24,
         25
@@ -2111,13 +2102,13 @@
         24,
         25
       ],
-      "disagreement_cost": 63.50026628087224,
+      "disagreement_cost": 63.018474145302235,
       "marker_pair": [
         0,
         24
       ],
-      "translation_error_m": 0.009101608584278836,
-      "rotation_error_deg": 2.8835177784198294
+      "translation_error_m": 0.008981101103136522,
+      "rotation_error_deg": 3.148865122492037
     },
     {
       "frame_index": 57,
@@ -2130,7 +2121,7 @@
         24,
         25
       ],
-      "disagreement_cost": 64.01568950119105,
+      "disagreement_cost": 63.7782609263558,
       "marker_pair": [
         24,
         25
@@ -2149,7 +2140,7 @@
         24,
         25
       ],
-      "disagreement_cost": 59.205625589544326,
+      "disagreement_cost": 59.25981262676966,
       "marker_pair": [
         24,
         25
@@ -2167,7 +2158,7 @@
         24,
         25
       ],
-      "disagreement_cost": 50.555107201772316,
+      "disagreement_cost": 50.68382717624237,
       "marker_pair": [
         24,
         25
@@ -2185,7 +2176,7 @@
         24,
         25
       ],
-      "disagreement_cost": 35.16844761032182,
+      "disagreement_cost": 35.137844890152465,
       "marker_pair": [
         24,
         25
@@ -2203,13 +2194,13 @@
         24,
         25
       ],
-      "disagreement_cost": 32.22509397597739,
+      "disagreement_cost": 32.60200590040286,
       "marker_pair": [
-        24,
-        25
+        0,
+        24
       ],
-      "translation_error_m": 0.006703714560449452,
-      "rotation_error_deg": 1.43009561386079
+      "translation_error_m": 0.006717526961606388,
+      "rotation_error_deg": 1.7308333062749752
     },
     {
       "frame_index": 62,
@@ -2221,13 +2212,13 @@
         23,
         25
       ],
-      "disagreement_cost": 44.714071151048536,
+      "disagreement_cost": 45.28225678748959,
       "marker_pair": [
         0,
         23
       ],
-      "translation_error_m": 0.009941294872862496,
-      "rotation_error_deg": 2.488712503165967
+      "translation_error_m": 0.010345215254285613,
+      "rotation_error_deg": 2.49858982645507
     },
     {
       "frame_index": 63,
@@ -2239,13 +2230,13 @@
         23,
         25
       ],
-      "disagreement_cost": 16.524718175484406,
+      "disagreement_cost": 16.98944885466683,
       "marker_pair": [
         0,
         23
       ],
-      "translation_error_m": 0.004905625285480466,
-      "rotation_error_deg": 2.3846839612097117
+      "translation_error_m": 0.005204342527475639,
+      "rotation_error_deg": 2.362308974135628
     },
     {
       "frame_index": 64,
@@ -2257,13 +2248,13 @@
         23,
         25
       ],
-      "disagreement_cost": 71.67380686769106,
+      "disagreement_cost": 72.51884815102217,
       "marker_pair": [
         0,
         23
       ],
-      "translation_error_m": 0.01182767171404378,
-      "rotation_error_deg": 3.2747650275218683
+      "translation_error_m": 0.012180344137331975,
+      "rotation_error_deg": 3.2544686284187447
     },
     {
       "frame_index": 65,
@@ -2276,13 +2267,13 @@
         25,
         26
       ],
-      "disagreement_cost": 68.44451446194307,
+      "disagreement_cost": 74.0452480370344,
       "marker_pair": [
         0,
         23
       ],
-      "translation_error_m": 0.00859629448924107,
-      "rotation_error_deg": 2.4677832416971555
+      "translation_error_m": 0.009019782145557414,
+      "rotation_error_deg": 2.4305127191848994
     },
     {
       "frame_index": 66,
@@ -2296,13 +2287,13 @@
         25,
         26
       ],
-      "disagreement_cost": 84.9802384957591,
+      "disagreement_cost": 93.82557036007992,
       "marker_pair": [
         0,
-        23
+        26
       ],
-      "translation_error_m": 0.007185124608681073,
-      "rotation_error_deg": 2.3050647333759295
+      "translation_error_m": 0.007982709988292164,
+      "rotation_error_deg": 1.558957662752365
     },
     {
       "frame_index": 67,
@@ -2316,7 +2307,7 @@
         25,
         26
       ],
-      "disagreement_cost": 114.09238161617482,
+      "disagreement_cost": 114.95281963244537,
       "marker_pair": [
         19,
         24
@@ -2335,7 +2326,7 @@
         24,
         25
       ],
-      "disagreement_cost": 100.56417517220376,
+      "disagreement_cost": 101.96040192922274,
       "marker_pair": [
         19,
         24
@@ -2353,7 +2344,7 @@
         24,
         25
       ],
-      "disagreement_cost": 79.9929805973943,
+      "disagreement_cost": 79.91977259675595,
       "marker_pair": [
         19,
         24
@@ -2371,7 +2362,7 @@
         24,
         25
       ],
-      "disagreement_cost": 28.651099351517217,
+      "disagreement_cost": 28.420463147717182,
       "marker_pair": [
         24,
         25
@@ -2390,13 +2381,13 @@
         24,
         25
       ],
-      "disagreement_cost": 93.3182659754904,
+      "disagreement_cost": 92.49551862084084,
       "marker_pair": [
         2,
         22
       ],
-      "translation_error_m": 0.009398705423392056,
-      "rotation_error_deg": 1.5565370568874453
+      "translation_error_m": 0.009420011511562555,
+      "rotation_error_deg": 1.5559925612637673
     },
     {
       "frame_index": 72,
@@ -2409,7 +2400,7 @@
         24,
         25
       ],
-      "disagreement_cost": 51.125808579793315,
+      "disagreement_cost": 51.29156175880362,
       "marker_pair": [
         19,
         24
@@ -2428,7 +2419,7 @@
         24,
         25
       ],
-      "disagreement_cost": 102.88657123552628,
+      "disagreement_cost": 102.11537806308127,
       "marker_pair": [
         19,
         24
@@ -2448,7 +2439,7 @@
         25,
         26
       ],
-      "disagreement_cost": 124.39229663997625,
+      "disagreement_cost": 129.94500452077762,
       "marker_pair": [
         2,
         19
@@ -2466,13 +2457,13 @@
         24,
         25
       ],
-      "disagreement_cost": 286.1333404012219,
+      "disagreement_cost": 283.92271184259874,
       "marker_pair": [
         2,
         22
       ],
-      "translation_error_m": 0.02230305796567419,
-      "rotation_error_deg": 4.006808744528173
+      "translation_error_m": 0.022324893665569487,
+      "rotation_error_deg": 3.9995009405348507
     },
     {
       "frame_index": 76,
@@ -2485,13 +2476,13 @@
         24,
         25
       ],
-      "disagreement_cost": 385.48509942087844,
+      "disagreement_cost": 383.1954160521667,
       "marker_pair": [
         2,
         22
       ],
-      "translation_error_m": 0.0227642782122696,
-      "rotation_error_deg": 3.652468972332929
+      "translation_error_m": 0.022786119532956797,
+      "rotation_error_deg": 3.638030020100901
     },
     {
       "frame_index": 77,
@@ -2504,13 +2495,13 @@
         24,
         25
       ],
-      "disagreement_cost": 209.29559200768216,
+      "disagreement_cost": 207.53153674721756,
       "marker_pair": [
         22,
         25
       ],
-      "translation_error_m": 0.014989701352930531,
-      "rotation_error_deg": 2.039838637804392
+      "translation_error_m": 0.014939651511840816,
+      "rotation_error_deg": 2.076251972515349
     },
     {
       "frame_index": 78,
@@ -2523,13 +2514,13 @@
         24,
         25
       ],
-      "disagreement_cost": 188.69937753284015,
+      "disagreement_cost": 186.77282571353823,
       "marker_pair": [
         2,
         22
       ],
-      "translation_error_m": 0.014475089812436377,
-      "rotation_error_deg": 1.756722767057119
+      "translation_error_m": 0.014496580877638617,
+      "rotation_error_deg": 1.737366598371139
     },
     {
       "frame_index": 79,
@@ -2539,13 +2530,13 @@
         2,
         24
       ],
-      "disagreement_cost": 19.645712306771024,
+      "disagreement_cost": 20.446067071525277,
       "marker_pair": [
         0,
         24
       ],
-      "translation_error_m": 0.007699475370869551,
-      "rotation_error_deg": 2.7060406547710767
+      "translation_error_m": 0.007909420458969118,
+      "rotation_error_deg": 2.902107227734644
     },
     {
       "frame_index": 80,
@@ -2558,7 +2549,7 @@
         24,
         25
       ],
-      "disagreement_cost": 100.31119264150503,
+      "disagreement_cost": 98.96920144252162,
       "marker_pair": [
         2,
         19
@@ -2576,13 +2567,13 @@
         22,
         25
       ],
-      "disagreement_cost": 376.07388609949663,
+      "disagreement_cost": 372.6589241417998,
       "marker_pair": [
         2,
         22
       ],
-      "translation_error_m": 0.02249626053561693,
-      "rotation_error_deg": 3.7684956561818965
+      "translation_error_m": 0.022517279058124118,
+      "rotation_error_deg": 3.75498192705177
     },
     {
       "frame_index": 82,
@@ -2595,7 +2586,7 @@
         24,
         25
       ],
-      "disagreement_cost": 170.61698202116685,
+      "disagreement_cost": 168.9274463027849,
       "marker_pair": [
         2,
         19
@@ -2613,7 +2604,7 @@
         22,
         25
       ],
-      "disagreement_cost": 99.14247161292427,
+      "disagreement_cost": 97.11689049857426,
       "marker_pair": [
         2,
         19
@@ -2632,7 +2623,7 @@
         24,
         25
       ],
-      "disagreement_cost": 120.91812079990183,
+      "disagreement_cost": 119.31159243478203,
       "marker_pair": [
         2,
         19
@@ -2650,13 +2641,13 @@
         22,
         25
       ],
-      "disagreement_cost": 47.9228260176774,
+      "disagreement_cost": 46.14824461508315,
       "marker_pair": [
-        0,
-        22
+        2,
+        19
       ],
-      "translation_error_m": 0.007059020523747758,
-      "rotation_error_deg": 1.776570994304042
+      "translation_error_m": 0.006914321851740819,
+      "rotation_error_deg": 1.1741145662535504
     },
     {
       "frame_index": 86,
@@ -2666,13 +2657,13 @@
         22,
         25
       ],
-      "disagreement_cost": 22.842015083255404,
+      "disagreement_cost": 21.367300889441225,
       "marker_pair": [
         22,
         25
       ],
-      "translation_error_m": 0.006814164076759855,
-      "rotation_error_deg": 3.0068851933850738
+      "translation_error_m": 0.006749515425581473,
+      "rotation_error_deg": 3.0433805981582163
     },
     {
       "frame_index": 87,
@@ -2682,13 +2673,13 @@
         22,
         25
       ],
-      "disagreement_cost": 13.626017252037578,
+      "disagreement_cost": 12.254506014276533,
       "marker_pair": [
         0,
         22
       ],
-      "translation_error_m": 0.006016687696418863,
-      "rotation_error_deg": 0.651340127516862
+      "translation_error_m": 0.005571165870766547,
+      "rotation_error_deg": 0.6543130966328278
     },
     {
       "frame_index": 88,
@@ -2699,13 +2690,13 @@
         25,
         26
       ],
-      "disagreement_cost": 30.492806598234747,
+      "disagreement_cost": 35.845367412425624,
       "marker_pair": [
         0,
         22
       ],
-      "translation_error_m": 0.007751754849408583,
-      "rotation_error_deg": 2.4107508325954834
+      "translation_error_m": 0.007325118446891785,
+      "rotation_error_deg": 2.4030763999844282
     },
     {
       "frame_index": 89,
@@ -2716,13 +2707,13 @@
         25,
         26
       ],
-      "disagreement_cost": 26.789883624034456,
+      "disagreement_cost": 30.729253650351218,
       "marker_pair": [
         0,
         22
       ],
-      "translation_error_m": 0.007147503615717853,
-      "rotation_error_deg": 1.9708903767406674
+      "translation_error_m": 0.006717017002000013,
+      "rotation_error_deg": 1.9653942155294515
     },
     {
       "frame_index": 90,
@@ -2733,13 +2724,13 @@
         22,
         25
       ],
-      "disagreement_cost": 10.575744563577874,
+      "disagreement_cost": 9.613581515108402,
       "marker_pair": [
         0,
         22
       ],
-      "translation_error_m": 0.004494144300381675,
-      "rotation_error_deg": 0.5028345950888856
+      "translation_error_m": 0.004043408772754332,
+      "rotation_error_deg": 0.5155878333451875
     },
     {
       "frame_index": 91,
@@ -2751,13 +2742,13 @@
         25,
         26
       ],
-      "disagreement_cost": 16.12408872783586,
+      "disagreement_cost": 21.325706957360396,
       "marker_pair": [
-        2,
+        0,
         26
       ],
-      "translation_error_m": 0.003613692767826955,
-      "rotation_error_deg": 1.8669129903485315
+      "translation_error_m": 0.006067192817673944,
+      "rotation_error_deg": 0.9988799279277677
     },
     {
       "frame_index": 92,
@@ -2768,13 +2759,13 @@
         22,
         25
       ],
-      "disagreement_cost": 6.811883817883684,
+      "disagreement_cost": 6.120157410857643,
       "marker_pair": [
         22,
         25
       ],
-      "translation_error_m": 0.0035845757570501886,
-      "rotation_error_deg": 0.8144733421601514
+      "translation_error_m": 0.003514067745774504,
+      "rotation_error_deg": 0.8523145557356152
     },
     {
       "frame_index": 93,
@@ -2786,13 +2777,13 @@
         25,
         26
       ],
-      "disagreement_cost": 41.64881740356814,
+      "disagreement_cost": 51.02062541681161,
       "marker_pair": [
         0,
         26
       ],
-      "translation_error_m": 0.007125094349131985,
-      "rotation_error_deg": 1.3540928017132428
+      "translation_error_m": 0.009664924007884285,
+      "rotation_error_deg": 1.437030500975971
     },
     {
       "frame_index": 94,
@@ -2804,13 +2795,13 @@
         24,
         25
       ],
-      "disagreement_cost": 18.978868222186293,
+      "disagreement_cost": 18.293204768091016,
       "marker_pair": [
         0,
         22
       ],
-      "translation_error_m": 0.005201152689684174,
-      "rotation_error_deg": 0.6789841615416184
+      "translation_error_m": 0.004752071700178761,
+      "rotation_error_deg": 0.6588953509054787
     },
     {
       "frame_index": 95,
@@ -2821,13 +2812,13 @@
         22,
         25
       ],
-      "disagreement_cost": 6.661974974061913,
+      "disagreement_cost": 6.03863523740131,
       "marker_pair": [
         22,
         25
       ],
-      "translation_error_m": 0.003132362469047109,
-      "rotation_error_deg": 1.4003438406771935
+      "translation_error_m": 0.0030583000045747875,
+      "rotation_error_deg": 1.3809601770812359
     },
     {
       "frame_index": 96,
@@ -2838,13 +2829,13 @@
         22,
         25
       ],
-      "disagreement_cost": 7.325827183512493,
+      "disagreement_cost": 6.8574392663262085,
       "marker_pair": [
         22,
         25
       ],
-      "translation_error_m": 0.0036275785338431934,
-      "rotation_error_deg": 1.802752051236136
+      "translation_error_m": 0.003555910690429407,
+      "rotation_error_deg": 1.779268993590835
     },
     {
       "frame_index": 97,
@@ -2855,13 +2846,13 @@
         22,
         25
       ],
-      "disagreement_cost": 2.8306747087713378,
+      "disagreement_cost": 2.3113473614492306,
       "marker_pair": [
-        0,
-        22
+        22,
+        25
       ],
-      "translation_error_m": 0.0022621315614345583,
-      "rotation_error_deg": 0.24581769436840498
+      "translation_error_m": 0.0020369378008666026,
+      "rotation_error_deg": 0.6522320175593477
     },
     {
       "frame_index": 98,
@@ -2873,7 +2864,7 @@
         24,
         25
       ],
-      "disagreement_cost": 14.342360253436867,
+      "disagreement_cost": 13.991511442859265,
       "marker_pair": [
         24,
         25
@@ -2891,7 +2882,7 @@
         24,
         25
       ],
-      "disagreement_cost": 8.955451367071307,
+      "disagreement_cost": 8.588451520918374,
       "marker_pair": [
         24,
         25
@@ -2909,13 +2900,13 @@
         25,
         26
       ],
-      "disagreement_cost": 6.777283088675425,
+      "disagreement_cost": 10.68693229052319,
       "marker_pair": [
         0,
-        25
+        26
       ],
-      "translation_error_m": 0.0025029345396439815,
-      "rotation_error_deg": 0.16391049807089156
+      "translation_error_m": 0.0046179519203737,
+      "rotation_error_deg": 1.0482206119315562
     },
     {
       "frame_index": 102,
@@ -2927,7 +2918,7 @@
         25,
         26
       ],
-      "disagreement_cost": 6.537060632370542,
+      "disagreement_cost": 8.636074244226666,
       "marker_pair": [
         24,
         25
@@ -2945,7 +2936,7 @@
         25,
         26
       ],
-      "disagreement_cost": 7.456589045546869,
+      "disagreement_cost": 8.773974355062386,
       "marker_pair": [
         24,
         25
@@ -2963,7 +2954,7 @@
         25,
         26
       ],
-      "disagreement_cost": 20.28012487177281,
+      "disagreement_cost": 17.277134591769293,
       "marker_pair": [
         24,
         25
@@ -2982,13 +2973,13 @@
         25,
         26
       ],
-      "disagreement_cost": 18.744786859044435,
+      "disagreement_cost": 18.835528704540415,
       "marker_pair": [
-        2,
-        26
+        24,
+        25
       ],
-      "translation_error_m": 0.004049742299005555,
-      "rotation_error_deg": 1.0982795346505438
+      "translation_error_m": 0.003724340716604959,
+      "rotation_error_deg": 0.5355403795488178
     },
     {
       "frame_index": 106,
@@ -3000,13 +2991,13 @@
         25,
         26
       ],
-      "disagreement_cost": 9.920463978904456,
+      "disagreement_cost": 8.085648829330463,
       "marker_pair": [
         2,
         26
       ],
-      "translation_error_m": 0.004262094154951822,
-      "rotation_error_deg": 0.6032683014329642
+      "translation_error_m": 0.003908759550638517,
+      "rotation_error_deg": 0.721653490740564
     },
     {
       "frame_index": 107,
@@ -3019,13 +3010,13 @@
         25,
         26
       ],
-      "disagreement_cost": 10.945425798528637,
+      "disagreement_cost": 11.072289807733059,
       "marker_pair": [
         2,
         26
       ],
-      "translation_error_m": 0.003733342167178051,
-      "rotation_error_deg": 1.17003628729102
+      "translation_error_m": 0.0034182279836257926,
+      "rotation_error_deg": 1.3593793734363797
     },
     {
       "frame_index": 108,
@@ -3039,13 +3030,13 @@
         25,
         26
       ],
-      "disagreement_cost": 44.686654834954915,
+      "disagreement_cost": 48.87159950052075,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.00831427950241751,
-      "rotation_error_deg": 1.717542773322095
+      "translation_error_m": 0.008327127731999536,
+      "rotation_error_deg": 1.6729476589925194
     },
     {
       "frame_index": 109,
@@ -3058,13 +3049,13 @@
         25,
         26
       ],
-      "disagreement_cost": 14.082663050549382,
+      "disagreement_cost": 14.458091408555559,
       "marker_pair": [
         2,
         26
       ],
-      "translation_error_m": 0.004425603162657255,
-      "rotation_error_deg": 1.1478310981852553
+      "translation_error_m": 0.004108696236223617,
+      "rotation_error_deg": 1.335905370441893
     },
     {
       "frame_index": 110,
@@ -3077,13 +3068,13 @@
         25,
         26
       ],
-      "disagreement_cost": 11.056426548162314,
+      "disagreement_cost": 11.366971703242504,
       "marker_pair": [
         2,
         26
       ],
-      "translation_error_m": 0.004184628335285771,
-      "rotation_error_deg": 0.869028868181375
+      "translation_error_m": 0.0038765923758211484,
+      "rotation_error_deg": 1.0563956327087705
     },
     {
       "frame_index": 111,
@@ -3097,13 +3088,13 @@
         25,
         26
       ],
-      "disagreement_cost": 35.96821162390077,
+      "disagreement_cost": 39.55488231509284,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.009970616190945017,
-      "rotation_error_deg": 1.7055050837915624
+      "translation_error_m": 0.009983860517872773,
+      "rotation_error_deg": 1.6595946103716515
     },
     {
       "frame_index": 112,
@@ -3117,13 +3108,13 @@
         25,
         26
       ],
-      "disagreement_cost": 22.3192311401301,
+      "disagreement_cost": 26.727084839852125,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.007414764963901956,
-      "rotation_error_deg": 1.416081022085205
+      "translation_error_m": 0.007427962672990102,
+      "rotation_error_deg": 1.3702899265017079
     },
     {
       "frame_index": 113,
@@ -3137,13 +3128,13 @@
         25,
         26
       ],
-      "disagreement_cost": 17.71757791432665,
+      "disagreement_cost": 20.946528223978063,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.006626411771454378,
-      "rotation_error_deg": 1.5580045854506148
+      "translation_error_m": 0.006639743932824023,
+      "rotation_error_deg": 1.511776299889075
     },
     {
       "frame_index": 114,
@@ -3155,13 +3146,13 @@
         25,
         26
       ],
-      "disagreement_cost": 17.82628635699433,
+      "disagreement_cost": 18.072945360535574,
       "marker_pair": [
         2,
         25
       ],
-      "translation_error_m": 0.004540929571324443,
-      "rotation_error_deg": 1.0358893036249868
+      "translation_error_m": 0.004428646942976073,
+      "rotation_error_deg": 1.1573782775674402
     },
     {
       "frame_index": 115,
@@ -3172,13 +3163,13 @@
         25,
         26
       ],
-      "disagreement_cost": 10.655221620187508,
+      "disagreement_cost": 10.493105199855453,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.00601632945991309,
-      "rotation_error_deg": 1.633959054294649
+      "translation_error_m": 0.006030900172827123,
+      "rotation_error_deg": 1.588836533501615
     },
     {
       "frame_index": 116,
@@ -3189,13 +3180,13 @@
         25,
         26
       ],
-      "disagreement_cost": 20.739108777896128,
+      "disagreement_cost": 21.246328170162773,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.008474530457950824,
-      "rotation_error_deg": 2.0924486025876896
+      "translation_error_m": 0.008490006529847138,
+      "rotation_error_deg": 2.048117349780577
     },
     {
       "frame_index": 117,
@@ -3206,13 +3197,13 @@
         25,
         26
       ],
-      "disagreement_cost": 20.62260562398056,
+      "disagreement_cost": 21.106056315398586,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.00881314425362724,
-      "rotation_error_deg": 2.153755384815372
+      "translation_error_m": 0.008829111811711192,
+      "rotation_error_deg": 2.1109799248021157
     },
     {
       "frame_index": 118,
@@ -3223,13 +3214,13 @@
         25,
         26
       ],
-      "disagreement_cost": 17.87933907065814,
+      "disagreement_cost": 18.16968520710101,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.00794824045409959,
-      "rotation_error_deg": 2.1338263252217318
+      "translation_error_m": 0.007964222599124438,
+      "rotation_error_deg": 2.0897075531714853
     },
     {
       "frame_index": 119,
@@ -3240,13 +3231,13 @@
         25,
         26
       ],
-      "disagreement_cost": 24.153771074981584,
+      "disagreement_cost": 24.536787942425487,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.009386606171384286,
-      "rotation_error_deg": 2.297208027028815
+      "translation_error_m": 0.009402768137473923,
+      "rotation_error_deg": 2.2533442166988915
     },
     {
       "frame_index": 120,
@@ -3257,13 +3248,13 @@
         25,
         26
       ],
-      "disagreement_cost": 10.087611623148128,
+      "disagreement_cost": 9.905175157580642,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.006094142176159742,
-      "rotation_error_deg": 2.1024035715308473
+      "translation_error_m": 0.006110037257165237,
+      "rotation_error_deg": 2.0577659675800826
     },
     {
       "frame_index": 121,
@@ -3274,13 +3265,13 @@
         25,
         26
       ],
-      "disagreement_cost": 10.96424650002382,
+      "disagreement_cost": 10.59107084490637,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.006147707926048662,
-      "rotation_error_deg": 2.33608197936868
+      "translation_error_m": 0.006163675148600569,
+      "rotation_error_deg": 2.289785775751384
     },
     {
       "frame_index": 122,
@@ -3291,13 +3282,13 @@
         25,
         26
       ],
-      "disagreement_cost": 12.70981139565375,
+      "disagreement_cost": 12.562132432098158,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.006805772555083847,
-      "rotation_error_deg": 2.4000647542421065
+      "translation_error_m": 0.006821779458303155,
+      "rotation_error_deg": 2.3539630397771267
     },
     {
       "frame_index": 123,
@@ -3308,13 +3299,13 @@
         25,
         26
       ],
-      "disagreement_cost": 12.401345421128207,
+      "disagreement_cost": 11.6537932690539,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.005467166239044569,
-      "rotation_error_deg": 2.438301089828198
+      "translation_error_m": 0.005483257136425143,
+      "rotation_error_deg": 2.3928933318471675
     },
     {
       "frame_index": 124,
@@ -3325,13 +3316,13 @@
         25,
         26
       ],
-      "disagreement_cost": 7.589990558027945,
+      "disagreement_cost": 7.369745124960071,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.0048785766331778625,
-      "rotation_error_deg": 2.2486305439806284
+      "translation_error_m": 0.0048950947199731185,
+      "rotation_error_deg": 2.2037957410598423
     },
     {
       "frame_index": 125,
@@ -3342,13 +3333,13 @@
         25,
         26
       ],
-      "disagreement_cost": 9.74398099197675,
+      "disagreement_cost": 9.417874368642321,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.005352818834840317,
-      "rotation_error_deg": 2.527701921399583
+      "translation_error_m": 0.005368943869224103,
+      "rotation_error_deg": 2.481919639592556
     },
     {
       "frame_index": 126,
@@ -3359,13 +3350,13 @@
         25,
         26
       ],
-      "disagreement_cost": 10.592908816844636,
+      "disagreement_cost": 10.291943032689995,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.00574462108387124,
-      "rotation_error_deg": 2.4082957569007366
+      "translation_error_m": 0.0057606915241468085,
+      "rotation_error_deg": 2.362081502124143
     },
     {
       "frame_index": 127,
@@ -3376,13 +3367,13 @@
         25,
         26
       ],
-      "disagreement_cost": 8.150039647058959,
+      "disagreement_cost": 7.814006052735012,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.0051536240361472856,
-      "rotation_error_deg": 2.4399653980336806
+      "translation_error_m": 0.00516973390388316,
+      "rotation_error_deg": 2.3941646472270217
     },
     {
       "frame_index": 128,
@@ -3393,13 +3384,13 @@
         25,
         26
       ],
-      "disagreement_cost": 10.370662360003378,
+      "disagreement_cost": 10.58139790180165,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.006150046911023174,
-      "rotation_error_deg": 2.447453207865626
+      "translation_error_m": 0.0061664275943191715,
+      "rotation_error_deg": 2.4017904831812165
     },
     {
       "frame_index": 129,
@@ -3410,13 +3401,13 @@
         25,
         26
       ],
-      "disagreement_cost": 8.719650257881883,
+      "disagreement_cost": 8.775656446528075,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.0055574056655055765,
-      "rotation_error_deg": 2.4710865489752925
+      "translation_error_m": 0.005573523832819344,
+      "rotation_error_deg": 2.4249851148646493
     },
     {
       "frame_index": 130,
@@ -3427,13 +3418,13 @@
         25,
         26
       ],
-      "disagreement_cost": 10.83548733152615,
+      "disagreement_cost": 11.172761002538055,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.006333644592476961,
-      "rotation_error_deg": 2.535288245107701
+      "translation_error_m": 0.006349668233476788,
+      "rotation_error_deg": 2.4891555444328093
     },
     {
       "frame_index": 131,
@@ -3444,13 +3435,13 @@
         25,
         26
       ],
-      "disagreement_cost": 18.70622160148213,
+      "disagreement_cost": 18.968420373669787,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.00818859313640055,
-      "rotation_error_deg": 2.733998040768741
+      "translation_error_m": 0.008204502554741333,
+      "rotation_error_deg": 2.6889771702640886
     },
     {
       "frame_index": 132,
@@ -3461,13 +3452,13 @@
         25,
         26
       ],
-      "disagreement_cost": 14.639384976784852,
+      "disagreement_cost": 15.092889951879158,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.0074303025920525855,
-      "rotation_error_deg": 2.3972670478673344
+      "translation_error_m": 0.007446036300408303,
+      "rotation_error_deg": 2.3512944352830583
     },
     {
       "frame_index": 133,
@@ -3478,13 +3469,13 @@
         25,
         26
       ],
-      "disagreement_cost": 20.257454697184162,
+      "disagreement_cost": 20.788192908423014,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.008668134732640127,
-      "rotation_error_deg": 2.2256754616709618
+      "translation_error_m": 0.008683763746920037,
+      "rotation_error_deg": 2.1796199996992685
     },
     {
       "frame_index": 134,
@@ -3495,13 +3486,13 @@
         25,
         26
       ],
-      "disagreement_cost": 16.24211420093163,
+      "disagreement_cost": 16.87120465396604,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.007705237122212028,
-      "rotation_error_deg": 2.0908240056697127
+      "translation_error_m": 0.007720564051188254,
+      "rotation_error_deg": 2.0452022372539376
     },
     {
       "frame_index": 135,
@@ -3512,13 +3503,13 @@
         25,
         26
       ],
-      "disagreement_cost": 17.00483552563447,
+      "disagreement_cost": 17.905435341720256,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.007054255645375525,
-      "rotation_error_deg": 1.9385896899674828
+      "translation_error_m": 0.007069410854177921,
+      "rotation_error_deg": 1.8922318019451263
     },
     {
       "frame_index": 136,
@@ -3529,13 +3520,13 @@
         25,
         26
       ],
-      "disagreement_cost": 17.43412086126141,
+      "disagreement_cost": 18.151442123104935,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.0068221240592110394,
-      "rotation_error_deg": 2.0754820615501774
+      "translation_error_m": 0.006837262569181763,
+      "rotation_error_deg": 2.034244743644661
     },
     {
       "frame_index": 137,
@@ -3546,13 +3537,13 @@
         25,
         26
       ],
-      "disagreement_cost": 20.413884929885338,
+      "disagreement_cost": 21.34682108390232,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.00684326854916695,
-      "rotation_error_deg": 1.9342229170534266
+      "translation_error_m": 0.006858248323940961,
+      "rotation_error_deg": 1.8904603351115818
     },
     {
       "frame_index": 138,
@@ -3566,13 +3557,13 @@
         25,
         26
       ],
-      "disagreement_cost": 75.52191227979448,
+      "disagreement_cost": 86.15693511031031,
       "marker_pair": [
         0,
         26
       ],
-      "translation_error_m": 0.0070179227839701815,
-      "rotation_error_deg": 1.184527446252752
+      "translation_error_m": 0.009607032035034208,
+      "rotation_error_deg": 1.3628931697769568
     },
     {
       "frame_index": 139,
@@ -3585,13 +3576,13 @@
         24,
         26
       ],
-      "disagreement_cost": 89.16879375737953,
+      "disagreement_cost": 100.83863875277642,
       "marker_pair": [
         0,
         26
       ],
-      "translation_error_m": 0.008417616832764666,
-      "rotation_error_deg": 1.1485350361627977
+      "translation_error_m": 0.010597572872986852,
+      "rotation_error_deg": 1.3187172573733787
     },
     {
       "frame_index": 140,
@@ -3601,13 +3592,13 @@
         22,
         26
       ],
-      "disagreement_cost": 19.317846165143806,
+      "disagreement_cost": 17.547932601885975,
       "marker_pair": [
         2,
         26
       ],
-      "translation_error_m": 0.007491013019589212,
-      "rotation_error_deg": 1.49717410014042
+      "translation_error_m": 0.0071804479922429,
+      "rotation_error_deg": 1.6441353378637138
     },
     {
       "frame_index": 141,
@@ -3617,13 +3608,13 @@
         22,
         26
       ],
-      "disagreement_cost": 14.335324939869842,
+      "disagreement_cost": 12.639096425315767,
       "marker_pair": [
         2,
         26
       ],
-      "translation_error_m": 0.005790444780865278,
-      "rotation_error_deg": 1.3082358104764622
+      "translation_error_m": 0.0054984041376941305,
+      "rotation_error_deg": 1.456388871209401
     },
     {
       "frame_index": 142,
@@ -3634,13 +3625,13 @@
         25,
         26
       ],
-      "disagreement_cost": 10.791412859452674,
+      "disagreement_cost": 10.04481179672562,
       "marker_pair": [
         2,
         25
       ],
-      "translation_error_m": 0.003630098049585592,
-      "rotation_error_deg": 0.9553410518661528
+      "translation_error_m": 0.0037537475555117676,
+      "rotation_error_deg": 0.7910235822108382
     },
     {
       "frame_index": 143,
@@ -3651,13 +3642,13 @@
         25,
         26
       ],
-      "disagreement_cost": 10.155338419182417,
+      "disagreement_cost": 8.97652119850175,
       "marker_pair": [
         2,
         26
       ],
-      "translation_error_m": 0.00416613965137819,
-      "rotation_error_deg": 0.9975479467401591
+      "translation_error_m": 0.0038155021969931207,
+      "rotation_error_deg": 1.1067312909260374
     },
     {
       "frame_index": 145,
@@ -3667,13 +3658,13 @@
         22,
         25
       ],
-      "disagreement_cost": 3.3626327680434476,
+      "disagreement_cost": 3.1733790597527216,
       "marker_pair": [
         2,
         25
       ],
-      "translation_error_m": 0.003228721729955173,
-      "rotation_error_deg": 0.9049657495996992
+      "translation_error_m": 0.003112343380103016,
+      "rotation_error_deg": 0.7770021451732528
     },
     {
       "frame_index": 146,
@@ -3684,13 +3675,13 @@
         25,
         26
       ],
-      "disagreement_cost": 12.719447372613004,
+      "disagreement_cost": 12.94522576698661,
       "marker_pair": [
         2,
         25
       ],
-      "translation_error_m": 0.005279011049829636,
-      "rotation_error_deg": 1.2946967038154995
+      "translation_error_m": 0.0051919268642477805,
+      "rotation_error_deg": 1.1650139107083408
     },
     {
       "frame_index": 147,
@@ -3701,13 +3692,13 @@
         25,
         26
       ],
-      "disagreement_cost": 8.80656275820759,
+      "disagreement_cost": 8.98799179384346,
       "marker_pair": [
         2,
         25
       ],
-      "translation_error_m": 0.004389671985925721,
-      "rotation_error_deg": 0.8920126548224845
+      "translation_error_m": 0.00428833515295345,
+      "rotation_error_deg": 0.7373483819513914
     },
     {
       "frame_index": 148,
@@ -3718,13 +3709,13 @@
         25,
         26
       ],
-      "disagreement_cost": 10.413825822045952,
+      "disagreement_cost": 10.002847821289576,
       "marker_pair": [
         2,
         25
       ],
-      "translation_error_m": 0.004456036959184553,
-      "rotation_error_deg": 0.6404262877459374
+      "translation_error_m": 0.004415505412739006,
+      "rotation_error_deg": 0.48307773843301854
     },
     {
       "frame_index": 150,
@@ -3735,13 +3726,13 @@
         25,
         26
       ],
-      "disagreement_cost": 24.844848358872937,
+      "disagreement_cost": 24.531238648176465,
       "marker_pair": [
         2,
         25
       ],
-      "translation_error_m": 0.0068689610331954115,
-      "rotation_error_deg": 0.7861981469285652
+      "translation_error_m": 0.006811129233295739,
+      "rotation_error_deg": 0.6895761487937272
     },
     {
       "frame_index": 151,
@@ -3753,13 +3744,13 @@
         25,
         26
       ],
-      "disagreement_cost": 17.209571232815282,
+      "disagreement_cost": 14.312904103361788,
       "marker_pair": [
         0,
         22
       ],
-      "translation_error_m": 0.004191887824789216,
-      "rotation_error_deg": 0.5931682815894039
+      "translation_error_m": 0.004663971069803827,
+      "rotation_error_deg": 0.5902917367381493
     },
     {
       "frame_index": 152,
@@ -3770,13 +3761,13 @@
         25,
         26
       ],
-      "disagreement_cost": 10.87349784993696,
+      "disagreement_cost": 10.627207488317492,
       "marker_pair": [
         22,
         25
       ],
-      "translation_error_m": 0.003998921400303972,
-      "rotation_error_deg": 3.6030931149833796
+      "translation_error_m": 0.004073638075747264,
+      "rotation_error_deg": 3.591698630676045
     },
     {
       "frame_index": 153,
@@ -3788,13 +3779,13 @@
         25,
         26
       ],
-      "disagreement_cost": 39.09544687855144,
+      "disagreement_cost": 38.62742486431354,
       "marker_pair": [
         3,
         26
       ],
-      "translation_error_m": 0.006277120821005275,
-      "rotation_error_deg": 1.2519661184083901
+      "translation_error_m": 0.005758349976287,
+      "rotation_error_deg": 1.2341184571002668
     },
     {
       "frame_index": 154,
@@ -3805,13 +3796,13 @@
         25,
         26
       ],
-      "disagreement_cost": 9.22419495161339,
+      "disagreement_cost": 9.921192523268138,
       "marker_pair": [
         22,
         26
       ],
-      "translation_error_m": 0.0035076568672170183,
-      "rotation_error_deg": 3.2884347911623664
+      "translation_error_m": 0.0038295469496163847,
+      "rotation_error_deg": 3.3880903341275332
     },
     {
       "frame_index": 155,
@@ -3822,13 +3813,13 @@
         25,
         26
       ],
-      "disagreement_cost": 9.510818836040794,
+      "disagreement_cost": 8.827118599705715,
       "marker_pair": [
         22,
         25
       ],
-      "translation_error_m": 0.003893349571634818,
-      "rotation_error_deg": 1.333772131147051
+      "translation_error_m": 0.003966679001562155,
+      "rotation_error_deg": 1.2997275769961172
     },
     {
       "frame_index": 156,
@@ -3839,13 +3830,13 @@
         25,
         26
       ],
-      "disagreement_cost": 10.553557263336838,
+      "disagreement_cost": 10.05788391915548,
       "marker_pair": [
-        2,
-        26
+        22,
+        25
       ],
-      "translation_error_m": 0.0034602159016718114,
-      "rotation_error_deg": 0.6475936649040381
+      "translation_error_m": 0.003450036751769609,
+      "rotation_error_deg": 0.4785264744330449
     },
     {
       "frame_index": 157,
@@ -3857,13 +3848,13 @@
         25,
         26
       ],
-      "disagreement_cost": 35.453516871664405,
+      "disagreement_cost": 34.53730227721915,
       "marker_pair": [
         22,
         25
       ],
-      "translation_error_m": 0.007123463210386412,
-      "rotation_error_deg": 1.6241000367277156
+      "translation_error_m": 0.007198140593301941,
+      "rotation_error_deg": 1.6396109565031187
     },
     {
       "frame_index": 158,
@@ -3875,13 +3866,13 @@
         25,
         26
       ],
-      "disagreement_cost": 126.3890638650258,
+      "disagreement_cost": 115.77948678431709,
       "marker_pair": [
         0,
         22
       ],
-      "translation_error_m": 0.014021325030486875,
-      "rotation_error_deg": 1.8690085288951213
+      "translation_error_m": 0.014493415460085266,
+      "rotation_error_deg": 1.8854660582804859
     },
     {
       "frame_index": 159,
@@ -3893,13 +3884,13 @@
         25,
         26
       ],
-      "disagreement_cost": 140.7688065587529,
+      "disagreement_cost": 126.85759326434093,
       "marker_pair": [
         0,
         22
       ],
-      "translation_error_m": 0.014296783998150691,
-      "rotation_error_deg": 1.908545280881203
+      "translation_error_m": 0.014765498081059848,
+      "rotation_error_deg": 1.9006596903622137
     },
     {
       "frame_index": 160,
@@ -3911,13 +3902,13 @@
         25,
         26
       ],
-      "disagreement_cost": 23.675302384546747,
+      "disagreement_cost": 22.43089796240247,
       "marker_pair": [
         22,
         25
       ],
-      "translation_error_m": 0.00602160401869377,
-      "rotation_error_deg": 1.3857048540236403
+      "translation_error_m": 0.006096068637602472,
+      "rotation_error_deg": 1.3709719078844798
     },
     {
       "frame_index": 161,
@@ -3928,13 +3919,13 @@
         25,
         26
       ],
-      "disagreement_cost": 17.860000692357097,
+      "disagreement_cost": 17.845311977272516,
       "marker_pair": [
         22,
         25
       ],
-      "translation_error_m": 0.00567660921612375,
-      "rotation_error_deg": 1.6538883678689276
+      "translation_error_m": 0.005750877448357969,
+      "rotation_error_deg": 1.6827953243891152
     },
     {
       "frame_index": 162,
@@ -3945,13 +3936,13 @@
         25,
         26
       ],
-      "disagreement_cost": 15.16224192204101,
+      "disagreement_cost": 15.726253493488164,
       "marker_pair": [
         2,
         25
       ],
-      "translation_error_m": 0.005517751807563815,
-      "rotation_error_deg": 0.5804457434135094
+      "translation_error_m": 0.005418376203639518,
+      "rotation_error_deg": 0.6209480448357924
     },
     {
       "frame_index": 163,
@@ -3962,13 +3953,13 @@
         25,
         26
       ],
-      "disagreement_cost": 12.70868943375329,
+      "disagreement_cost": 12.36620184263493,
       "marker_pair": [
         22,
         25
       ],
-      "translation_error_m": 0.005176471953686537,
-      "rotation_error_deg": 1.406837398039851
+      "translation_error_m": 0.005251173344817178,
+      "rotation_error_deg": 1.4326542401373763
     },
     {
       "frame_index": 164,
@@ -3980,13 +3971,13 @@
         25,
         26
       ],
-      "disagreement_cost": 10.04066501787202,
+      "disagreement_cost": 9.668155748134476,
       "marker_pair": [
         22,
         25
       ],
-      "translation_error_m": 0.004660157260045128,
-      "rotation_error_deg": 1.4437289928073043
+      "translation_error_m": 0.004732782254199041,
+      "rotation_error_deg": 1.4626907634137731
     },
     {
       "frame_index": 165,
@@ -3998,13 +3989,13 @@
         25,
         26
       ],
-      "disagreement_cost": 46.38678503622644,
+      "disagreement_cost": 45.35102455660363,
       "marker_pair": [
         22,
         25
       ],
-      "translation_error_m": 0.008957664163522878,
-      "rotation_error_deg": 0.834758179148173
+      "translation_error_m": 0.009032387976640539,
+      "rotation_error_deg": 0.8690528834454634
     },
     {
       "frame_index": 166,
@@ -4016,13 +4007,13 @@
         25,
         26
       ],
-      "disagreement_cost": 22.419755117474768,
+      "disagreement_cost": 22.80509660165241,
       "marker_pair": [
         2,
         25
       ],
-      "translation_error_m": 0.00636930245811232,
-      "rotation_error_deg": 1.1839606283634019
+      "translation_error_m": 0.006304160145638178,
+      "rotation_error_deg": 1.104305986787971
     },
     {
       "frame_index": 167,
@@ -4033,13 +4024,13 @@
         25,
         26
       ],
-      "disagreement_cost": 6.004279981871913,
+      "disagreement_cost": 6.211623222267059,
       "marker_pair": [
         22,
         25
       ],
-      "translation_error_m": 0.00451220116414005,
-      "rotation_error_deg": 2.302673242179398
+      "translation_error_m": 0.004581306172323663,
+      "rotation_error_deg": 2.3332455213820698
     },
     {
       "frame_index": 168,
@@ -4050,13 +4041,13 @@
         25,
         26
       ],
-      "disagreement_cost": 4.092920981912016,
+      "disagreement_cost": 4.174836439486404,
       "marker_pair": [
         22,
         25
       ],
-      "translation_error_m": 0.0033878967369533083,
-      "rotation_error_deg": 1.9070859666005786
+      "translation_error_m": 0.0034452728862126017,
+      "rotation_error_deg": 1.9158495349608993
     },
     {
       "frame_index": 169,
@@ -4069,13 +4060,13 @@
         26,
         28
       ],
-      "disagreement_cost": 16.750999705974003,
+      "disagreement_cost": 18.650918951120886,
       "marker_pair": [
         3,
         28
       ],
-      "translation_error_m": 0.005862854574494871,
-      "rotation_error_deg": 0.7317646628585873
+      "translation_error_m": 0.00594861757934085,
+      "rotation_error_deg": 0.7514096242474079
     },
     {
       "frame_index": 170,
@@ -4088,13 +4079,13 @@
         26,
         28
       ],
-      "disagreement_cost": 32.00877003064232,
+      "disagreement_cost": 33.628914303605214,
       "marker_pair": [
         2,
         26
       ],
-      "translation_error_m": 0.00632291399744189,
-      "rotation_error_deg": 2.320633343159912
+      "translation_error_m": 0.00660321804709128,
+      "rotation_error_deg": 2.253616464711934
     },
     {
       "frame_index": 171,
@@ -4107,13 +4098,13 @@
         26,
         28
       ],
-      "disagreement_cost": 30.600667671583295,
+      "disagreement_cost": 32.22106827862476,
       "marker_pair": [
         2,
         22
       ],
-      "translation_error_m": 0.0058156483669046,
-      "rotation_error_deg": 3.6963447797180207
+      "translation_error_m": 0.005817394243781493,
+      "rotation_error_deg": 3.720534472914984
     },
     {
       "frame_index": 172,
@@ -4125,13 +4116,13 @@
         26,
         28
       ],
-      "disagreement_cost": 12.525464544735787,
+      "disagreement_cost": 13.529690531458618,
       "marker_pair": [
         25,
         26
       ],
-      "translation_error_m": 0.003928820973374223,
-      "rotation_error_deg": 0.36512296699665187
+      "translation_error_m": 0.003941154764857,
+      "rotation_error_deg": 0.35930088503522245
     },
     {
       "frame_index": 173,
@@ -4144,13 +4135,13 @@
         26,
         28
       ],
-      "disagreement_cost": 65.95097494669561,
+      "disagreement_cost": 65.79088416208401,
       "marker_pair": [
         2,
         26
       ],
-      "translation_error_m": 0.009715913891579166,
-      "rotation_error_deg": 2.499297367935454
+      "translation_error_m": 0.009497406815484633,
+      "rotation_error_deg": 2.646372275644953
     },
     {
       "frame_index": 174,
@@ -4162,13 +4153,13 @@
         26,
         28
       ],
-      "disagreement_cost": 22.971068169321583,
+      "disagreement_cost": 23.833884340453842,
       "marker_pair": [
         3,
         28
       ],
-      "translation_error_m": 0.006594617483977454,
-      "rotation_error_deg": 0.9170782922226114
+      "translation_error_m": 0.00668169110874404,
+      "rotation_error_deg": 0.8664620627047652
     },
     {
       "frame_index": 175,
@@ -4180,13 +4171,13 @@
         26,
         28
       ],
-      "disagreement_cost": 18.952539359325222,
+      "disagreement_cost": 19.82902388328645,
       "marker_pair": [
         3,
         28
       ],
-      "translation_error_m": 0.005614827817971113,
-      "rotation_error_deg": 0.6910882570821881
+      "translation_error_m": 0.005702584912086512,
+      "rotation_error_deg": 0.6458179367180319
     },
     {
       "frame_index": 176,
@@ -4198,13 +4189,13 @@
         26,
         28
       ],
-      "disagreement_cost": 9.261473014234424,
+      "disagreement_cost": 9.814403010671999,
       "marker_pair": [
         22,
         25
       ],
-      "translation_error_m": 0.0034032498112178495,
-      "rotation_error_deg": 3.1531055612668877
+      "translation_error_m": 0.0034112177675158562,
+      "rotation_error_deg": 3.174137193037413
     },
     {
       "frame_index": 177,
@@ -4216,13 +4207,13 @@
         26,
         28
       ],
-      "disagreement_cost": 16.019175183810226,
+      "disagreement_cost": 16.2025878116928,
       "marker_pair": [
         25,
         26
       ],
-      "translation_error_m": 0.00426142587637264,
-      "rotation_error_deg": 0.4310391966193171
+      "translation_error_m": 0.004269057893695512,
+      "rotation_error_deg": 0.3839356919344487
     },
     {
       "frame_index": 178,
@@ -4234,13 +4225,13 @@
         26,
         28
       ],
-      "disagreement_cost": 13.971008461407992,
+      "disagreement_cost": 13.945734885771424,
       "marker_pair": [
-        3,
-        28
+        22,
+        26
       ],
-      "translation_error_m": 0.0037790252037900496,
-      "rotation_error_deg": 1.55737045900867
+      "translation_error_m": 0.0038996647148433015,
+      "rotation_error_deg": 2.56650171177264
     },
     {
       "frame_index": 179,
@@ -4252,13 +4243,13 @@
         26,
         28
       ],
-      "disagreement_cost": 12.11888171537423,
+      "disagreement_cost": 12.430869894972634,
       "marker_pair": [
         22,
         26
       ],
-      "translation_error_m": 0.0036404245408557506,
-      "rotation_error_deg": 2.308055989506207
+      "translation_error_m": 0.004147296500218753,
+      "rotation_error_deg": 2.6580432300530648
     },
     {
       "frame_index": 180,
@@ -4269,13 +4260,13 @@
         26,
         28
       ],
-      "disagreement_cost": 5.1438818319926884,
+      "disagreement_cost": 4.100854415209364,
       "marker_pair": [
         3,
         26
       ],
-      "translation_error_m": 0.003903848950389078,
-      "rotation_error_deg": 0.9067926292420636
+      "translation_error_m": 0.0033109603868782915,
+      "rotation_error_deg": 0.8583329829336851
     },
     {
       "frame_index": 182,
@@ -4286,13 +4277,13 @@
         26,
         28
       ],
-      "disagreement_cost": 14.237068599064651,
+      "disagreement_cost": 13.916683054167759,
       "marker_pair": [
         3,
         26
       ],
-      "translation_error_m": 0.005186680344744167,
-      "rotation_error_deg": 1.4289180538787012
+      "translation_error_m": 0.00470818241729841,
+      "rotation_error_deg": 1.3810529796075062
     },
     {
       "frame_index": 183,
@@ -4302,13 +4293,13 @@
         26,
         28
       ],
-      "disagreement_cost": 7.731836886559079,
+      "disagreement_cost": 6.275698697389084,
       "marker_pair": [
         3,
         26
       ],
-      "translation_error_m": 0.005352730342140946,
-      "rotation_error_deg": 1.1741377849239598
+      "translation_error_m": 0.00476084410445661,
+      "rotation_error_deg": 1.121503715757085
     },
     {
       "frame_index": 184,
@@ -4318,13 +4309,13 @@
         26,
         28
       ],
-      "disagreement_cost": 11.44574010252384,
+      "disagreement_cost": 10.184826791324015,
       "marker_pair": [
         3,
         26
       ],
-      "translation_error_m": 0.005517411645120544,
-      "rotation_error_deg": 1.2231232650928248
+      "translation_error_m": 0.004987281819283692,
+      "rotation_error_deg": 1.1823488088275222
     },
     {
       "frame_index": 185,
@@ -4335,13 +4326,13 @@
         26,
         28
       ],
-      "disagreement_cost": 21.35061534116891,
+      "disagreement_cost": 20.193740560895044,
       "marker_pair": [
         3,
         26
       ],
-      "translation_error_m": 0.006358611782501322,
-      "rotation_error_deg": 1.064316475980725
+      "translation_error_m": 0.0057449237618364,
+      "rotation_error_deg": 1.0194624871791766
     },
     {
       "frame_index": 186,
@@ -4351,13 +4342,13 @@
         26,
         28
       ],
-      "disagreement_cost": 6.6258197837161,
+      "disagreement_cost": 5.170273943047093,
       "marker_pair": [
         3,
         26
       ],
-      "translation_error_m": 0.0049949118668695955,
-      "rotation_error_deg": 0.6025288058631261
+      "translation_error_m": 0.004393352891606101,
+      "rotation_error_deg": 0.6019094633741213
     },
     {
       "frame_index": 187,
@@ -4367,13 +4358,63 @@
         22,
         28
       ],
-      "disagreement_cost": 3.4957830747063756,
+      "disagreement_cost": 3.4839250260781323,
       "marker_pair": [
         3,
         22
       ],
-      "translation_error_m": 0.003623629849265061,
-      "rotation_error_deg": 1.7290428308471266
+      "translation_error_m": 0.0036150985038692746,
+      "rotation_error_deg": 1.7348639871839209
+    },
+    {
+      "frame_index": 188,
+      "frame_id": 188,
+      "visible_marker_ids": [
+        3,
+        22,
+        28
+      ],
+      "disagreement_cost": 12.73412725056479,
+      "marker_pair": [
+        3,
+        22
+      ],
+      "translation_error_m": 0.007063041640802687,
+      "rotation_error_deg": 1.5669151889077393
+    },
+    {
+      "frame_index": 189,
+      "frame_id": 189,
+      "visible_marker_ids": [
+        3,
+        22,
+        26,
+        28
+      ],
+      "disagreement_cost": 32.49707222372848,
+      "marker_pair": [
+        22,
+        26
+      ],
+      "translation_error_m": 0.008367375145955048,
+      "rotation_error_deg": 1.1026535148979366
+    },
+    {
+      "frame_index": 190,
+      "frame_id": 190,
+      "visible_marker_ids": [
+        3,
+        22,
+        26,
+        28
+      ],
+      "disagreement_cost": 36.762121355353834,
+      "marker_pair": [
+        22,
+        26
+      ],
+      "translation_error_m": 0.009413032328266584,
+      "rotation_error_deg": 1.1114121881009622
     },
     {
       "frame_index": 191,
@@ -4384,29 +4425,29 @@
         26,
         28
       ],
-      "disagreement_cost": 33.9865570558829,
+      "disagreement_cost": 32.03428463415205,
       "marker_pair": [
         22,
         26
       ],
-      "translation_error_m": 0.008580514657020722,
-      "rotation_error_deg": 1.5543021506414536
+      "translation_error_m": 0.00817149249069149,
+      "rotation_error_deg": 1.6809167680230788
     },
     {
-      "frame_index": 192,
-      "frame_id": 192,
+      "frame_index": 193,
+      "frame_id": 193,
       "visible_marker_ids": [
         22,
         26,
         28
       ],
-      "disagreement_cost": 18.925422463033513,
+      "disagreement_cost": 27.126851811030985,
       "marker_pair": [
         22,
         26
       ],
-      "translation_error_m": 0.008689973382819342,
-      "rotation_error_deg": 1.078344964590977
+      "translation_error_m": 0.010398019787739809,
+      "rotation_error_deg": 1.5584281702554348
     },
     {
       "frame_index": 194,
@@ -4416,13 +4457,13 @@
         26,
         28
       ],
-      "disagreement_cost": 26.025273633129277,
+      "disagreement_cost": 21.332490974086888,
       "marker_pair": [
         22,
         26
       ],
-      "translation_error_m": 0.010191537748472456,
-      "rotation_error_deg": 1.2084412842017123
+      "translation_error_m": 0.009199592202599591,
+      "rotation_error_deg": 2.0878625466855243
     },
     {
       "frame_index": 195,
@@ -4432,13 +4473,29 @@
         26,
         28
       ],
-      "disagreement_cost": 42.285819124342275,
+      "disagreement_cost": 20.172181724433337,
       "marker_pair": [
         22,
         26
       ],
-      "translation_error_m": 0.012993370695517923,
-      "rotation_error_deg": 1.4044448774897929
+      "translation_error_m": 0.008970092195485656,
+      "rotation_error_deg": 1.1889409736733054
+    },
+    {
+      "frame_index": 196,
+      "frame_id": 196,
+      "visible_marker_ids": [
+        22,
+        26,
+        28
+      ],
+      "disagreement_cost": 16.338269322186974,
+      "marker_pair": [
+        22,
+        26
+      ],
+      "translation_error_m": 0.00803682498079489,
+      "rotation_error_deg": 2.1830619505913105
     },
     {
       "frame_index": 197,
@@ -4446,63 +4503,48 @@
       "visible_marker_ids": [
         22,
         23,
+        28
+      ],
+      "disagreement_cost": 46.42862977782833,
+      "marker_pair": [
+        22,
+        23
+      ],
+      "translation_error_m": 0.013619142415459678,
+      "rotation_error_deg": 1.2079915633512748
+    },
+    {
+      "frame_index": 199,
+      "frame_id": 199,
+      "visible_marker_ids": [
+        23,
+        25,
         26,
         28
       ],
-      "disagreement_cost": 66.70721352926736,
+      "disagreement_cost": 20.97140917046653,
       "marker_pair": [
-        22,
-        23
+        25,
+        26
       ],
-      "translation_error_m": 0.013048739826255125,
-      "rotation_error_deg": 1.015479552216546
-    },
-    {
-      "frame_index": 198,
-      "frame_id": 198,
-      "visible_marker_ids": [
-        22,
-        23,
-        28
-      ],
-      "disagreement_cost": 58.306944043164776,
-      "marker_pair": [
-        22,
-        23
-      ],
-      "translation_error_m": 0.015261804372583019,
-      "rotation_error_deg": 1.380904290820351
+      "translation_error_m": 0.007471475476612119,
+      "rotation_error_deg": 1.435317197195019
     },
     {
       "frame_index": 200,
       "frame_id": 200,
       "visible_marker_ids": [
         23,
-        25,
+        26,
         28
       ],
-      "disagreement_cost": 22.436379394545984,
+      "disagreement_cost": 11.951648286840717,
       "marker_pair": [
         23,
-        25
+        26
       ],
-      "translation_error_m": 0.00944818633775265,
-      "rotation_error_deg": 1.7271589845902444
-    },
-    {
-      "frame_index": 201,
-      "frame_id": 201,
-      "visible_marker_ids": [
-        4,
-        23
-      ],
-      "disagreement_cost": 5.726373869033149,
-      "marker_pair": [
-        4,
-        23
-      ],
-      "translation_error_m": 0.004756266699806044,
-      "rotation_error_deg": 1.3309361283714805
+      "translation_error_m": 0.006819725210767333,
+      "rotation_error_deg": 2.8481805562798885
     },
     {
       "frame_index": 202,
@@ -4511,32 +4553,32 @@
         4,
         23
       ],
-      "disagreement_cost": 7.468644780774809,
+      "disagreement_cost": 2.8880050177531773,
       "marker_pair": [
         4,
         23
       ],
-      "translation_error_m": 0.005432529059442732,
-      "rotation_error_deg": 1.5045911849433924
+      "translation_error_m": 0.0033655792235921366,
+      "rotation_error_deg": 1.1855815048365004
     },
     {
-      "frame_index": 204,
-      "frame_id": 204,
+      "frame_index": 203,
+      "frame_id": 203,
       "visible_marker_ids": [
         4,
         23
       ],
-      "disagreement_cost": 2.484889000507499,
+      "disagreement_cost": 2.479945004584203,
       "marker_pair": [
         4,
         23
       ],
-      "translation_error_m": 0.00311151227529484,
-      "rotation_error_deg": 1.2699590611500111
+      "translation_error_m": 0.003107980233263542,
+      "rotation_error_deg": 1.2753403662844125
     },
     {
-      "frame_index": 205,
-      "frame_id": 205,
+      "frame_index": 204,
+      "frame_id": 204,
       "visible_marker_ids": [
         4,
         23
@@ -4550,8 +4592,8 @@
       "rotation_error_deg": 1.315766920809746
     },
     {
-      "frame_index": 206,
-      "frame_id": 206,
+      "frame_index": 205,
+      "frame_id": 205,
       "visible_marker_ids": [
         4,
         23
@@ -4565,8 +4607,8 @@
       "rotation_error_deg": 1.0000096960646472
     },
     {
-      "frame_index": 207,
-      "frame_id": 207,
+      "frame_index": 206,
+      "frame_id": 206,
       "visible_marker_ids": [
         4,
         23
@@ -4580,49 +4622,64 @@
       "rotation_error_deg": 1.7768631242468427
     },
     {
+      "frame_index": 207,
+      "frame_id": 207,
+      "visible_marker_ids": [
+        4,
+        23
+      ],
+      "disagreement_cost": 6.965528679216051,
+      "marker_pair": [
+        4,
+        23
+      ],
+      "translation_error_m": 0.004722383872159758,
+      "rotation_error_deg": 5.89555196781312
+    },
+    {
       "frame_index": 208,
       "frame_id": 208,
       "visible_marker_ids": [
         4,
         23
       ],
-      "disagreement_cost": 3.6157163393438294,
+      "disagreement_cost": 6.11592195669776,
       "marker_pair": [
         4,
         23
       ],
-      "translation_error_m": 0.003693375050755523,
-      "rotation_error_deg": 2.2663931860887954
+      "translation_error_m": 0.004707689317081467,
+      "rotation_error_deg": 3.7925495387569366
     },
     {
       "frame_index": 209,
       "frame_id": 209,
       "visible_marker_ids": [
-        4,
-        23
+        23,
+        24
       ],
-      "disagreement_cost": 16.833812180855052,
+      "disagreement_cost": 8.968954808974933,
       "marker_pair": [
-        4,
-        23
+        23,
+        24
       ],
-      "translation_error_m": 0.007561442187752426,
-      "rotation_error_deg": 7.968626279313297
+      "translation_error_m": 0.00581454252153632,
+      "rotation_error_deg": 3.5941919303455614
     },
     {
       "frame_index": 210,
       "frame_id": 210,
       "visible_marker_ids": [
-        4,
-        23
+        23,
+        24
       ],
-      "disagreement_cost": 8.352099233924184,
+      "disagreement_cost": 11.372840419660207,
       "marker_pair": [
-        4,
-        23
+        23,
+        24
       ],
-      "translation_error_m": 0.00539098976204017,
-      "rotation_error_deg": 5.211541471385175
+      "translation_error_m": 0.006567128026631298,
+      "rotation_error_deg": 3.8439816275531142
     },
     {
       "frame_index": 211,
@@ -4631,13 +4688,13 @@
         23,
         24
       ],
-      "disagreement_cost": 4.96913851429671,
+      "disagreement_cost": 4.386286455901111,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.004180604923101619,
-      "rotation_error_deg": 3.87225429669636
+      "translation_error_m": 0.0039903512745823825,
+      "rotation_error_deg": 3.1841821252120592
     },
     {
       "frame_index": 212,
@@ -4646,43 +4703,61 @@
         23,
         24
       ],
-      "disagreement_cost": 8.882585158022794,
+      "disagreement_cost": 3.0607627540103546,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.005780865002672426,
-      "rotation_error_deg": 3.63312920649017
+      "translation_error_m": 0.0033378622554503076,
+      "rotation_error_deg": 2.624079099991087
     },
     {
       "frame_index": 213,
       "frame_id": 213,
       "visible_marker_ids": [
         23,
-        24
+        24,
+        26
       ],
-      "disagreement_cost": 4.138972566382563,
+      "disagreement_cost": 6.271001429378907,
       "marker_pair": [
         23,
-        24
+        26
       ],
-      "translation_error_m": 0.003864133284580887,
-      "rotation_error_deg": 3.1862637058594734
+      "translation_error_m": 0.0025815749067605418,
+      "rotation_error_deg": 9.980262910081175
     },
     {
       "frame_index": 214,
       "frame_id": 214,
       "visible_marker_ids": [
         23,
-        24
+        24,
+        26
       ],
-      "disagreement_cost": 3.3149775282669016,
+      "disagreement_cost": 4.199205826493439,
       "marker_pair": [
         23,
-        24
+        26
       ],
-      "translation_error_m": 0.003474719266653323,
-      "rotation_error_deg": 2.722861696606853
+      "translation_error_m": 0.0037990824124433274,
+      "rotation_error_deg": 1.9934742077114735
+    },
+    {
+      "frame_index": 215,
+      "frame_id": 215,
+      "visible_marker_ids": [
+        23,
+        24,
+        26
+      ],
+      "disagreement_cost": 3.0356696601801687,
+      "marker_pair": [
+        23,
+        26
+      ],
+      "translation_error_m": 0.002700231877108527,
+      "rotation_error_deg": 1.4842727847227195
     },
     {
       "frame_index": 216,
@@ -4692,13 +4767,13 @@
         24,
         26
       ],
-      "disagreement_cost": 9.433982215460652,
+      "disagreement_cost": 4.854721784539899,
       "marker_pair": [
         23,
-        26
+        24
       ],
-      "translation_error_m": 0.005227049341325641,
-      "rotation_error_deg": 1.9432974522928315
+      "translation_error_m": 0.004129921899695386,
+      "rotation_error_deg": 2.260242853348724
     },
     {
       "frame_index": 217,
@@ -4708,13 +4783,13 @@
         24,
         26
       ],
-      "disagreement_cost": 2.9214436994745245,
+      "disagreement_cost": 6.129406261130892,
       "marker_pair": [
         23,
-        26
+        24
       ],
-      "translation_error_m": 0.0026193069545063885,
-      "rotation_error_deg": 1.4680179066789822
+      "translation_error_m": 0.004677676253539998,
+      "rotation_error_deg": 2.4284825115500515
     },
     {
       "frame_index": 218,
@@ -4724,45 +4799,45 @@
         24,
         26
       ],
-      "disagreement_cost": 4.787902516186578,
+      "disagreement_cost": 11.487161718381019,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.0041146473181493315,
-      "rotation_error_deg": 2.3068787303630023
+      "translation_error_m": 0.006679913903139617,
+      "rotation_error_deg": 2.4262374246470975
     },
     {
       "frame_index": 219,
       "frame_id": 219,
       "visible_marker_ids": [
-        23,
+        22,
         24,
         26
       ],
-      "disagreement_cost": 6.048467632902483,
+      "disagreement_cost": 2.456566960411961,
       "marker_pair": [
-        23,
-        24
+        22,
+        26
       ],
-      "translation_error_m": 0.004662179267851305,
-      "rotation_error_deg": 2.474664859890529
+      "translation_error_m": 0.0030044458149187906,
+      "rotation_error_deg": 2.23547140842934
     },
     {
       "frame_index": 220,
       "frame_id": 220,
       "visible_marker_ids": [
-        23,
+        22,
         24,
         26
       ],
-      "disagreement_cost": 11.447045349198572,
+      "disagreement_cost": 3.325635078341082,
       "marker_pair": [
-        23,
-        24
+        22,
+        26
       ],
-      "translation_error_m": 0.006664768305430531,
-      "rotation_error_deg": 2.4718950241444353
+      "translation_error_m": 0.0034718361330138624,
+      "rotation_error_deg": 2.7938483527024136
     },
     {
       "frame_index": 221,
@@ -4772,13 +4847,13 @@
         24,
         26
       ],
-      "disagreement_cost": 1.9915696302830184,
+      "disagreement_cost": 1.922426241701749,
       "marker_pair": [
         22,
         26
       ],
-      "translation_error_m": 0.002632253571490623,
-      "rotation_error_deg": 2.5464677208180637
+      "translation_error_m": 0.0027350448189549397,
+      "rotation_error_deg": 1.143554778734759
     },
     {
       "frame_index": 222,
@@ -4788,13 +4863,13 @@
         24,
         26
       ],
-      "disagreement_cost": 2.707805330660659,
+      "disagreement_cost": 1.3998500451507345,
       "marker_pair": [
         22,
         26
       ],
-      "translation_error_m": 0.0030523917069036526,
-      "rotation_error_deg": 3.0762458759302325
+      "translation_error_m": 0.0020346397853718647,
+      "rotation_error_deg": 3.0203902111160135
     },
     {
       "frame_index": 223,
@@ -4804,45 +4879,63 @@
         24,
         26
       ],
-      "disagreement_cost": 1.541123383754571,
+      "disagreement_cost": 1.6081625221226052,
       "marker_pair": [
         22,
         26
       ],
-      "translation_error_m": 0.002418860730323562,
-      "rotation_error_deg": 1.4000140676008581
+      "translation_error_m": 0.0025217824768422772,
+      "rotation_error_deg": 0.6766795215501302
+    },
+    {
+      "frame_index": 224,
+      "frame_id": 224,
+      "visible_marker_ids": [
+        22,
+        24,
+        26
+      ],
+      "disagreement_cost": 4.838448803553493,
+      "marker_pair": [
+        22,
+        26
+      ],
+      "translation_error_m": 0.0043695066582276915,
+      "rotation_error_deg": 1.2777098113368843
     },
     {
       "frame_index": 225,
       "frame_id": 225,
       "visible_marker_ids": [
-        22,
+        23,
         24,
+        25,
         26
       ],
-      "disagreement_cost": 1.3975935620887592,
+      "disagreement_cost": 8.323292545332581,
       "marker_pair": [
-        22,
-        26
+        24,
+        25
       ],
-      "translation_error_m": 0.002358278278987338,
-      "rotation_error_deg": 0.42498387624970346
+      "translation_error_m": 0.004757667297072079,
+      "rotation_error_deg": 2.0909616944496534
     },
     {
       "frame_index": 226,
       "frame_id": 226,
       "visible_marker_ids": [
-        22,
+        23,
         24,
+        25,
         26
       ],
-      "disagreement_cost": 4.011077393629018,
+      "disagreement_cost": 30.920756951270345,
       "marker_pair": [
-        22,
-        26
+        23,
+        24
       ],
-      "translation_error_m": 0.003972558203080117,
-      "rotation_error_deg": 1.2823096780247332
+      "translation_error_m": 0.007239402733058256,
+      "rotation_error_deg": 3.0158389268476795
     },
     {
       "frame_index": 227,
@@ -4853,13 +4946,13 @@
         25,
         26
       ],
-      "disagreement_cost": 9.19126950732911,
+      "disagreement_cost": 14.962351177567719,
       "marker_pair": [
-        24,
+        23,
         25
       ],
-      "translation_error_m": 0.004757667297072079,
-      "rotation_error_deg": 2.0909616944496534
+      "translation_error_m": 0.005220469459602734,
+      "rotation_error_deg": 2.6796504374534655
     },
     {
       "frame_index": 228,
@@ -4870,57 +4963,23 @@
         25,
         26
       ],
-      "disagreement_cost": 32.291392336921355,
+      "disagreement_cost": 14.831590988616743,
       "marker_pair": [
         23,
-        24
+        25
       ],
-      "translation_error_m": 0.007225437313846809,
-      "rotation_error_deg": 3.05841524285551
+      "translation_error_m": 0.0046821718041782515,
+      "rotation_error_deg": 1.3746627118532138
     },
     {
       "frame_index": 229,
       "frame_id": 229,
       "visible_marker_ids": [
-        23,
         24,
         25,
         26
       ],
-      "disagreement_cost": 17.146742673293588,
-      "marker_pair": [
-        23,
-        25
-      ],
-      "translation_error_m": 0.005923182399427771,
-      "rotation_error_deg": 2.694195458091035
-    },
-    {
-      "frame_index": 230,
-      "frame_id": 230,
-      "visible_marker_ids": [
-        23,
-        24,
-        25,
-        26
-      ],
-      "disagreement_cost": 16.652217236739975,
-      "marker_pair": [
-        23,
-        25
-      ],
-      "translation_error_m": 0.005334301767217384,
-      "rotation_error_deg": 1.3776582344204036
-    },
-    {
-      "frame_index": 231,
-      "frame_id": 231,
-      "visible_marker_ids": [
-        24,
-        25,
-        26
-      ],
-      "disagreement_cost": 1.644503022823547,
+      "disagreement_cost": 1.6508270573495016,
       "marker_pair": [
         24,
         25
@@ -4929,14 +4988,14 @@
       "rotation_error_deg": 0.7999333124921539
     },
     {
-      "frame_index": 232,
-      "frame_id": 232,
+      "frame_index": 230,
+      "frame_id": 230,
       "visible_marker_ids": [
         24,
         25,
         26
       ],
-      "disagreement_cost": 2.3467404419760496,
+      "disagreement_cost": 2.3524209182426783,
       "marker_pair": [
         24,
         25
@@ -4945,8 +5004,8 @@
       "rotation_error_deg": 0.8957803881046235
     },
     {
-      "frame_index": 233,
-      "frame_id": 233,
+      "frame_index": 231,
+      "frame_id": 231,
       "visible_marker_ids": [
         19,
         23,
@@ -4954,7 +5013,7 @@
         25,
         26
       ],
-      "disagreement_cost": 20.9782907640838,
+      "disagreement_cost": 19.7638018066608,
       "marker_pair": [
         19,
         24
@@ -4963,8 +5022,8 @@
       "rotation_error_deg": 1.5732113669337062
     },
     {
-      "frame_index": 234,
-      "frame_id": 234,
+      "frame_index": 232,
+      "frame_id": 232,
       "visible_marker_ids": [
         19,
         23,
@@ -4972,7 +5031,7 @@
         25,
         26
       ],
-      "disagreement_cost": 27.899899175835657,
+      "disagreement_cost": 26.420504392113457,
       "marker_pair": [
         19,
         24
@@ -4981,21 +5040,53 @@
       "rotation_error_deg": 1.6607861058705222
     },
     {
-      "frame_index": 235,
-      "frame_id": 235,
+      "frame_index": 233,
+      "frame_id": 233,
       "visible_marker_ids": [
         19,
         23,
         24,
         25
       ],
-      "disagreement_cost": 33.57250611684785,
+      "disagreement_cost": 32.06705887220372,
       "marker_pair": [
         19,
         24
       ],
       "translation_error_m": 0.008316716532004704,
       "rotation_error_deg": 2.7735717966775506
+    },
+    {
+      "frame_index": 234,
+      "frame_id": 234,
+      "visible_marker_ids": [
+        19,
+        23,
+        25
+      ],
+      "disagreement_cost": 7.478162418682918,
+      "marker_pair": [
+        23,
+        25
+      ],
+      "translation_error_m": 0.0054615536359698584,
+      "rotation_error_deg": 0.7249204963136029
+    },
+    {
+      "frame_index": 235,
+      "frame_id": 235,
+      "visible_marker_ids": [
+        19,
+        23,
+        25
+      ],
+      "disagreement_cost": 2.4281535109504917,
+      "marker_pair": [
+        23,
+        25
+      ],
+      "translation_error_m": 0.003079212239087529,
+      "rotation_error_deg": 1.201733202648191
     },
     {
       "frame_index": 236,
@@ -5005,13 +5096,13 @@
         23,
         25
       ],
-      "disagreement_cost": 8.757270472588907,
+      "disagreement_cost": 22.861212850528773,
       "marker_pair": [
         23,
         25
       ],
-      "translation_error_m": 0.0059118109577029985,
-      "rotation_error_deg": 0.7052175672194114
+      "translation_error_m": 0.00955689523841754,
+      "rotation_error_deg": 0.8314325139000587
     },
     {
       "frame_index": 237,
@@ -5019,52 +5110,20 @@
       "visible_marker_ids": [
         19,
         23,
+        24,
         25
       ],
-      "disagreement_cost": 2.977172654706205,
+      "disagreement_cost": 33.77938387773399,
       "marker_pair": [
         23,
         25
       ],
-      "translation_error_m": 0.0034181101866161525,
-      "rotation_error_deg": 1.186416271212683
+      "translation_error_m": 0.006936518515562207,
+      "rotation_error_deg": 1.5168271978682044
     },
     {
       "frame_index": 238,
       "frame_id": 238,
-      "visible_marker_ids": [
-        19,
-        23,
-        25
-      ],
-      "disagreement_cost": 24.771007466234657,
-      "marker_pair": [
-        23,
-        25
-      ],
-      "translation_error_m": 0.00994875385707497,
-      "rotation_error_deg": 0.8151938276973916
-    },
-    {
-      "frame_index": 239,
-      "frame_id": 239,
-      "visible_marker_ids": [
-        19,
-        23,
-        24,
-        25
-      ],
-      "disagreement_cost": 35.34303663884596,
-      "marker_pair": [
-        23,
-        25
-      ],
-      "translation_error_m": 0.007364514762279834,
-      "rotation_error_deg": 1.5355742118513531
-    },
-    {
-      "frame_index": 240,
-      "frame_id": 240,
       "visible_marker_ids": [
         19,
         24,
@@ -5079,15 +5138,15 @@
       "rotation_error_deg": 1.3171319425848673
     },
     {
-      "frame_index": 241,
-      "frame_id": 241,
+      "frame_index": 239,
+      "frame_id": 239,
       "visible_marker_ids": [
         4,
         23,
         24,
         25
       ],
-      "disagreement_cost": 46.734684466099864,
+      "disagreement_cost": 46.483005009108176,
       "marker_pair": [
         24,
         25
@@ -5096,38 +5155,74 @@
       "rotation_error_deg": 2.168579253934144
     },
     {
-      "frame_index": 242,
-      "frame_id": 242,
+      "frame_index": 240,
+      "frame_id": 240,
       "visible_marker_ids": [
         4,
         23,
         24,
         25
       ],
-      "disagreement_cost": 28.65047294714811,
+      "disagreement_cost": 27.70642944031217,
       "marker_pair": [
         23,
         25
       ],
-      "translation_error_m": 0.006242038938454116,
-      "rotation_error_deg": 0.8342012217140962
+      "translation_error_m": 0.005940240968562756,
+      "rotation_error_deg": 0.7927097447915844
+    },
+    {
+      "frame_index": 241,
+      "frame_id": 241,
+      "visible_marker_ids": [
+        4,
+        23,
+        24,
+        25
+      ],
+      "disagreement_cost": 34.44776009394896,
+      "marker_pair": [
+        23,
+        25
+      ],
+      "translation_error_m": 0.00662139953694847,
+      "rotation_error_deg": 1.0051773306707197
+    },
+    {
+      "frame_index": 242,
+      "frame_id": 242,
+      "visible_marker_ids": [
+        4,
+        19,
+        23,
+        24,
+        25
+      ],
+      "disagreement_cost": 47.90593265673215,
+      "marker_pair": [
+        23,
+        25
+      ],
+      "translation_error_m": 0.0068880973955633765,
+      "rotation_error_deg": 0.7115716434741328
     },
     {
       "frame_index": 243,
       "frame_id": 243,
       "visible_marker_ids": [
         4,
+        19,
         23,
         24,
         25
       ],
-      "disagreement_cost": 35.53433119667032,
+      "disagreement_cost": 33.796827635775735,
       "marker_pair": [
-        23,
+        24,
         25
       ],
-      "translation_error_m": 0.006931396000946743,
-      "rotation_error_deg": 1.0452583566505793
+      "translation_error_m": 0.007554283005132731,
+      "rotation_error_deg": 2.9224778797656983
     },
     {
       "frame_index": 244,
@@ -5139,13 +5234,13 @@
         24,
         25
       ],
-      "disagreement_cost": 48.685184664767704,
+      "disagreement_cost": 31.499555843595353,
       "marker_pair": [
-        23,
+        24,
         25
       ],
-      "translation_error_m": 0.00710153676805506,
-      "rotation_error_deg": 0.7398562520615406
+      "translation_error_m": 0.007866739596189873,
+      "rotation_error_deg": 2.3072754770925483
     },
     {
       "frame_index": 245,
@@ -5157,43 +5252,7 @@
         24,
         25
       ],
-      "disagreement_cost": 34.24473158640006,
-      "marker_pair": [
-        24,
-        25
-      ],
-      "translation_error_m": 0.007554283005132731,
-      "rotation_error_deg": 2.9224778797656983
-    },
-    {
-      "frame_index": 246,
-      "frame_id": 246,
-      "visible_marker_ids": [
-        4,
-        19,
-        23,
-        24,
-        25
-      ],
-      "disagreement_cost": 31.75300447363495,
-      "marker_pair": [
-        24,
-        25
-      ],
-      "translation_error_m": 0.007866739596189873,
-      "rotation_error_deg": 2.3072754770925483
-    },
-    {
-      "frame_index": 247,
-      "frame_id": 247,
-      "visible_marker_ids": [
-        4,
-        19,
-        23,
-        24,
-        25
-      ],
-      "disagreement_cost": 32.15084225932638,
+      "disagreement_cost": 32.02723229447754,
       "marker_pair": [
         24,
         25
@@ -5202,8 +5261,8 @@
       "rotation_error_deg": 1.801513137333272
     },
     {
-      "frame_index": 248,
-      "frame_id": 248,
+      "frame_index": 246,
+      "frame_id": 246,
       "visible_marker_ids": [
         4,
         19,
@@ -5218,8 +5277,8 @@
       "rotation_error_deg": 0.9896014389952122
     },
     {
-      "frame_index": 249,
-      "frame_id": 249,
+      "frame_index": 247,
+      "frame_id": 247,
       "visible_marker_ids": [
         4,
         19,
@@ -5235,8 +5294,8 @@
       "rotation_error_deg": 2.89290020270085
     },
     {
-      "frame_index": 252,
-      "frame_id": 252,
+      "frame_index": 250,
+      "frame_id": 250,
       "visible_marker_ids": [
         4,
         19,
@@ -5252,8 +5311,8 @@
       "rotation_error_deg": 2.6925073377719984
     },
     {
-      "frame_index": 253,
-      "frame_id": 253,
+      "frame_index": 251,
+      "frame_id": 251,
       "visible_marker_ids": [
         4,
         19,
@@ -5269,8 +5328,8 @@
       "rotation_error_deg": 3.7346120733641124
     },
     {
-      "frame_index": 256,
-      "frame_id": 256,
+      "frame_index": 254,
+      "frame_id": 254,
       "visible_marker_ids": [
         4,
         19,
@@ -5287,8 +5346,8 @@
       "rotation_error_deg": 3.5628667228218096
     },
     {
-      "frame_index": 258,
-      "frame_id": 258,
+      "frame_index": 256,
+      "frame_id": 256,
       "visible_marker_ids": [
         4,
         19,
@@ -5304,8 +5363,8 @@
       "rotation_error_deg": 2.7835051590383766
     },
     {
-      "frame_index": 259,
-      "frame_id": 259,
+      "frame_index": 257,
+      "frame_id": 257,
       "visible_marker_ids": [
         4,
         19,
@@ -5321,8 +5380,8 @@
       "rotation_error_deg": 3.2102407580986005
     },
     {
-      "frame_index": 260,
-      "frame_id": 260,
+      "frame_index": 258,
+      "frame_id": 258,
       "visible_marker_ids": [
         4,
         19,
@@ -5338,8 +5397,8 @@
       "rotation_error_deg": 2.4788701098631734
     },
     {
-      "frame_index": 261,
-      "frame_id": 261,
+      "frame_index": 259,
+      "frame_id": 259,
       "visible_marker_ids": [
         4,
         19,
@@ -5355,8 +5414,8 @@
       "rotation_error_deg": 2.6295870239569146
     },
     {
-      "frame_index": 262,
-      "frame_id": 262,
+      "frame_index": 260,
+      "frame_id": 260,
       "visible_marker_ids": [
         4,
         19,
@@ -5372,8 +5431,8 @@
       "rotation_error_deg": 1.2929263964472932
     },
     {
-      "frame_index": 264,
-      "frame_id": 264,
+      "frame_index": 262,
+      "frame_id": 262,
       "visible_marker_ids": [
         4,
         19,
@@ -5389,8 +5448,8 @@
       "rotation_error_deg": 1.224340305805061
     },
     {
-      "frame_index": 265,
-      "frame_id": 265,
+      "frame_index": 263,
+      "frame_id": 263,
       "visible_marker_ids": [
         4,
         19,
@@ -5406,8 +5465,8 @@
       "rotation_error_deg": 1.4593214941946548
     },
     {
-      "frame_index": 266,
-      "frame_id": 266,
+      "frame_index": 264,
+      "frame_id": 264,
       "visible_marker_ids": [
         4,
         19,
@@ -5423,8 +5482,8 @@
       "rotation_error_deg": 1.2352141748038228
     },
     {
-      "frame_index": 267,
-      "frame_id": 267,
+      "frame_index": 265,
+      "frame_id": 265,
       "visible_marker_ids": [
         4,
         19,
@@ -5440,8 +5499,8 @@
       "rotation_error_deg": 1.1987004348375685
     },
     {
-      "frame_index": 268,
-      "frame_id": 268,
+      "frame_index": 266,
+      "frame_id": 266,
       "visible_marker_ids": [
         4,
         19,
@@ -5456,8 +5515,8 @@
       "rotation_error_deg": 2.43798927091324
     },
     {
-      "frame_index": 269,
-      "frame_id": 269,
+      "frame_index": 267,
+      "frame_id": 267,
       "visible_marker_ids": [
         4,
         19,
@@ -5473,15 +5532,15 @@
       "rotation_error_deg": 2.244235800971656
     },
     {
-      "frame_index": 270,
-      "frame_id": 270,
+      "frame_index": 268,
+      "frame_id": 268,
       "visible_marker_ids": [
         19,
         23,
         24,
         29
       ],
-      "disagreement_cost": 14.470466714797467,
+      "disagreement_cost": 14.469340626545495,
       "marker_pair": [
         19,
         24
@@ -5490,8 +5549,8 @@
       "rotation_error_deg": 2.397103354720693
     },
     {
-      "frame_index": 271,
-      "frame_id": 271,
+      "frame_index": 269,
+      "frame_id": 269,
       "visible_marker_ids": [
         19,
         23,
@@ -5506,8 +5565,8 @@
       "rotation_error_deg": 1.4903679043388396
     },
     {
-      "frame_index": 272,
-      "frame_id": 272,
+      "frame_index": 270,
+      "frame_id": 270,
       "visible_marker_ids": [
         19,
         29
@@ -5521,8 +5580,8 @@
       "rotation_error_deg": 1.150978071521872
     },
     {
-      "frame_index": 275,
-      "frame_id": 275,
+      "frame_index": 273,
+      "frame_id": 273,
       "visible_marker_ids": [
         4,
         19,
@@ -5537,8 +5596,8 @@
       "rotation_error_deg": 1.5367140690789118
     },
     {
-      "frame_index": 276,
-      "frame_id": 276,
+      "frame_index": 274,
+      "frame_id": 274,
       "visible_marker_ids": [
         4,
         19,
@@ -5553,8 +5612,8 @@
       "rotation_error_deg": 1.6451489321433135
     },
     {
-      "frame_index": 282,
-      "frame_id": 282,
+      "frame_index": 280,
+      "frame_id": 280,
       "visible_marker_ids": [
         19,
         24,
@@ -5569,8 +5628,8 @@
       "rotation_error_deg": 1.8697555593308275
     },
     {
-      "frame_index": 284,
-      "frame_id": 284,
+      "frame_index": 282,
+      "frame_id": 282,
       "visible_marker_ids": [
         19,
         24,
@@ -5585,8 +5644,8 @@
       "rotation_error_deg": 2.2689371912004814
     },
     {
-      "frame_index": 285,
-      "frame_id": 285,
+      "frame_index": 283,
+      "frame_id": 283,
       "visible_marker_ids": [
         19,
         23,
@@ -5601,6 +5660,38 @@
       "rotation_error_deg": 0.5210404346281784
     },
     {
+      "frame_index": 284,
+      "frame_id": 284,
+      "visible_marker_ids": [
+        23,
+        24,
+        29
+      ],
+      "disagreement_cost": 5.065041903819789,
+      "marker_pair": [
+        23,
+        24
+      ],
+      "translation_error_m": 0.0040110280287425195,
+      "rotation_error_deg": 1.8918131993708345
+    },
+    {
+      "frame_index": 285,
+      "frame_id": 285,
+      "visible_marker_ids": [
+        23,
+        24,
+        29
+      ],
+      "disagreement_cost": 3.6960008692432895,
+      "marker_pair": [
+        23,
+        24
+      ],
+      "translation_error_m": 0.00354334849124488,
+      "rotation_error_deg": 2.114351202304246
+    },
+    {
       "frame_index": 286,
       "frame_id": 286,
       "visible_marker_ids": [
@@ -5608,13 +5699,13 @@
         24,
         29
       ],
-      "disagreement_cost": 5.080266078437564,
+      "disagreement_cost": 5.452425780252618,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.0040173107467175026,
-      "rotation_error_deg": 1.9090083471979915
+      "translation_error_m": 0.004196180927606073,
+      "rotation_error_deg": 2.6089478320573054
     },
     {
       "frame_index": 287,
@@ -5624,13 +5715,13 @@
         24,
         29
       ],
-      "disagreement_cost": 3.7101132831024266,
+      "disagreement_cost": 5.666859642319514,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.003549502135218433,
-      "rotation_error_deg": 2.133189716998589
+      "translation_error_m": 0.004281651470355656,
+      "rotation_error_deg": 2.071320467890732
     },
     {
       "frame_index": 288,
@@ -5640,13 +5731,13 @@
         24,
         29
       ],
-      "disagreement_cost": 5.465341837254043,
+      "disagreement_cost": 1.8751816724696393,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.004200762176100107,
-      "rotation_error_deg": 2.6247061163118905
+      "translation_error_m": 0.002584691525875168,
+      "rotation_error_deg": 1.7704696836391802
     },
     {
       "frame_index": 289,
@@ -5656,45 +5747,45 @@
         24,
         29
       ],
-      "disagreement_cost": 5.679469678458637,
+      "disagreement_cost": 3.046076335203701,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.004286117826404921,
-      "rotation_error_deg": 2.0896058139660187
+      "translation_error_m": 0.003255795862036908,
+      "rotation_error_deg": 1.7344392853451582
     },
     {
-      "frame_index": 290,
-      "frame_id": 290,
+      "frame_index": 293,
+      "frame_id": 293,
       "visible_marker_ids": [
         23,
         24,
         29
       ],
-      "disagreement_cost": 1.8857554644746322,
+      "disagreement_cost": 1.7101347272138845,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.0025910160453234475,
-      "rotation_error_deg": 1.7872663639917152
+      "translation_error_m": 0.0023738095373322075,
+      "rotation_error_deg": 1.792057168030341
     },
     {
-      "frame_index": 291,
-      "frame_id": 291,
+      "frame_index": 294,
+      "frame_id": 294,
       "visible_marker_ids": [
         23,
         24,
         29
       ],
-      "disagreement_cost": 3.0552654300464246,
+      "disagreement_cost": 3.1836153396348412,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.003260361764247715,
-      "rotation_error_deg": 1.7470134916244484
+      "translation_error_m": 0.0026873775604011304,
+      "rotation_error_deg": 1.5357108287527592
     },
     {
       "frame_index": 295,
@@ -5704,45 +5795,47 @@
         24,
         29
       ],
-      "disagreement_cost": 1.7177280852879773,
+      "disagreement_cost": 1.9844256752211693,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.0023790381544107546,
-      "rotation_error_deg": 1.8016617930431285
+      "translation_error_m": 0.002563960548522353,
+      "rotation_error_deg": 1.743470812936163
     },
     {
       "frame_index": 296,
       "frame_id": 296,
       "visible_marker_ids": [
+        4,
         23,
         24,
         29
       ],
-      "disagreement_cost": 3.1955434595489307,
+      "disagreement_cost": 22.707411436998935,
       "marker_pair": [
-        23,
-        24
+        4,
+        29
       ],
-      "translation_error_m": 0.002694811082845928,
-      "rotation_error_deg": 1.5513081163618139
+      "translation_error_m": 0.00812686147919482,
+      "rotation_error_deg": 1.8047572242981298
     },
     {
       "frame_index": 297,
       "frame_id": 297,
       "visible_marker_ids": [
+        4,
         23,
         24,
         29
       ],
-      "disagreement_cost": 1.9943593026425923,
+      "disagreement_cost": 10.540601678334033,
       "marker_pair": [
-        23,
-        24
+        4,
+        29
       ],
-      "translation_error_m": 0.0025709977449389896,
-      "rotation_error_deg": 1.7499094185003818
+      "translation_error_m": 0.005078393054376921,
+      "rotation_error_deg": 0.9510005707431523
     },
     {
       "frame_index": 298,
@@ -5753,13 +5846,13 @@
         24,
         29
       ],
-      "disagreement_cost": 22.713680981990905,
+      "disagreement_cost": 17.794161050567677,
       "marker_pair": [
         4,
         29
       ],
-      "translation_error_m": 0.00812686147919482,
-      "rotation_error_deg": 1.8047572242981298
+      "translation_error_m": 0.0074005148157219236,
+      "rotation_error_deg": 1.3364935739157768
     },
     {
       "frame_index": 299,
@@ -5770,13 +5863,13 @@
         24,
         29
       ],
-      "disagreement_cost": 10.545049047910606,
+      "disagreement_cost": 31.40640417139285,
       "marker_pair": [
         4,
         29
       ],
-      "translation_error_m": 0.005078393054376921,
-      "rotation_error_deg": 0.9510005707431523
+      "translation_error_m": 0.00921204817217562,
+      "rotation_error_deg": 2.157911511293447
     },
     {
       "frame_index": 300,
@@ -5787,41 +5880,7 @@
         24,
         29
       ],
-      "disagreement_cost": 17.800830998851772,
-      "marker_pair": [
-        4,
-        29
-      ],
-      "translation_error_m": 0.0074005148157219236,
-      "rotation_error_deg": 1.3364935739157768
-    },
-    {
-      "frame_index": 301,
-      "frame_id": 301,
-      "visible_marker_ids": [
-        4,
-        23,
-        24,
-        29
-      ],
-      "disagreement_cost": 31.42196089209635,
-      "marker_pair": [
-        4,
-        29
-      ],
-      "translation_error_m": 0.00921204817217562,
-      "rotation_error_deg": 2.157911511293447
-    },
-    {
-      "frame_index": 302,
-      "frame_id": 302,
-      "visible_marker_ids": [
-        4,
-        23,
-        24,
-        29
-      ],
-      "disagreement_cost": 11.108682301143599,
+      "disagreement_cost": 11.109528896536503,
       "marker_pair": [
         4,
         29
@@ -5830,8 +5889,8 @@
       "rotation_error_deg": 1.24923413131712
     },
     {
-      "frame_index": 303,
-      "frame_id": 303,
+      "frame_index": 301,
+      "frame_id": 301,
       "visible_marker_ids": [
         4,
         23,
@@ -5839,7 +5898,7 @@
         26,
         29
       ],
-      "disagreement_cost": 17.151184752833736,
+      "disagreement_cost": 17.127177486872633,
       "marker_pair": [
         4,
         29
@@ -5848,8 +5907,8 @@
       "rotation_error_deg": 1.6578735592421787
     },
     {
-      "frame_index": 304,
-      "frame_id": 304,
+      "frame_index": 302,
+      "frame_id": 302,
       "visible_marker_ids": [
         4,
         23,
@@ -5857,13 +5916,47 @@
         26,
         29
       ],
-      "disagreement_cost": 17.135301213753994,
+      "disagreement_cost": 17.109267395768025,
       "marker_pair": [
         4,
         29
       ],
       "translation_error_m": 0.007361716349822245,
       "rotation_error_deg": 1.5975703710687545
+    },
+    {
+      "frame_index": 303,
+      "frame_id": 303,
+      "visible_marker_ids": [
+        4,
+        23,
+        26,
+        29
+      ],
+      "disagreement_cost": 12.987005148992493,
+      "marker_pair": [
+        4,
+        29
+      ],
+      "translation_error_m": 0.006652511051100454,
+      "rotation_error_deg": 1.2774179544759106
+    },
+    {
+      "frame_index": 304,
+      "frame_id": 304,
+      "visible_marker_ids": [
+        4,
+        23,
+        26,
+        29
+      ],
+      "disagreement_cost": 11.754242417981702,
+      "marker_pair": [
+        4,
+        29
+      ],
+      "translation_error_m": 0.005875245453521763,
+      "rotation_error_deg": 1.2614651880254795
     },
     {
       "frame_index": 305,
@@ -5874,13 +5967,13 @@
         26,
         29
       ],
-      "disagreement_cost": 13.029626773730485,
+      "disagreement_cost": 14.03851221444454,
       "marker_pair": [
         4,
         29
       ],
-      "translation_error_m": 0.006652511051100454,
-      "rotation_error_deg": 1.2774179544759106
+      "translation_error_m": 0.007296019018289174,
+      "rotation_error_deg": 1.3658877178289568
     },
     {
       "frame_index": 306,
@@ -5891,13 +5984,13 @@
         26,
         29
       ],
-      "disagreement_cost": 11.801488654645459,
+      "disagreement_cost": 12.702276117433309,
       "marker_pair": [
         4,
         29
       ],
-      "translation_error_m": 0.005875245453521763,
-      "rotation_error_deg": 1.2614651880254795
+      "translation_error_m": 0.006606013374889323,
+      "rotation_error_deg": 1.2981092888690395
     },
     {
       "frame_index": 307,
@@ -5908,13 +6001,13 @@
         26,
         29
       ],
-      "disagreement_cost": 14.063515718217118,
+      "disagreement_cost": 12.211805784320838,
       "marker_pair": [
         4,
         29
       ],
-      "translation_error_m": 0.007296019018289174,
-      "rotation_error_deg": 1.3658877178289568
+      "translation_error_m": 0.006712741269083822,
+      "rotation_error_deg": 1.4163590044932406
     },
     {
       "frame_index": 308,
@@ -5925,13 +6018,13 @@
         26,
         29
       ],
-      "disagreement_cost": 12.71952732599152,
+      "disagreement_cost": 11.335907219480172,
       "marker_pair": [
         4,
         29
       ],
-      "translation_error_m": 0.006606013374889323,
-      "rotation_error_deg": 1.2981092888690395
+      "translation_error_m": 0.006456373395131536,
+      "rotation_error_deg": 1.4480220535757897
     },
     {
       "frame_index": 309,
@@ -5942,13 +6035,13 @@
         26,
         29
       ],
-      "disagreement_cost": 12.234446588404422,
+      "disagreement_cost": 11.277291397272421,
       "marker_pair": [
-        4,
+        23,
         29
       ],
-      "translation_error_m": 0.006712741269083822,
-      "rotation_error_deg": 1.4163590044932406
+      "translation_error_m": 0.005777893038922709,
+      "rotation_error_deg": 0.6015561688385697
     },
     {
       "frame_index": 310,
@@ -5959,13 +6052,13 @@
         26,
         29
       ],
-      "disagreement_cost": 11.345707695407443,
+      "disagreement_cost": 14.407596111562524,
       "marker_pair": [
-        4,
+        23,
         29
       ],
-      "translation_error_m": 0.006456373395131536,
-      "rotation_error_deg": 1.4480220535757897
+      "translation_error_m": 0.006932169237514853,
+      "rotation_error_deg": 0.7777208270055906
     },
     {
       "frame_index": 311,
@@ -5976,13 +6069,13 @@
         26,
         29
       ],
-      "disagreement_cost": 11.277460860439373,
+      "disagreement_cost": 27.008787819475902,
       "marker_pair": [
-        23,
+        4,
         29
       ],
-      "translation_error_m": 0.005777893038922709,
-      "rotation_error_deg": 0.6015561688385697
+      "translation_error_m": 0.00923898601065413,
+      "rotation_error_deg": 2.5693947321056156
     },
     {
       "frame_index": 312,
@@ -5993,41 +6086,7 @@
         26,
         29
       ],
-      "disagreement_cost": 14.422002106979075,
-      "marker_pair": [
-        23,
-        29
-      ],
-      "translation_error_m": 0.006932169237514853,
-      "rotation_error_deg": 0.7777208270055906
-    },
-    {
-      "frame_index": 313,
-      "frame_id": 313,
-      "visible_marker_ids": [
-        4,
-        23,
-        26,
-        29
-      ],
-      "disagreement_cost": 27.04271013301564,
-      "marker_pair": [
-        4,
-        29
-      ],
-      "translation_error_m": 0.00923898601065413,
-      "rotation_error_deg": 2.5693947321056156
-    },
-    {
-      "frame_index": 314,
-      "frame_id": 314,
-      "visible_marker_ids": [
-        4,
-        23,
-        26,
-        29
-      ],
-      "disagreement_cost": 28.287384547215623,
+      "disagreement_cost": 28.31219695862426,
       "marker_pair": [
         23,
         29
@@ -6036,68 +6095,23 @@
       "rotation_error_deg": 2.727011568741816
     },
     {
+      "frame_index": 313,
+      "frame_id": 313,
+      "visible_marker_ids": [
+        23,
+        26
+      ],
+      "disagreement_cost": 10.547467804085583,
+      "marker_pair": [
+        23,
+        26
+      ],
+      "translation_error_m": 0.006474489567116555,
+      "rotation_error_deg": 1.301095840150759
+    },
+    {
       "frame_index": 315,
       "frame_id": 315,
-      "visible_marker_ids": [
-        23,
-        26
-      ],
-      "disagreement_cost": 10.513752326639205,
-      "marker_pair": [
-        23,
-        26
-      ],
-      "translation_error_m": 0.006463927528641867,
-      "rotation_error_deg": 1.3053979542238088
-    },
-    {
-      "frame_index": 316,
-      "frame_id": 316,
-      "visible_marker_ids": [
-        23,
-        26
-      ],
-      "disagreement_cost": 1.2186262839587352,
-      "marker_pair": [
-        23,
-        26
-      ],
-      "translation_error_m": 0.002174644503064306,
-      "rotation_error_deg": 0.9533704065286603
-    },
-    {
-      "frame_index": 317,
-      "frame_id": 317,
-      "visible_marker_ids": [
-        3,
-        26
-      ],
-      "disagreement_cost": 13.539440476371379,
-      "marker_pair": [
-        3,
-        26
-      ],
-      "translation_error_m": 0.007129271734901962,
-      "rotation_error_deg": 4.562925620841774
-    },
-    {
-      "frame_index": 318,
-      "frame_id": 318,
-      "visible_marker_ids": [
-        3,
-        26
-      ],
-      "disagreement_cost": 4.042220876190234,
-      "marker_pair": [
-        3,
-        26
-      ],
-      "translation_error_m": 0.004000241025635775,
-      "rotation_error_deg": 1.021503920640374
-    },
-    {
-      "frame_index": 320,
-      "frame_id": 320,
       "visible_marker_ids": [
         3,
         22,
@@ -6105,13 +6119,98 @@
         26,
         28
       ],
-      "disagreement_cost": 843.3544554417076,
+      "disagreement_cost": 850.5900274140172,
       "marker_pair": [
         3,
         28
       ],
-      "translation_error_m": 0.01890377936032835,
-      "rotation_error_deg": 129.9794770260276
+      "translation_error_m": 0.01937787926481328,
+      "rotation_error_deg": 129.989486912133
+    },
+    {
+      "frame_index": 316,
+      "frame_id": 316,
+      "visible_marker_ids": [
+        22,
+        23,
+        26,
+        28
+      ],
+      "disagreement_cost": 28.6146564873263,
+      "marker_pair": [
+        22,
+        26
+      ],
+      "translation_error_m": 0.008437753988374113,
+      "rotation_error_deg": 1.1411664641414556
+    },
+    {
+      "frame_index": 317,
+      "frame_id": 317,
+      "visible_marker_ids": [
+        22,
+        23,
+        26,
+        28
+      ],
+      "disagreement_cost": 22.708810952277435,
+      "marker_pair": [
+        22,
+        26
+      ],
+      "translation_error_m": 0.007470446539854561,
+      "rotation_error_deg": 1.0210484711468977
+    },
+    {
+      "frame_index": 318,
+      "frame_id": 318,
+      "visible_marker_ids": [
+        22,
+        23,
+        26,
+        28
+      ],
+      "disagreement_cost": 24.31657362347266,
+      "marker_pair": [
+        22,
+        26
+      ],
+      "translation_error_m": 0.00733337659993803,
+      "rotation_error_deg": 0.6815475919133595
+    },
+    {
+      "frame_index": 319,
+      "frame_id": 319,
+      "visible_marker_ids": [
+        22,
+        23,
+        26,
+        28
+      ],
+      "disagreement_cost": 17.417041281728025,
+      "marker_pair": [
+        22,
+        26
+      ],
+      "translation_error_m": 0.006188524584326072,
+      "rotation_error_deg": 0.6841221662120558
+    },
+    {
+      "frame_index": 320,
+      "frame_id": 320,
+      "visible_marker_ids": [
+        22,
+        23,
+        26,
+        28
+      ],
+      "disagreement_cost": 17.256684039984528,
+      "marker_pair": [
+        22,
+        26
+      ],
+      "translation_error_m": 0.006557033843351578,
+      "rotation_error_deg": 1.4192930378494133
     },
     {
       "frame_index": 321,
@@ -6119,50 +6218,49 @@
       "visible_marker_ids": [
         22,
         23,
-        26,
-        28
+        26
       ],
-      "disagreement_cost": 33.209187019143215,
+      "disagreement_cost": 4.608400345673199,
       "marker_pair": [
         22,
         26
       ],
-      "translation_error_m": 0.008634015705335766,
-      "rotation_error_deg": 1.029388811505367
+      "translation_error_m": 0.0026954476328799985,
+      "rotation_error_deg": 1.5046163161944284
     },
     {
       "frame_index": 322,
       "frame_id": 322,
       "visible_marker_ids": [
+        3,
         22,
         23,
-        26,
-        28
+        26
       ],
-      "disagreement_cost": 26.499640332729264,
+      "disagreement_cost": 39.83832797344001,
       "marker_pair": [
         22,
         26
       ],
-      "translation_error_m": 0.007402086772799386,
-      "rotation_error_deg": 0.9121864546411
+      "translation_error_m": 0.00895046980049987,
+      "rotation_error_deg": 2.0982457902724208
     },
     {
       "frame_index": 323,
       "frame_id": 323,
       "visible_marker_ids": [
+        3,
         22,
         23,
-        26,
-        28
+        26
       ],
-      "disagreement_cost": 29.366600240167525,
+      "disagreement_cost": 8.118478400542916,
       "marker_pair": [
         22,
         26
       ],
-      "translation_error_m": 0.007898359584138944,
-      "rotation_error_deg": 1.2561387829400625
+      "translation_error_m": 0.0038671524234147295,
+      "rotation_error_deg": 1.8753398759521531
     },
     {
       "frame_index": 324,
@@ -6171,140 +6269,144 @@
         3,
         22,
         23,
-        26,
-        28
+        26
       ],
-      "disagreement_cost": 789.7172842595136,
+      "disagreement_cost": 19.41022544911301,
       "marker_pair": [
-        3,
-        28
+        22,
+        26
       ],
-      "translation_error_m": 0.007468832442642219,
-      "rotation_error_deg": 136.37679853617766
+      "translation_error_m": 0.006365732311041661,
+      "rotation_error_deg": 1.3103812279379585
     },
     {
       "frame_index": 325,
       "frame_id": 325,
       "visible_marker_ids": [
+        3,
         22,
         23,
-        26,
-        28
+        26
       ],
-      "disagreement_cost": 24.008916470945714,
+      "disagreement_cost": 3.2673497524232573,
       "marker_pair": [
         22,
         26
       ],
-      "translation_error_m": 0.0076883084890127795,
-      "rotation_error_deg": 1.3393004130516473
+      "translation_error_m": 0.0024323021435107297,
+      "rotation_error_deg": 1.119311522400652
     },
     {
       "frame_index": 326,
       "frame_id": 326,
       "visible_marker_ids": [
+        0,
         3,
         22,
         23,
-        26,
-        28
+        26
       ],
-      "disagreement_cost": 849.5657743783901,
+      "disagreement_cost": 14.229416950120537,
       "marker_pair": [
-        3,
-        28
+        0,
+        22
       ],
-      "translation_error_m": 0.006426217594620503,
-      "rotation_error_deg": 142.44482693302467
+      "translation_error_m": 0.006657298343679015,
+      "rotation_error_deg": 1.1529022497985362
     },
     {
       "frame_index": 327,
       "frame_id": 327,
       "visible_marker_ids": [
+        0,
         3,
         22,
         23,
+        24,
         26
       ],
-      "disagreement_cost": 40.38665106035763,
+      "disagreement_cost": 14.68755164577808,
       "marker_pair": [
-        22,
-        26
+        23,
+        24
       ],
-      "translation_error_m": 0.009047388953675392,
-      "rotation_error_deg": 1.9427224981843534
+      "translation_error_m": 0.004807496081194937,
+      "rotation_error_deg": 1.6513499336306656
     },
     {
       "frame_index": 328,
       "frame_id": 328,
       "visible_marker_ids": [
+        0,
         3,
         22,
         23,
+        24,
         26
       ],
-      "disagreement_cost": 28.624779569304103,
+      "disagreement_cost": 17.39637098562652,
       "marker_pair": [
-        22,
-        26
+        23,
+        24
       ],
-      "translation_error_m": 0.007329418986582042,
-      "rotation_error_deg": 1.5306587347068172
+      "translation_error_m": 0.0052662409480868574,
+      "rotation_error_deg": 1.5848730950745156
     },
     {
       "frame_index": 329,
       "frame_id": 329,
       "visible_marker_ids": [
+        0,
         3,
         22,
         23,
         24,
         26
       ],
-      "disagreement_cost": 57.6814404506661,
+      "disagreement_cost": 16.18592940855012,
       "marker_pair": [
         23,
         24
       ],
-      "translation_error_m": 0.0116085202980318,
-      "rotation_error_deg": 2.075549052558207
+      "translation_error_m": 0.0055232538262471,
+      "rotation_error_deg": 1.8392207111986527
     },
     {
       "frame_index": 330,
       "frame_id": 330,
       "visible_marker_ids": [
-        2,
+        0,
         3,
         22,
         23,
         24,
         26
       ],
-      "disagreement_cost": 98.42610153966913,
+      "disagreement_cost": 19.233896386068647,
       "marker_pair": [
-        2,
-        26
+        23,
+        24
       ],
-      "translation_error_m": 0.010566484980631374,
-      "rotation_error_deg": 7.207853193961369
+      "translation_error_m": 0.005932297349587143,
+      "rotation_error_deg": 1.6298608084339004
     },
     {
       "frame_index": 331,
       "frame_id": 331,
       "visible_marker_ids": [
-        2,
+        0,
         3,
         22,
         23,
         26
       ],
-      "disagreement_cost": 26.400710112173535,
+      "disagreement_cost": 8.687718749296863,
       "marker_pair": [
-        2,
-        26
+        0,
+        22
       ],
-      "translation_error_m": 0.007848481037311162,
-      "rotation_error_deg": 6.726953475586023
+      "translation_error_m": 0.005176247158829819,
+      "rotation_error_deg": 1.7906887743417053
     },
     {
       "frame_index": 332,
@@ -6317,13 +6419,13 @@
         24,
         26
       ],
-      "disagreement_cost": 16.376003353963917,
+      "disagreement_cost": 39.95718674691862,
       "marker_pair": [
-        23,
-        24
+        0,
+        22
       ],
-      "translation_error_m": 0.005373428132594494,
-      "rotation_error_deg": 1.603050738405155
+      "translation_error_m": 0.007838622193219971,
+      "rotation_error_deg": 1.4928635634182217
     },
     {
       "frame_index": 333,
@@ -6333,15 +6435,16 @@
         3,
         22,
         23,
+        24,
         26
       ],
-      "disagreement_cost": 12.333216877899797,
+      "disagreement_cost": 49.73429620199703,
       "marker_pair": [
         0,
         22
       ],
-      "translation_error_m": 0.005531906417819029,
-      "rotation_error_deg": 1.5922007833752474
+      "translation_error_m": 0.009002432332002598,
+      "rotation_error_deg": 1.742880086362336
     },
     {
       "frame_index": 334,
@@ -6351,16 +6454,15 @@
         3,
         22,
         23,
-        24,
         26
       ],
-      "disagreement_cost": 17.335194812463197,
+      "disagreement_cost": 4.948852000961795,
       "marker_pair": [
-        23,
-        24
+        0,
+        22
       ],
-      "translation_error_m": 0.005509430435744682,
-      "rotation_error_deg": 1.9244588550510335
+      "translation_error_m": 0.003759796369570588,
+      "rotation_error_deg": 1.4212806272283136
     },
     {
       "frame_index": 335,
@@ -6370,136 +6472,158 @@
         3,
         22,
         23,
+        24,
         26
       ],
-      "disagreement_cost": 4.05621649459496,
+      "disagreement_cost": 13.367102656458865,
       "marker_pair": [
-        0,
-        22
+        23,
+        24
       ],
-      "translation_error_m": 0.0021534294496341273,
-      "rotation_error_deg": 2.2001792385251857
+      "translation_error_m": 0.005415738395014103,
+      "rotation_error_deg": 1.3819635156977077
     },
     {
       "frame_index": 336,
       "frame_id": 336,
       "visible_marker_ids": [
         0,
+        2,
         3,
         22,
         23,
-        24,
         26
       ],
-      "disagreement_cost": 12.673001203609918,
+      "disagreement_cost": 8.07598565462933,
       "marker_pair": [
-        23,
-        24
+        0,
+        26
       ],
-      "translation_error_m": 0.0036261771056548073,
-      "rotation_error_deg": 1.4871105445959198
+      "translation_error_m": 0.003405440291042834,
+      "rotation_error_deg": 0.547765255992332
     },
     {
       "frame_index": 337,
       "frame_id": 337,
       "visible_marker_ids": [
         0,
+        2,
         3,
         22,
         23,
-        24,
         26
       ],
-      "disagreement_cost": 21.38639400178808,
+      "disagreement_cost": 17.94495493266626,
       "marker_pair": [
-        23,
-        24
+        0,
+        26
       ],
-      "translation_error_m": 0.006825517849433833,
-      "rotation_error_deg": 1.6305496079147603
+      "translation_error_m": 0.005376021705358854,
+      "rotation_error_deg": 0.5826353648873878
     },
     {
       "frame_index": 338,
       "frame_id": 338,
       "visible_marker_ids": [
         0,
+        2,
         3,
         22,
         23,
         24,
+        25,
         26
       ],
-      "disagreement_cost": 31.30305272275223,
+      "disagreement_cost": 34.37258742385485,
       "marker_pair": [
-        23,
-        24
+        0,
+        22
       ],
-      "translation_error_m": 0.008783862163695219,
-      "rotation_error_deg": 1.8488101618190864
+      "translation_error_m": 0.005618147476255885,
+      "rotation_error_deg": 1.8213943542043995
     },
     {
       "frame_index": 339,
       "frame_id": 339,
       "visible_marker_ids": [
-        0,
         2,
         3,
         22,
-        24,
+        23,
+        25,
         26
       ],
-      "disagreement_cost": 42.30663215425993,
+      "disagreement_cost": 8.555337362626856,
       "marker_pair": [
-        2,
+        25,
         26
       ],
-      "translation_error_m": 0.00884870095514715,
-      "rotation_error_deg": 5.934510251827225
+      "translation_error_m": 0.0038141076398609487,
+      "rotation_error_deg": 2.579715193004037
     },
     {
       "frame_index": 340,
       "frame_id": 340,
       "visible_marker_ids": [
         0,
+        2,
         3,
         22,
         23,
         24,
+        25,
         26
       ],
-      "disagreement_cost": 15.43147318084493,
+      "disagreement_cost": 126.95203190601119,
       "marker_pair": [
-        23,
-        24
+        0,
+        22
       ],
-      "translation_error_m": 0.006463970207217999,
-      "rotation_error_deg": 1.5093573257159176
+      "translation_error_m": 0.012516889147604146,
+      "rotation_error_deg": 1.5131640134248034
+    },
+    {
+      "frame_index": 341,
+      "frame_id": 341,
+      "visible_marker_ids": [
+        2,
+        3,
+        22,
+        23,
+        25,
+        26
+      ],
+      "disagreement_cost": 12.95724224691499,
+      "marker_pair": [
+        25,
+        26
+      ],
+      "translation_error_m": 0.0033484475846644567,
+      "rotation_error_deg": 1.3203834174657234
     },
     {
       "frame_index": 342,
       "frame_id": 342,
       "visible_marker_ids": [
-        0,
         2,
         3,
         22,
         23,
-        24,
+        25,
         26
       ],
-      "disagreement_cost": 15.159492282062015,
+      "disagreement_cost": 8.262003716841193,
       "marker_pair": [
-        23,
-        24
+        22,
+        23
       ],
-      "translation_error_m": 0.004531410324108267,
-      "rotation_error_deg": 1.4442844608714922
+      "translation_error_m": 0.0030442683376102203,
+      "rotation_error_deg": 1.458738895843043
     },
     {
       "frame_index": 343,
       "frame_id": 343,
       "visible_marker_ids": [
-        0,
         2,
         3,
         22,
@@ -6507,13 +6631,13 @@
         25,
         26
       ],
-      "disagreement_cost": 8.115652163498044,
+      "disagreement_cost": 20.321679115912215,
       "marker_pair": [
-        25,
-        26
+        22,
+        23
       ],
-      "translation_error_m": 0.0023282965559107546,
-      "rotation_error_deg": 2.5286126705881435
+      "translation_error_m": 0.004741778655217435,
+      "rotation_error_deg": 2.057349219275008
     },
     {
       "frame_index": 344,
@@ -6526,13 +6650,13 @@
         25,
         26
       ],
-      "disagreement_cost": 13.13173733719842,
+      "disagreement_cost": 7.963797507598933,
       "marker_pair": [
-        25,
-        26
+        22,
+        25
       ],
-      "translation_error_m": 0.004615254066258273,
-      "rotation_error_deg": 2.4996905604717408
+      "translation_error_m": 0.0026987500721492494,
+      "rotation_error_deg": 1.6675445952481303
     },
     {
       "frame_index": 345,
@@ -6545,13 +6669,13 @@
         25,
         26
       ],
-      "disagreement_cost": 9.337831003246421,
+      "disagreement_cost": 6.9240118976824006,
       "marker_pair": [
-        2,
-        22
+        22,
+        25
       ],
-      "translation_error_m": 0.0022711853753228247,
-      "rotation_error_deg": 0.9631932074975268
+      "translation_error_m": 0.0028562311107515276,
+      "rotation_error_deg": 1.3279644802679125
     },
     {
       "frame_index": 346,
@@ -6561,21 +6685,23 @@
         3,
         22,
         23,
+        24,
         25,
         26
       ],
-      "disagreement_cost": 15.625614176903875,
+      "disagreement_cost": 73.11161535430116,
       "marker_pair": [
         23,
-        25
+        24
       ],
-      "translation_error_m": 0.004666989351802743,
-      "rotation_error_deg": 1.6534318917611315
+      "translation_error_m": 0.012773653222821844,
+      "rotation_error_deg": 1.9404394750082037
     },
     {
       "frame_index": 347,
       "frame_id": 347,
       "visible_marker_ids": [
+        0,
         2,
         3,
         22,
@@ -6584,18 +6710,19 @@
         25,
         26
       ],
-      "disagreement_cost": 18.219423807550456,
+      "disagreement_cost": 324.2447282658144,
       "marker_pair": [
-        23,
-        24
+        0,
+        22
       ],
-      "translation_error_m": 0.005257160153493545,
-      "rotation_error_deg": 1.3428482485255837
+      "translation_error_m": 0.019816463511525967,
+      "rotation_error_deg": 2.712825588374983
     },
     {
       "frame_index": 348,
       "frame_id": 348,
       "visible_marker_ids": [
+        0,
         2,
         3,
         22,
@@ -6603,32 +6730,32 @@
         25,
         26
       ],
-      "disagreement_cost": 7.845466070107737,
+      "disagreement_cost": 254.69541310953463,
       "marker_pair": [
-        25,
-        26
+        0,
+        22
       ],
-      "translation_error_m": 0.002829691638752768,
-      "rotation_error_deg": 1.4041908379623613
+      "translation_error_m": 0.019118751108993984,
+      "rotation_error_deg": 3.048802171766642
     },
     {
       "frame_index": 349,
       "frame_id": 349,
       "visible_marker_ids": [
+        0,
         2,
         3,
         22,
-        23,
         25,
         26
       ],
-      "disagreement_cost": 6.5787780804986475,
+      "disagreement_cost": 170.31629509797878,
       "marker_pair": [
-        2,
-        25
+        0,
+        22
       ],
-      "translation_error_m": 0.0026404882320304295,
-      "rotation_error_deg": 1.6133458053810688
+      "translation_error_m": 0.016337815588109806,
+      "rotation_error_deg": 2.5087526408752203
     },
     {
       "frame_index": 350,
@@ -6641,13 +6768,13 @@
         25,
         26
       ],
-      "disagreement_cost": 26.320610476679967,
+      "disagreement_cost": 19.496780959391383,
       "marker_pair": [
         22,
-        25
+        23
       ],
-      "translation_error_m": 0.005744879839750802,
-      "rotation_error_deg": 1.805842167290924
+      "translation_error_m": 0.003830651878061116,
+      "rotation_error_deg": 1.5576781629032597
     },
     {
       "frame_index": 351,
@@ -6656,149 +6783,139 @@
         2,
         3,
         22,
+        23,
         25,
         26
       ],
-      "disagreement_cost": 25.288229558887192,
+      "disagreement_cost": 46.173579714188435,
       "marker_pair": [
         22,
-        25
+        23
       ],
-      "translation_error_m": 0.005738188958087036,
-      "rotation_error_deg": 1.2019209041714753
+      "translation_error_m": 0.006075439739274745,
+      "rotation_error_deg": 2.072655664391894
     },
     {
       "frame_index": 352,
       "frame_id": 352,
       "visible_marker_ids": [
-        0,
         2,
         3,
         22,
-        23,
         25,
         26
       ],
-      "disagreement_cost": 274.56530972907643,
+      "disagreement_cost": 47.8724626145155,
       "marker_pair": [
-        0,
-        22
+        2,
+        26
       ],
-      "translation_error_m": 0.01937618572027145,
-      "rotation_error_deg": 2.636388570114394
+      "translation_error_m": 0.008142180782403325,
+      "rotation_error_deg": 1.2609325023966345
     },
     {
       "frame_index": 353,
       "frame_id": 353,
       "visible_marker_ids": [
-        0,
-        2,
         3,
         22,
-        23,
         25,
         26
       ],
-      "disagreement_cost": 220.00345979750176,
+      "disagreement_cost": 27.62808146801188,
       "marker_pair": [
-        0,
-        22
+        25,
+        26
       ],
-      "translation_error_m": 0.016020885773791876,
-      "rotation_error_deg": 2.595492237350997
+      "translation_error_m": 0.008599454484631574,
+      "rotation_error_deg": 1.2592241173491
     },
     {
       "frame_index": 354,
       "frame_id": 354,
       "visible_marker_ids": [
-        0,
-        2,
         3,
         22,
         25,
         26
       ],
-      "disagreement_cost": 185.4351161168674,
+      "disagreement_cost": 15.19898077713452,
       "marker_pair": [
-        0,
-        22
+        25,
+        26
       ],
-      "translation_error_m": 0.015839339260046673,
-      "rotation_error_deg": 2.478462668248005
+      "translation_error_m": 0.006529752286236834,
+      "rotation_error_deg": 1.7020471961831982
     },
     {
       "frame_index": 355,
       "frame_id": 355,
       "visible_marker_ids": [
-        2,
         3,
         22,
         23,
-        25,
-        26
+        26,
+        28
       ],
-      "disagreement_cost": 8.209269975095633,
+      "disagreement_cost": 863.3835556528156,
       "marker_pair": [
-        22,
-        25
+        3,
+        28
       ],
-      "translation_error_m": 0.0033045842978056228,
-      "rotation_error_deg": 1.2071168378206723
+      "translation_error_m": 0.009541861541678735,
+      "rotation_error_deg": 140.92401881943957
     },
     {
       "frame_index": 356,
       "frame_id": 356,
       "visible_marker_ids": [
-        2,
         3,
         22,
-        25,
+        23,
         26
       ],
-      "disagreement_cost": 13.270839522231595,
+      "disagreement_cost": 26.210543178275966,
       "marker_pair": [
-        2,
-        22
+        22,
+        23
       ],
-      "translation_error_m": 0.0035707149282546385,
-      "rotation_error_deg": 3.087916218367782
+      "translation_error_m": 0.006119014633951506,
+      "rotation_error_deg": 2.2048622207044075
     },
     {
       "frame_index": 357,
       "frame_id": 357,
       "visible_marker_ids": [
-        2,
         3,
         22,
-        23,
-        25,
-        26
+        26,
+        28
       ],
-      "disagreement_cost": 38.78071421835208,
+      "disagreement_cost": 800.9186606151612,
       "marker_pair": [
-        25,
-        26
+        3,
+        28
       ],
-      "translation_error_m": 0.005728475122525305,
-      "rotation_error_deg": 1.256455192369133
+      "translation_error_m": 0.012670159291217741,
+      "rotation_error_deg": 137.4592004847971
     },
     {
       "frame_index": 358,
       "frame_id": 358,
       "visible_marker_ids": [
-        2,
         3,
         22,
-        25,
-        26
+        23,
+        26,
+        28
       ],
-      "disagreement_cost": 42.32731484480048,
+      "disagreement_cost": 795.0198434538028,
       "marker_pair": [
-        25,
-        26
+        3,
+        28
       ],
-      "translation_error_m": 0.0068540570864072,
-      "rotation_error_deg": 1.2422358930915312
+      "translation_error_m": 0.010460365824760093,
+      "rotation_error_deg": 135.02707887013298
     },
     {
       "frame_index": 359,
@@ -6806,16 +6923,35 @@
       "visible_marker_ids": [
         3,
         22,
-        25,
-        26
+        23,
+        26,
+        28
       ],
-      "disagreement_cost": 19.5832961938088,
+      "disagreement_cost": 790.176604596004,
       "marker_pair": [
-        25,
-        26
+        3,
+        28
       ],
-      "translation_error_m": 0.006905813601226319,
-      "rotation_error_deg": 1.522801133562553
+      "translation_error_m": 0.011284681053659677,
+      "rotation_error_deg": 133.56030624609673
+    },
+    {
+      "frame_index": 360,
+      "frame_id": 360,
+      "visible_marker_ids": [
+        3,
+        22,
+        23,
+        26,
+        28
+      ],
+      "disagreement_cost": 782.6383058143784,
+      "marker_pair": [
+        3,
+        28
+      ],
+      "translation_error_m": 0.012189816520315592,
+      "rotation_error_deg": 133.74486204747012
     },
     {
       "frame_index": 361,
@@ -6824,15 +6960,16 @@
         3,
         22,
         23,
-        26
+        26,
+        28
       ],
-      "disagreement_cost": 19.41680475761848,
+      "disagreement_cost": 784.6391932419957,
       "marker_pair": [
-        23,
-        26
+        3,
+        28
       ],
-      "translation_error_m": 0.005378532860897876,
-      "rotation_error_deg": 0.971773055716018
+      "translation_error_m": 0.011829761615719124,
+      "rotation_error_deg": 134.1399233974759
     },
     {
       "frame_index": 362,
@@ -6840,16 +6977,16 @@
       "visible_marker_ids": [
         3,
         22,
-        26,
-        28
+        23,
+        26
       ],
-      "disagreement_cost": 810.1446944417945,
+      "disagreement_cost": 28.843538942263997,
       "marker_pair": [
-        3,
-        28
+        22,
+        26
       ],
-      "translation_error_m": 0.013650751103365066,
-      "rotation_error_deg": 137.55155192642673
+      "translation_error_m": 0.007423634506722562,
+      "rotation_error_deg": 2.386585962729959
     },
     {
       "frame_index": 363,
@@ -6861,13 +6998,13 @@
         26,
         28
       ],
-      "disagreement_cost": 800.7540279131078,
+      "disagreement_cost": 892.0002096007166,
       "marker_pair": [
         3,
         28
       ],
-      "translation_error_m": 0.011316891637917844,
-      "rotation_error_deg": 135.1283616917031
+      "translation_error_m": 0.01345541627193277,
+      "rotation_error_deg": 139.76438224646765
     },
     {
       "frame_index": 364,
@@ -6876,16 +7013,15 @@
         3,
         22,
         23,
-        26,
-        28
+        26
       ],
-      "disagreement_cost": 798.7878558708104,
+      "disagreement_cost": 46.07277330798089,
       "marker_pair": [
-        3,
-        28
+        22,
+        26
       ],
-      "translation_error_m": 0.009609316692220956,
-      "rotation_error_deg": 133.86762097041085
+      "translation_error_m": 0.009385321437826263,
+      "rotation_error_deg": 1.7985184983945428
     },
     {
       "frame_index": 365,
@@ -6894,16 +7030,16 @@
         3,
         22,
         23,
-        26,
-        28
+        25,
+        26
       ],
-      "disagreement_cost": 780.7108643472767,
+      "disagreement_cost": 90.71846969735016,
       "marker_pair": [
-        3,
-        28
+        22,
+        25
       ],
-      "translation_error_m": 0.01178364087660441,
-      "rotation_error_deg": 133.1515769023166
+      "translation_error_m": 0.012088653207101905,
+      "rotation_error_deg": 1.6761656372458906
     },
     {
       "frame_index": 366,
@@ -6911,17 +7047,16 @@
       "visible_marker_ids": [
         3,
         22,
-        23,
-        26,
-        28
+        25,
+        26
       ],
-      "disagreement_cost": 800.8764476694372,
+      "disagreement_cost": 77.24459922460505,
       "marker_pair": [
-        3,
-        28
+        22,
+        25
       ],
-      "translation_error_m": 0.013590944640342311,
-      "rotation_error_deg": 133.9811718490535
+      "translation_error_m": 0.012722956355203575,
+      "rotation_error_deg": 2.9638939860098494
     },
     {
       "frame_index": 367,
@@ -6930,104 +7065,108 @@
         3,
         22,
         23,
-        26,
-        28
+        26
       ],
-      "disagreement_cost": 816.4162302872038,
+      "disagreement_cost": 24.48658165062296,
       "marker_pair": [
-        3,
-        28
+        22,
+        23
       ],
-      "translation_error_m": 0.011128317726201965,
-      "rotation_error_deg": 135.57827736699727
+      "translation_error_m": 0.005684518078210443,
+      "rotation_error_deg": 1.6891048227797942
     },
     {
       "frame_index": 368,
       "frame_id": 368,
       "visible_marker_ids": [
+        0,
         3,
         22,
-        23,
-        26,
-        28
+        25,
+        26
       ],
-      "disagreement_cost": 823.9742418207602,
+      "disagreement_cost": 61.221062533365085,
       "marker_pair": [
-        3,
-        28
+        22,
+        25
       ],
-      "translation_error_m": 0.008694275171225447,
-      "rotation_error_deg": 137.72995206386173
+      "translation_error_m": 0.010300320759398981,
+      "rotation_error_deg": 2.6461672208550926
     },
     {
       "frame_index": 369,
       "frame_id": 369,
       "visible_marker_ids": [
+        0,
         3,
         22,
-        23,
+        24,
         26
       ],
-      "disagreement_cost": 50.49224443745442,
+      "disagreement_cost": 7.657204214643999,
       "marker_pair": [
-        22,
-        26
+        0,
+        22
       ],
-      "translation_error_m": 0.009888230245365904,
-      "rotation_error_deg": 1.5770674016692523
+      "translation_error_m": 0.005029209788299398,
+      "rotation_error_deg": 1.5419844811117691
     },
     {
       "frame_index": 370,
       "frame_id": 370,
       "visible_marker_ids": [
+        0,
         3,
         22,
         23,
         25,
         26
       ],
-      "disagreement_cost": 97.05843389584888,
+      "disagreement_cost": 70.11909265328683,
       "marker_pair": [
         22,
         25
       ],
-      "translation_error_m": 0.01229675950896666,
-      "rotation_error_deg": 1.657686833449028
+      "translation_error_m": 0.010078742080845597,
+      "rotation_error_deg": 2.108208925252393
     },
     {
       "frame_index": 371,
       "frame_id": 371,
       "visible_marker_ids": [
+        0,
         3,
         22,
         23,
-        25,
+        24,
         26
       ],
-      "disagreement_cost": 71.23482315515648,
+      "disagreement_cost": 43.645300913015234,
       "marker_pair": [
-        22,
-        25
+        23,
+        24
       ],
-      "translation_error_m": 0.010370548485906234,
-      "rotation_error_deg": 2.1748810184939362
+      "translation_error_m": 0.010272832866394887,
+      "rotation_error_deg": 2.1765822833945467
     },
     {
       "frame_index": 372,
       "frame_id": 372,
       "visible_marker_ids": [
+        0,
         3,
         22,
         23,
+        24,
         26
       ],
-      "disagreement_cost": 32.290409539045925,
+      "disagreement_cost": 59.410208323095056,
       "marker_pair": [
-        22,
-        23
+        23,
+        24
       ],
-      "translation_error_m": 0.007264046173210159,
-      "rotation_error_deg": 1.2780269390625862
+      "translation_error_m": 0.010592099545869918,
+      "rotation_error_deg": 1.7720385028750216
     },
     {
       "frame_index": 373,
@@ -7036,16 +7175,16 @@
         0,
         3,
         22,
-        23,
+        24,
         26
       ],
-      "disagreement_cost": 67.2672767066769,
+      "disagreement_cost": 22.88333190693563,
       "marker_pair": [
         0,
         22
       ],
-      "translation_error_m": 0.010690280099681246,
-      "rotation_error_deg": 1.9873126662499732
+      "translation_error_m": 0.006490497383217324,
+      "rotation_error_deg": 0.5584254290514912
     },
     {
       "frame_index": 374,
@@ -7054,16 +7193,15 @@
         0,
         3,
         22,
-        23,
         26
       ],
-      "disagreement_cost": 21.679911672264534,
+      "disagreement_cost": 13.814225006152606,
       "marker_pair": [
         0,
         22
       ],
-      "translation_error_m": 0.005220443563297415,
-      "rotation_error_deg": 1.6529047772125103
+      "translation_error_m": 0.0052377147890580785,
+      "rotation_error_deg": 0.36696707771161674
     },
     {
       "frame_index": 375,
@@ -7073,17 +7211,15 @@
         3,
         22,
         23,
-        24,
-        25,
         26
       ],
-      "disagreement_cost": 73.55766400108533,
+      "disagreement_cost": 66.23428600935786,
       "marker_pair": [
-        23,
-        24
+        3,
+        22
       ],
-      "translation_error_m": 0.009208435370840562,
-      "rotation_error_deg": 2.0484860691262563
+      "translation_error_m": 0.009220659717290119,
+      "rotation_error_deg": 1.3639873568134218
     },
     {
       "frame_index": 376,
@@ -7093,199 +7229,141 @@
         3,
         22,
         23,
-        24,
-        25,
         26
       ],
-      "disagreement_cost": 79.5710265366714,
+      "disagreement_cost": 50.496558126636984,
       "marker_pair": [
-        23,
-        24
+        3,
+        23
       ],
-      "translation_error_m": 0.009271624640896158,
-      "rotation_error_deg": 2.0815900390422577
+      "translation_error_m": 0.007745492172831659,
+      "rotation_error_deg": 1.4222829978959048
     },
     {
       "frame_index": 377,
       "frame_id": 377,
       "visible_marker_ids": [
         0,
-        3,
         22,
-        23,
         24,
         26
       ],
-      "disagreement_cost": 56.20294136677333,
+      "disagreement_cost": 6.783784971208514,
       "marker_pair": [
-        23,
-        24
+        0,
+        22
       ],
-      "translation_error_m": 0.008882253868205814,
-      "rotation_error_deg": 1.842795890813016
+      "translation_error_m": 0.003969645130655799,
+      "rotation_error_deg": 0.6483566330059963
     },
     {
       "frame_index": 378,
       "frame_id": 378,
       "visible_marker_ids": [
         0,
-        3,
         22,
-        23,
         24,
         26
       ],
-      "disagreement_cost": 66.46188618322438,
+      "disagreement_cost": 4.087005087894872,
       "marker_pair": [
-        23,
-        24
+        0,
+        26
       ],
-      "translation_error_m": 0.011728780048126176,
-      "rotation_error_deg": 2.232740654462243
+      "translation_error_m": 0.002350927097873178,
+      "rotation_error_deg": 0.35706017167617765
     },
     {
       "frame_index": 379,
       "frame_id": 379,
       "visible_marker_ids": [
         0,
-        3,
         22,
-        24,
+        23,
         26
       ],
-      "disagreement_cost": 37.1208022397055,
+      "disagreement_cost": 5.3736185301951265,
       "marker_pair": [
         0,
-        22
+        26
       ],
-      "translation_error_m": 0.00709066552027538,
-      "rotation_error_deg": 1.01848834919085
+      "translation_error_m": 0.0028741963912397735,
+      "rotation_error_deg": 0.4826472457918867
     },
     {
       "frame_index": 380,
       "frame_id": 380,
       "visible_marker_ids": [
         0,
-        3,
         22,
         23,
+        24,
         26
       ],
-      "disagreement_cost": 28.59118277007422,
+      "disagreement_cost": 22.18832275457642,
       "marker_pair": [
-        3,
-        22
+        23,
+        24
       ],
-      "translation_error_m": 0.004818221286009943,
-      "rotation_error_deg": 1.7949615263682202
+      "translation_error_m": 0.008426384939528709,
+      "rotation_error_deg": 2.0055012995553514
     },
     {
       "frame_index": 381,
       "frame_id": 381,
       "visible_marker_ids": [
         0,
-        3,
         22,
         23,
         26
       ],
-      "disagreement_cost": 67.90547925290721,
+      "disagreement_cost": 6.097149647751167,
       "marker_pair": [
-        3,
+        22,
+        23
+      ],
+      "translation_error_m": 0.003091350084536635,
+      "rotation_error_deg": 2.035166730134281
+    },
+    {
+      "frame_index": 382,
+      "frame_id": 382,
+      "visible_marker_ids": [
+        0,
+        22,
+        24,
+        26
+      ],
+      "disagreement_cost": 3.399500236241817,
+      "marker_pair": [
+        0,
         22
       ],
-      "translation_error_m": 0.008503056806524526,
-      "rotation_error_deg": 1.5530836468229694
+      "translation_error_m": 0.002975268868409141,
+      "rotation_error_deg": 0.8375408330806762
     },
     {
       "frame_index": 383,
       "frame_id": 383,
       "visible_marker_ids": [
         0,
+        2,
         22,
+        23,
         24,
         26
       ],
-      "disagreement_cost": 2.8797534435613796,
+      "disagreement_cost": 44.09040650893969,
       "marker_pair": [
-        0,
+        23,
         24
       ],
-      "translation_error_m": 0.0022096461015687265,
-      "rotation_error_deg": 0.5887613372889201
+      "translation_error_m": 0.010256905937047605,
+      "rotation_error_deg": 1.8702382207750021
     },
     {
       "frame_index": 384,
       "frame_id": 384,
-      "visible_marker_ids": [
-        0,
-        22,
-        23,
-        26
-      ],
-      "disagreement_cost": 2.6569490970524368,
-      "marker_pair": [
-        22,
-        23
-      ],
-      "translation_error_m": 0.0021223867866198743,
-      "rotation_error_deg": 1.7717901802145075
-    },
-    {
-      "frame_index": 385,
-      "frame_id": 385,
-      "visible_marker_ids": [
-        0,
-        22,
-        23,
-        24,
-        26
-      ],
-      "disagreement_cost": 12.771696667143438,
-      "marker_pair": [
-        23,
-        24
-      ],
-      "translation_error_m": 0.0066498570745409874,
-      "rotation_error_deg": 1.846960580760909
-    },
-    {
-      "frame_index": 387,
-      "frame_id": 387,
-      "visible_marker_ids": [
-        0,
-        22,
-        24,
-        26
-      ],
-      "disagreement_cost": 5.843352378151792,
-      "marker_pair": [
-        0,
-        26
-      ],
-      "translation_error_m": 0.004002269549600658,
-      "rotation_error_deg": 0.6928174915200351
-    },
-    {
-      "frame_index": 388,
-      "frame_id": 388,
-      "visible_marker_ids": [
-        0,
-        22,
-        24,
-        26
-      ],
-      "disagreement_cost": 8.253350231668914,
-      "marker_pair": [
-        0,
-        26
-      ],
-      "translation_error_m": 0.004654409788975895,
-      "rotation_error_deg": 0.5200164824588844
-    },
-    {
-      "frame_index": 389,
-      "frame_id": 389,
       "visible_marker_ids": [
         0,
         2,
@@ -7294,13 +7372,13 @@
         25,
         26
       ],
-      "disagreement_cost": 12.079366160487753,
+      "disagreement_cost": 11.134199372350269,
       "marker_pair": [
-        24,
-        25
+        2,
+        26
       ],
-      "translation_error_m": 0.004085748952778235,
-      "rotation_error_deg": 0.5506746747443414
+      "translation_error_m": 0.0036959336863214677,
+      "rotation_error_deg": 1.482796106009628
     }
   ],
   "anchor_core": null

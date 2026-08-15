@@ -28,22 +28,30 @@ from object_apriltag.marker_layout_calibration import (
     CalibrationSettings,
     CalibrationSolveDiagnostics,
     FrameObservation,
-    _CornerObservation,
-    _PairConsensus,
-    _estimate_pair_consensus,
-    _object_points_by_marker,
-    _maybe_restore_weak_connectivity,
-    _make_dropped_pair_edge,
-    _make_restored_pair_edge,
-    _recheck_pair_support,
-    _reference_gauge_pose,
-    _restrict_pair_consensus_to_frames,
-    _weak_restore_candidates,
-    _quality_from_pairs,
-    _synth_pair_observations,
     calibrate_marker_layout,
     uniform_marker_sizes,
 )
+from object_apriltag.marker_layout_calibration.continuous_refinement import (
+    recheck_pair_support as _recheck_pair_support,
+)
+from object_apriltag.marker_layout_calibration.discrete_graph import (
+    estimate_pair_consensus,
+    make_dropped_pair_edge,
+    make_restored_pair_edge,
+    maybe_restore_weak_connectivity,
+    weak_restore_candidates,
+)
+from object_apriltag.marker_layout_calibration.input import object_points_by_marker
+from object_apriltag.marker_layout_calibration.pose_initialization import (
+    reference_gauge_pose,
+    restrict_pair_consensus_to_frames,
+    synth_pair_observations,
+)
+from object_apriltag.marker_layout_calibration.solve_primitives import (
+    CornerObservation,
+    PairConsensus,
+)
+from object_apriltag.marker_layout_calibration.solve_quality import quality_from_pairs
 from object_apriltag.pose import marker_corner_object_points
 
 
@@ -52,7 +60,7 @@ def _uniform_marker_sizes(marker_ids: Iterable[int], marker_size_m: float) -> di
 
 
 def _uniform_object_points_by_marker(marker_ids: Iterable[int], marker_size_m: float) -> dict[int, np.ndarray]:
-    return _object_points_by_marker(_uniform_marker_sizes(marker_ids, marker_size_m))
+    return object_points_by_marker(_uniform_marker_sizes(marker_ids, marker_size_m))
 
 
 def _default_camera() -> tuple[np.ndarray, np.ndarray]:
@@ -64,7 +72,7 @@ def _default_camera() -> tuple[np.ndarray, np.ndarray]:
     return camera_matrix, dist_coeffs
 
 
-def _reference_gauge_pose(marker_size_m: float) -> tuple[np.ndarray, np.ndarray]:
+def reference_gauge_pose(marker_size_m: float) -> tuple[np.ndarray, np.ndarray]:
     half = marker_size_m / 2.0
     top_left = np.array([-half, -half, 0.0], dtype=np.float64)
     top_right = np.array([half, -half, 0.0], dtype=np.float64)
@@ -179,7 +187,7 @@ def _rotate_marker_corners(observations: list[FrameObservation], frame_indices: 
 
 
 def _pair_poses(marker_size_m: float = 0.07) -> dict[int, tuple[np.ndarray, np.ndarray]]:
-    reference_rotation, reference_translation = _reference_gauge_pose(marker_size_m)
+    reference_rotation, reference_translation = reference_gauge_pose(marker_size_m)
     return {
         0: (reference_rotation, reference_translation),
         1: (reference_rotation, reference_translation + np.array([0.12, 0.0, -0.05], dtype=np.float64)),
@@ -195,7 +203,7 @@ def _synth_pair_with_corrupt_frames(
 ) -> list[FrameObservation]:
     camera_matrix, dist_coeffs = _default_camera()
     object_points = marker_corner_object_points(marker_size_m)
-    return _synth_pair_observations(
+    return synth_pair_observations(
         frame_count,
         _pair_poses(marker_size_m),
         object_points,
@@ -214,7 +222,7 @@ def _two_marker_poses(marker_size_m: float = 0.07) -> dict[int, tuple[np.ndarray
 @contextmanager
 def _pruning_refinement_failure_without_weak_recovery(*, block_checkpoints: bool = False):
     """Simulate post-pruning refinement failure that weak-edge restore cannot heal."""
-    real_restore = _maybe_restore_weak_connectivity
+    real_restore = maybe_restore_weak_connectivity
 
     def _restore_without_post_pruning_weak_recovery(
         pair_consensus,
@@ -241,13 +249,13 @@ def _pruning_refinement_failure_without_weak_recovery(*, block_checkpoints: bool
         )
 
     weak_restore_patch = mock.patch(
-        "object_apriltag.marker_layout_calibration._maybe_restore_weak_connectivity",
+        "object_apriltag.marker_layout_calibration.discrete_graph.maybe_restore_weak_connectivity",
         side_effect=_restore_without_post_pruning_weak_recovery,
     )
     if block_checkpoints:
         with (
             mock.patch(
-                "object_apriltag.marker_layout_calibration._record_optimization_checkpoint",
+                "object_apriltag.marker_layout_calibration.continuous_refinement.ContinuousLayoutRefinement._maybe_record_checkpoint",
                 return_value=None,
             ),
             weak_restore_patch,
@@ -259,7 +267,7 @@ def _pruning_refinement_failure_without_weak_recovery(*, block_checkpoints: bool
 
 
 def _chain_marker_poses(marker_size_m: float = 0.07) -> dict[int, tuple[np.ndarray, np.ndarray]]:
-    reference_rotation, reference_translation = _reference_gauge_pose(marker_size_m)
+    reference_rotation, reference_translation = reference_gauge_pose(marker_size_m)
     side_rotation, _ = cv2.Rodrigues(np.array([0.0, np.pi / 2.0, 0.0], dtype=np.float64))
     return {
         0: (reference_rotation, reference_translation),
@@ -281,7 +289,7 @@ def _line_marker_poses(
     marker_size_m: float = 0.07,
     spacing_m: float = 0.12,
 ) -> dict[int, tuple[np.ndarray, np.ndarray]]:
-    reference_rotation, reference_translation = _reference_gauge_pose(marker_size_m)
+    reference_rotation, reference_translation = reference_gauge_pose(marker_size_m)
     return {
         marker_id: (
             reference_rotation,
@@ -412,21 +420,21 @@ class MarkerLayoutCalibrationSuccessTests(unittest.TestCase):
         assert result.quality is not None
         self.assertEqual(result.quality.edges[0].inlier_count, 20)
 
-        from object_apriltag.marker_layout_calibration import (
-            _collect_pair_hypotheses,
-            _estimate_frame_candidates,
-            _normalize_observations,
+        from object_apriltag.marker_layout_calibration.discrete_graph import (
+            collect_pair_hypotheses,
+            estimate_frame_candidates,
+            normalize_observations,
         )
 
         object_points_by_marker = _uniform_object_points_by_marker([0, 1], self.marker_size_m)
-        normalized = _normalize_observations(observations, [0, 1])
-        frame_candidates = _estimate_frame_candidates(
+        normalized = normalize_observations(observations, [0, 1])
+        frame_candidates = estimate_frame_candidates(
             normalized,
             object_points_by_marker,
             self.camera_matrix,
             self.dist_coeffs,
         )
-        hypotheses = _collect_pair_hypotheses(frame_candidates, [0, 1])
+        hypotheses = collect_pair_hypotheses(frame_candidates, [0, 1])
         pair = (0, 1)
         unique_frames = {frame_index for _, _, frame_index in hypotheses[pair]}
         self.assertGreater(len(hypotheses[pair]), len(unique_frames))
@@ -595,7 +603,7 @@ class MarkerLayoutCalibrationRefusalTests(unittest.TestCase):
         self.assertLess(result.quality.reprojection_rms_px, 0.5)
         self.assertGreater(result.quality.per_marker_reprojection_rms_px[1], 0.5)
 
-    @mock.patch("object_apriltag.marker_layout_calibration.least_squares")
+    @mock.patch("object_apriltag.marker_layout_calibration.continuous_refinement.least_squares")
     def test_bundle_adjustment_failures_are_structured(self, least_squares_mock: mock.Mock) -> None:
         observations = _synth_pair_with_corrupt_frames(25, frozenset({2, 7}))
         least_squares_mock.side_effect = ValueError("singular matrix")
@@ -610,7 +618,7 @@ class MarkerLayoutCalibrationRefusalTests(unittest.TestCase):
         self.assertEqual(len(result.quality.assignment_rejection_records), 2)
         assert result.quality.dropped_pair_edges is not None
 
-    @mock.patch("object_apriltag.marker_layout_calibration.least_squares")
+    @mock.patch("object_apriltag.marker_layout_calibration.continuous_refinement.least_squares")
     def test_bundle_adjustment_failure_preserves_assignment_and_edge_diagnostics(
         self,
         least_squares_mock: mock.Mock,
@@ -640,7 +648,7 @@ class MarkerLayoutCalibrationRefusalTests(unittest.TestCase):
         )
         assert result.quality.dropped_pair_edges is not None
 
-    @mock.patch("object_apriltag.marker_layout_calibration.least_squares")
+    @mock.patch("object_apriltag.marker_layout_calibration.continuous_refinement.least_squares")
     def test_positive_depth_failure_is_structured(self, least_squares_mock: mock.Mock) -> None:
         from scipy.optimize import OptimizeResult
 
@@ -1101,11 +1109,11 @@ def _make_pair_consensus(
     marker_a: int,
     marker_b: int,
     frame_indices: Iterable[int],
-) -> _PairConsensus:
+) -> PairConsensus:
     rotation = np.eye(3, dtype=np.float64)
     translation = np.zeros(3, dtype=np.float64)
     frames = tuple(sorted(frame_indices))
-    return _PairConsensus(
+    return PairConsensus(
         marker_a=marker_a,
         marker_b=marker_b,
         rotation_ba=rotation,
@@ -1116,7 +1124,7 @@ def _make_pair_consensus(
 
 
 def _triangle_marker_poses(marker_size_m: float = 0.07) -> dict[int, tuple[np.ndarray, np.ndarray]]:
-    reference_rotation, reference_translation = _reference_gauge_pose(marker_size_m)
+    reference_rotation, reference_translation = reference_gauge_pose(marker_size_m)
     return {
         0: (reference_rotation, reference_translation),
         1: (reference_rotation, reference_translation + np.array([0.12, 0.0, -0.05], dtype=np.float64)),
@@ -1138,7 +1146,7 @@ class PairGraphFilteringTests(unittest.TestCase):
         }
         allowed_frames = frozenset(range(20))
 
-        filtered, failure, dropped = _restrict_pair_consensus_to_frames(
+        filtered, failure, dropped = restrict_pair_consensus_to_frames(
             pair_consensus,
             allowed_frames,
             self.expected_ids,
@@ -1161,7 +1169,7 @@ class PairGraphFilteringTests(unittest.TestCase):
         }
         allowed_frames = frozenset(range(20))
 
-        filtered, failure, dropped = _restrict_pair_consensus_to_frames(
+        filtered, failure, dropped = restrict_pair_consensus_to_frames(
             pair_consensus,
             allowed_frames,
             self.expected_ids,
@@ -1205,7 +1213,7 @@ class PairGraphFilteringTests(unittest.TestCase):
         }
 
         marker_sizes_m = _uniform_marker_sizes(self.expected_ids, marker_size_m)
-        filtered, failure, dropped = _estimate_pair_consensus(
+        filtered, failure, dropped = estimate_pair_consensus(
             pair_hypotheses,
             self.expected_ids,
             self.reference_marker_id,
@@ -1226,7 +1234,7 @@ class PairGraphFilteringTests(unittest.TestCase):
             (0, 2): _make_pair_consensus(0, 2, range(10)),
         }
         corner_observations = [
-            _CornerObservation(
+            CornerObservation(
                 frame_index=frame_index,
                 marker_id=marker_id,
                 corner_index=corner_index,
@@ -1386,7 +1394,7 @@ class OptimizationCheckpointRecoveryTests(unittest.TestCase):
             or "Too few inlier" in (result.failure_reason or "")
         )
 
-    @mock.patch("object_apriltag.marker_layout_calibration.least_squares")
+    @mock.patch("object_apriltag.marker_layout_calibration.continuous_refinement.least_squares")
     def test_best_effort_rejects_incomplete_checkpoint(
         self,
         least_squares_mock: mock.Mock,
@@ -1427,7 +1435,7 @@ class WeakRestoreSupportFloorTests(unittest.TestCase):
         pair = (0, 1)
         rotation = np.eye(3, dtype=np.float64)
         translation = np.zeros(3, dtype=np.float64)
-        edge = _PairConsensus(
+        edge = PairConsensus(
             marker_a=0,
             marker_b=1,
             rotation_ba=rotation,
@@ -1435,7 +1443,7 @@ class WeakRestoreSupportFloorTests(unittest.TestCase):
             inlier_frames=(0,),
             inlier_hypotheses={0: (rotation, translation)},
         )
-        dropped = _make_dropped_pair_edge(
+        dropped = make_dropped_pair_edge(
             pair,
             "initial_consensus",
             "insufficient_observed_frames",
@@ -1447,13 +1455,13 @@ class WeakRestoreSupportFloorTests(unittest.TestCase):
             edge=edge,
         )
 
-        self.assertEqual(_weak_restore_candidates({}, {pair: edge}, [dropped]), [])
+        self.assertEqual(weak_restore_candidates({}, {pair: edge}, [dropped]), [])
 
     def test_make_restored_pair_edge_reports_consensus_support(self) -> None:
         pair = (0, 1)
         rotation = np.eye(3, dtype=np.float64)
         translation = np.zeros(3, dtype=np.float64)
-        edge = _PairConsensus(
+        edge = PairConsensus(
             marker_a=0,
             marker_b=1,
             rotation_ba=rotation,
@@ -1463,7 +1471,7 @@ class WeakRestoreSupportFloorTests(unittest.TestCase):
                 frame_index: (rotation, translation) for frame_index in (0, 1, 2)
             },
         )
-        dropped = _make_dropped_pair_edge(
+        dropped = make_dropped_pair_edge(
             pair,
             "initial_consensus",
             "insufficient_observed_frames",
@@ -1475,7 +1483,7 @@ class WeakRestoreSupportFloorTests(unittest.TestCase):
             edge=edge,
         )
 
-        restored = _make_restored_pair_edge(dropped, edge, "initial_consensus")
+        restored = make_restored_pair_edge(dropped, edge, "initial_consensus")
 
         self.assertEqual(restored.supported_count, 3)
         self.assertAlmostEqual(restored.support_fraction, 0.3)
@@ -1485,8 +1493,8 @@ class WeakRestoreSupportFloorTests(unittest.TestCase):
         rotation = np.eye(3, dtype=np.float64)
         translation = np.zeros(3, dtype=np.float64)
 
-        def _edge(marker_a: int, marker_b: int, inlier_frames: tuple[int, ...]) -> _PairConsensus:
-            return _PairConsensus(
+        def _edge(marker_a: int, marker_b: int, inlier_frames: tuple[int, ...]) -> PairConsensus:
+            return PairConsensus(
                 marker_a=marker_a,
                 marker_b=marker_b,
                 rotation_ba=rotation,
@@ -1499,7 +1507,7 @@ class WeakRestoreSupportFloorTests(unittest.TestCase):
 
         edge_01 = _edge(0, 1, tuple(range(8)))
         edge_02 = _edge(0, 2, tuple(range(3)))
-        drop_02 = _make_dropped_pair_edge(
+        drop_02 = make_dropped_pair_edge(
             (0, 2),
             "initial_consensus",
             "insufficient_observed_frames",
@@ -1510,7 +1518,7 @@ class WeakRestoreSupportFloorTests(unittest.TestCase):
             rotation_gate=5.0,
             edge=edge_02,
         )
-        drop_01 = _make_dropped_pair_edge(
+        drop_01 = make_dropped_pair_edge(
             (0, 1),
             "initial_consensus",
             "insufficient_observed_frames",
@@ -1523,7 +1531,7 @@ class WeakRestoreSupportFloorTests(unittest.TestCase):
         )
         restored: list = []
 
-        failure = _maybe_restore_weak_connectivity(
+        failure = maybe_restore_weak_connectivity(
             {},
             {(0, 1): edge_01, (0, 2): edge_02},
             [drop_02, drop_01],
@@ -1691,7 +1699,7 @@ class WeakPairConnectivityRecoveryTests(unittest.TestCase):
             (0, 1): _make_pair_consensus(0, 1, range(10)),
             (1, 2): _make_pair_consensus(1, 2, range(20)),
         }
-        filtered, failure, dropped = _restrict_pair_consensus_to_frames(
+        filtered, failure, dropped = restrict_pair_consensus_to_frames(
             pair_consensus,
             frozenset(range(20)),
             self.expected_ids,
@@ -1990,14 +1998,14 @@ class PartialOutputCalibrationTests(unittest.TestCase):
             )
 
     def test_emit_partial_refuses_reference_only_component(self) -> None:
-        from object_apriltag.marker_layout_calibration import _emit_partial_calibration_result
+        from object_apriltag.marker_layout_calibration.finalize import emit_partial_calibration_result
 
         observations = synthesize_observations(
             _two_marker_poses(self.marker_size_m),
             frame_count=25,
             marker_size_m=self.marker_size_m,
         )
-        result = _emit_partial_calibration_result(
+        result = emit_partial_calibration_result(
             observations,
             *_default_camera(),
             requested_marker_ids=[0, 1, 2],
@@ -2078,7 +2086,7 @@ class PartialOutputCalibrationTests(unittest.TestCase):
         self.assertEqual(result.outcome, "refused")
 
     def test_partial_after_missing_accepted_frames_emits_subset(self) -> None:
-        from object_apriltag.marker_layout_calibration import _partial_after_missing_accepted_frames_or_refuse
+        from object_apriltag.marker_layout_calibration.finalize import partial_after_missing_accepted_frames_or_refuse
 
         observations = synthesize_observations(
             _two_marker_poses(self.marker_size_m),
@@ -2097,7 +2105,7 @@ class PartialOutputCalibrationTests(unittest.TestCase):
             settings=self.settings,
         ).quality
         assert quality is not None
-        result = _partial_after_missing_accepted_frames_or_refuse(
+        result = partial_after_missing_accepted_frames_or_refuse(
             observations,
             *_default_camera(),
             pair_consensus,
@@ -2123,7 +2131,7 @@ class PartialOutputCalibrationTests(unittest.TestCase):
         self.assertEqual(omitted, {2: "no_accepted_frame_observations"})
 
     def test_partial_after_missing_accepted_frames_refuses_without_partial_output(self) -> None:
-        from object_apriltag.marker_layout_calibration import _partial_after_missing_accepted_frames_or_refuse
+        from object_apriltag.marker_layout_calibration.finalize import partial_after_missing_accepted_frames_or_refuse
 
         observations = synthesize_observations(
             _two_marker_poses(self.marker_size_m),
@@ -2132,11 +2140,11 @@ class PartialOutputCalibrationTests(unittest.TestCase):
         )
         pair_consensus = {(0, 1): _make_pair_consensus(0, 1, range(25))}
         failure_message = "Expected marker IDs have no accepted-frame observations after rejection: [2]."
-        result = _partial_after_missing_accepted_frames_or_refuse(
+        result = partial_after_missing_accepted_frames_or_refuse(
             observations,
             *_default_camera(),
             pair_consensus,
-            _quality_from_pairs(
+            quality_from_pairs(
                 pair_consensus,
                 [0, 1, 2],
                 self.reference_marker_id,

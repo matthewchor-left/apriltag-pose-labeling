@@ -12,15 +12,15 @@ from object_apriltag.marker_layout_calibration import (
     FrameObservation,
     LivePairReadinessDiagnostics,
     PairReadinessEdge,
-    _PairConsensus,
-    _classify_pair_readiness,
     compute_live_pair_readiness,
 )
+from object_apriltag.marker_layout_calibration.discrete_graph import classify_pair_readiness
+from object_apriltag.marker_layout_calibration.solve_primitives import PairConsensus
 from tests.test_marker_layout_calibration import (
     _chain_marker_poses,
     _default_camera,
     _pair_poses,
-    _reference_gauge_pose,
+    reference_gauge_pose,
     synthesize_observations,
 )
 
@@ -106,7 +106,7 @@ class LivePairReadinessStrongGraphTests(unittest.TestCase):
                 np.array([0.0, 0.0, sign * np.deg2rad(rotation_gate * 1.001)], dtype=np.float64)
             )
             inlier_hypotheses[frame_index] = (rotation, seed_translation)
-        edge = _PairConsensus(
+        edge = PairConsensus(
             marker_a=0,
             marker_b=1,
             rotation_ba=base_rotation,
@@ -115,7 +115,7 @@ class LivePairReadinessStrongGraphTests(unittest.TestCase):
             inlier_hypotheses=inlier_hypotheses,
         )
 
-        status, robust_count, translation_rms_m, rotation_rms_deg = _classify_pair_readiness(
+        status, robust_count, translation_rms_m, rotation_rms_deg = classify_pair_readiness(
             edge,
             self.settings,
             {0: self.marker_size_m, 1: self.marker_size_m},
@@ -129,7 +129,7 @@ class LivePairReadinessStrongGraphTests(unittest.TestCase):
         self.assertGreater(rotation_rms_deg, rotation_gate)
 
     def test_redundant_passing_edges_still_yield_full_connectivity(self) -> None:
-        ref_rotation, ref_translation = _reference_gauge_pose(self.marker_size_m)
+        ref_rotation, ref_translation = reference_gauge_pose(self.marker_size_m)
         marker_poses = {
             0: (ref_rotation, ref_translation),
             1: (ref_rotation, ref_translation + np.array([0.12, 0.0, 0.0], dtype=np.float64)),
