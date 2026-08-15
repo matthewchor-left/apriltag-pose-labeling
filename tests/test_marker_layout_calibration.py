@@ -26,6 +26,7 @@ from object_apriltag.layout import (
 from object_apriltag.marker_layout_calibration import (
     CalibrationResult,
     CalibrationSettings,
+    CalibrationSolveDiagnostics,
     FrameObservation,
     _CornerObservation,
     _PairConsensus,
@@ -2217,6 +2218,111 @@ class SaveMarkerModelTests(unittest.TestCase):
             if result.layout is not None:
                 save_marker_model(path, result.layout)
             self.assertFalse(path.exists())
+
+
+class CalibrationSolveDiagnosticsTests(unittest.TestCase):
+    EXPECTED_STAGE_KEYS = (
+        "ippe_candidate_generation",
+        "initial_pair_consensus",
+        "strict_assignment",
+        "initial_bundle_adjustment",
+        "pruning",
+        "post_pruning_refit",
+    )
+    OPTIMIZER_RUN_KEYS = (
+        "stage",
+        "nfev",
+        "njev",
+        "status",
+        "cost",
+        "active_frame_count",
+        "inlier_corner_count",
+    )
+
+    def setUp(self) -> None:
+        self.marker_size_m = 0.07
+        self.camera_matrix, self.dist_coeffs = _default_camera()
+        self.settings = CalibrationSettings(min_inliers_per_edge=20)
+        self.observations = synthesize_observations(
+            _two_marker_poses(self.marker_size_m),
+            frame_count=25,
+            marker_size_m=self.marker_size_m,
+        )
+
+    def test_without_collector_calibration_result_unchanged(self) -> None:
+        baseline = calibrate_marker_layout(
+            self.observations,
+            self.camera_matrix,
+            self.dist_coeffs,
+            expected_marker_ids=[0, 1],
+            reference_marker_id=0,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+        )
+        with_diagnostics = calibrate_marker_layout(
+            self.observations,
+            self.camera_matrix,
+            self.dist_coeffs,
+            expected_marker_ids=[0, 1],
+            reference_marker_id=0,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+            solve_diagnostics=CalibrationSolveDiagnostics(),
+        )
+        self.assertEqual(baseline.failure_reason, with_diagnostics.failure_reason)
+        self.assertEqual(baseline.outcome, with_diagnostics.outcome)
+        if baseline.layout is not None and with_diagnostics.layout is not None:
+            np.testing.assert_allclose(
+                baseline.layout.footprints[1].bottom_left,
+                with_diagnostics.layout.footprints[1].bottom_left,
+                atol=1e-9,
+            )
+
+    def test_collector_records_finite_stage_timings_and_optimizer_runs(self) -> None:
+        diagnostics = CalibrationSolveDiagnostics()
+        calibrate_marker_layout(
+            self.observations,
+            self.camera_matrix,
+            self.dist_coeffs,
+            expected_marker_ids=[0, 1],
+            reference_marker_id=0,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+            solve_diagnostics=diagnostics,
+        )
+        for stage in self.EXPECTED_STAGE_KEYS:
+            self.assertIn(stage, diagnostics.solve_stages_seconds)
+            value = diagnostics.solve_stages_seconds[stage]
+            self.assertIsInstance(value, float)
+            self.assertGreaterEqual(value, 0.0)
+            self.assertTrue(np.isfinite(value))
+        self.assertGreaterEqual(len(diagnostics.optimizer_runs), 2)
+        for run in diagnostics.optimizer_runs:
+            self.assertEqual(set(run), set(self.OPTIMIZER_RUN_KEYS))
+            self.assertGreaterEqual(run["nfev"], 0)
+            self.assertGreaterEqual(run["active_frame_count"], 1)
+            self.assertGreaterEqual(run["inlier_corner_count"], 8)
+            self.assertIn(run["stage"], ("initial_bundle_adjustment", "post_pruning_refit"))
+
+    def test_best_effort_records_fallback_assignment_stage(self) -> None:
+        observations = _synth_pair_with_corrupt_frames(
+            30,
+            frozenset({2, 7, 11, 16, 22}),
+        )
+        diagnostics = CalibrationSolveDiagnostics()
+        calibrate_marker_layout(
+            observations,
+            self.camera_matrix,
+            self.dist_coeffs,
+            expected_marker_ids=[0, 1],
+            reference_marker_id=0,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+            best_effort=True,
+            solve_diagnostics=diagnostics,
+        )
+        self.assertIn("fallback_assignment", diagnostics.solve_stages_seconds)
+        self.assertGreater(diagnostics.solve_stages_seconds["fallback_assignment"], 0.0)
 
 
 if __name__ == "__main__":

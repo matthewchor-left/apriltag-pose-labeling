@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Iterable, Literal, Sequence
+from contextlib import contextmanager, nullcontext
+from dataclasses import dataclass, field
+from typing import Any, Iterable, Literal, Sequence
 
 import cv2
 import numpy as np
@@ -47,6 +49,56 @@ class CalibrationSettings:
     huber_delta_px: float = 1.0
     corner_outlier_px: float = 3.0
     max_ba_iterations: int = 50
+
+
+@dataclass
+class CalibrationSolveDiagnostics:
+    """Optional benchmark collector for solve-stage timings and BA optimizer runs."""
+
+    solve_stages_seconds: dict[str, float] = field(default_factory=dict)
+    optimizer_runs: list[dict[str, Any]] = field(default_factory=list)
+
+
+@contextmanager
+def _timed_solve_stage(
+    diagnostics: CalibrationSolveDiagnostics | None,
+    stage: str | None,
+):
+    if diagnostics is None or stage is None:
+        yield
+        return
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        elapsed = time.perf_counter() - start
+        diagnostics.solve_stages_seconds[stage] = (
+            diagnostics.solve_stages_seconds.get(stage, 0.0) + elapsed
+        )
+
+
+def _record_optimizer_run(
+    diagnostics: CalibrationSolveDiagnostics | None,
+    *,
+    stage_name: str | None,
+    active_frame_count: int,
+    inlier_corner_count: int,
+    result: Any | None,
+) -> None:
+    if diagnostics is None or stage_name is None or result is None:
+        return
+    njev = getattr(result, "njev", None)
+    diagnostics.optimizer_runs.append(
+        {
+            "stage": stage_name,
+            "nfev": int(result.nfev),
+            "njev": int(njev) if njev is not None else None,
+            "status": int(result.status),
+            "cost": float(result.cost),
+            "active_frame_count": active_frame_count,
+            "inlier_corner_count": inlier_corner_count,
+        }
+    )
 
 
 @dataclass(frozen=True)
@@ -918,6 +970,7 @@ def calibrate_marker_layout(
     marker_sizes_m: Mapping[int, float] | None = None,
     best_effort: bool = False,
     partial_output: bool = False,
+    solve_diagnostics: CalibrationSolveDiagnostics | None = None,
 ) -> CalibrationResult:
     """Estimate a connected marker layout or refuse with a structured reason."""
     if partial_output and not best_effort:
@@ -1042,12 +1095,13 @@ def calibrate_marker_layout(
                 f"Expected marker IDs never observed: {never_observed}.",
             )
 
-    frame_candidates = _estimate_frame_candidates(
-        normalized_observations,
-        object_points_by_marker,
-        camera_matrix,
-        dist_coeffs,
-    )
+    with _timed_solve_stage(solve_diagnostics, "ippe_candidate_generation"):
+        frame_candidates = _estimate_frame_candidates(
+            normalized_observations,
+            object_points_by_marker,
+            camera_matrix,
+            dist_coeffs,
+        )
     if not frame_candidates:
         return CalibrationResult(
             None,
@@ -1118,15 +1172,16 @@ def calibrate_marker_layout(
     preinitialized_marker_poses: dict[int, tuple[np.ndarray, np.ndarray]] | None = None
 
     if use_legacy_assignment:
-        pair_consensus, pair_failure, dropped_pair_edges = _estimate_pair_consensus(
-            pair_hypotheses,
-            expected_ids,
-            reference_marker_id,
-            marker_sizes_m,
-            settings,
-            best_effort=best_effort,
-            restored_pair_edges=restored_pair_edges,
-        )
+        with _timed_solve_stage(solve_diagnostics, "initial_pair_consensus"):
+            pair_consensus, pair_failure, dropped_pair_edges = _estimate_pair_consensus(
+                pair_hypotheses,
+                expected_ids,
+                reference_marker_id,
+                marker_sizes_m,
+                settings,
+                best_effort=best_effort,
+                restored_pair_edges=restored_pair_edges,
+            )
     else:
         assert anchor_ids is not None
         (
@@ -1154,6 +1209,7 @@ def calibrate_marker_layout(
             stop_after_expansion=anchor_stop_after_expansion,
             best_effort=best_effort,
             restored_pair_edges=restored_pair_edges,
+            solve_diagnostics=solve_diagnostics,
         )
         dropped_edges = list(anchor_drops)
         if anchor_failure is not None or pair_consensus is None or anchor_assigned is None:
@@ -1410,6 +1466,7 @@ def calibrate_marker_layout(
             frame_candidates=frame_candidates,
             assigned_candidates=assigned_candidates,
             anchor_marker_ids=anchor_ids,
+            solve_diagnostics=solve_diagnostics,
         )
         dropped_edges.extend(pruning_drops)
         if refinement_result is not None:
@@ -1532,6 +1589,7 @@ def calibrate_marker_layout(
             settings,
             marker_sizes_m,
             best_effort=best_effort,
+            solve_diagnostics=solve_diagnostics,
         )
     )
     assignment_rejection_records = build_assignment_rejection_records(
@@ -1706,6 +1764,7 @@ def calibrate_marker_layout(
         frame_candidates=None,
         assigned_candidates=None,
         anchor_marker_ids=anchor_ids,
+        solve_diagnostics=solve_diagnostics,
     )
     dropped_edges.extend(pruning_drops)
     if refinement_result is not None:
@@ -2135,6 +2194,7 @@ def _refine_layout_with_checkpoints(
     frame_candidates: list[tuple[int, dict[int, list[_MarkerCandidate]]]] | None,
     assigned_candidates: dict[int, dict[int, _MarkerCandidate]] | None,
     anchor_marker_ids: Sequence[int] | None = None,
+    solve_diagnostics: CalibrationSolveDiagnostics | None = None,
 ) -> tuple[
     dict[int, tuple[np.ndarray, np.ndarray]],
     list[tuple[np.ndarray, np.ndarray] | None],
@@ -2170,6 +2230,8 @@ def _refine_layout_with_checkpoints(
         camera_matrix,
         dist_coeffs,
         settings,
+        solve_diagnostics=solve_diagnostics,
+        stage_name="initial_bundle_adjustment",
     )
     if ba_failure is not None:
         recovered = _maybe_recover_from_checkpoints(
@@ -2264,6 +2326,7 @@ def _refine_layout_with_checkpoints(
             marker_sizes_m,
             best_effort=best_effort,
             restored_pair_edges=restored_pair_edges,
+            solve_diagnostics=solve_diagnostics,
         )
     )
     if prune_failure is not None:
@@ -2995,6 +3058,7 @@ def _assign_ippe_candidates(
     *,
     search_marker_ids: frozenset[int] | None = None,
     best_effort: bool = False,
+    solve_diagnostics: CalibrationSolveDiagnostics | None = None,
 ) -> tuple[
     dict[int, dict[int, _MarkerCandidate]],
     tuple[int, ...],
@@ -3006,24 +3070,26 @@ def _assign_ippe_candidates(
     rejections: list[FrameAssignmentRejection] = []
     fallback_assignments: list[_FrameFallbackAssignment] = []
     for frame_index, candidates in frame_candidates:
-        result = resolve_frame_ippe_assignment(
-            candidates,
-            pair_consensus,
-            settings,
-            marker_sizes_m,
-            search_marker_ids=search_marker_ids,
-        )
-        if result.assignment is not None:
-            assigned[frame_index] = result.assignment
-            continue
-        if best_effort:
-            fallback = resolve_frame_ippe_fallback_assignment(
+        with _timed_solve_stage(solve_diagnostics, "strict_assignment"):
+            result = resolve_frame_ippe_assignment(
                 candidates,
                 pair_consensus,
                 settings,
                 marker_sizes_m,
                 search_marker_ids=search_marker_ids,
             )
+        if result.assignment is not None:
+            assigned[frame_index] = result.assignment
+            continue
+        if best_effort:
+            with _timed_solve_stage(solve_diagnostics, "fallback_assignment"):
+                fallback = resolve_frame_ippe_fallback_assignment(
+                    candidates,
+                    pair_consensus,
+                    settings,
+                    marker_sizes_m,
+                    search_marker_ids=search_marker_ids,
+                )
             if fallback.assignment is not None:
                 assigned[frame_index] = fallback.assignment
                 fallback_assignments.append(
@@ -4070,6 +4136,7 @@ def _assign_and_initialize_anchor_core(
     stop_after_expansion: bool = False,
     best_effort: bool = False,
     restored_pair_edges: list[RestoredPairEdge] | None = None,
+    solve_diagnostics: CalibrationSolveDiagnostics | None = None,
 ) -> tuple[
     dict[int, dict[int, _MarkerCandidate]] | None,
     tuple[int, ...],
@@ -4084,16 +4151,17 @@ def _assign_and_initialize_anchor_core(
     anchor_set = frozenset(anchor_ids)
     dropped_edges: list[DroppedPairEdge] = []
     anchor_hypotheses = _filter_pair_hypotheses_to_markers(pair_hypotheses, anchor_set)
-    anchor_consensus, anchor_pair_failure, anchor_drops = _estimate_pair_consensus(
-        anchor_hypotheses,
-        expected_ids,
-        reference_marker_id,
-        marker_sizes_m,
-        settings,
-        connectivity_ids=anchor_ids,
-        best_effort=best_effort,
-        restored_pair_edges=restored_pair_edges,
-    )
+    with _timed_solve_stage(solve_diagnostics, "initial_pair_consensus"):
+        anchor_consensus, anchor_pair_failure, anchor_drops = _estimate_pair_consensus(
+            anchor_hypotheses,
+            expected_ids,
+            reference_marker_id,
+            marker_sizes_m,
+            settings,
+            connectivity_ids=anchor_ids,
+            best_effort=best_effort,
+            restored_pair_edges=restored_pair_edges,
+        )
     dropped_edges.extend(anchor_drops)
     bootstrap = AnchorCoreBootstrapDiagnostics(
         status="failed",
@@ -4122,6 +4190,7 @@ def _assign_and_initialize_anchor_core(
             marker_sizes_m,
             search_marker_ids=anchor_set,
             best_effort=best_effort,
+            solve_diagnostics=solve_diagnostics,
         )
     )
     accepted_frames = frozenset(assigned_candidates)
@@ -4184,6 +4253,8 @@ def _assign_and_initialize_anchor_core(
         camera_matrix,
         dist_coeffs,
         settings,
+        solve_diagnostics=solve_diagnostics,
+        stage_name="initial_bundle_adjustment",
     )
     if ba_failure is not None:
         bootstrap = AnchorCoreBootstrapDiagnostics(
@@ -4282,15 +4353,16 @@ def _assign_and_initialize_anchor_core(
     expected_set = frozenset(expected_ids)
     seed_frames = _freeze_assigned_frame_candidates(frame_candidates, assignments)
     seed_hypotheses = _collect_pair_hypotheses(seed_frames, expected_ids)
-    seed_consensus, seed_failure, seed_drops = _estimate_pair_consensus(
-        seed_hypotheses,
-        expected_ids,
-        reference_marker_id,
-        marker_sizes_m,
-        settings,
-        best_effort=best_effort,
-        restored_pair_edges=restored_pair_edges,
-    )
+    with _timed_solve_stage(solve_diagnostics, "initial_pair_consensus"):
+        seed_consensus, seed_failure, seed_drops = _estimate_pair_consensus(
+            seed_hypotheses,
+            expected_ids,
+            reference_marker_id,
+            marker_sizes_m,
+            settings,
+            best_effort=best_effort,
+            restored_pair_edges=restored_pair_edges,
+        )
     dropped_edges.extend(seed_drops)
     if seed_failure is not None:
         seed_consensus = _pair_consensus_from_assignment_hypotheses(
@@ -4308,20 +4380,22 @@ def _assign_and_initialize_anchor_core(
             marker_sizes_m,
             search_marker_ids=expected_set,
             best_effort=best_effort,
+            solve_diagnostics=solve_diagnostics,
         )
     )
 
     frozen_frames = _freeze_assigned_frame_candidates(frame_candidates, assignments)
     frozen_hypotheses = _collect_pair_hypotheses(frozen_frames, expected_ids)
-    pair_consensus, pair_failure, post_drops = _estimate_pair_consensus(
-        frozen_hypotheses,
-        expected_ids,
-        reference_marker_id,
-        marker_sizes_m,
-        settings,
-        best_effort=best_effort,
-        restored_pair_edges=restored_pair_edges,
-    )
+    with _timed_solve_stage(solve_diagnostics, "initial_pair_consensus"):
+        pair_consensus, pair_failure, post_drops = _estimate_pair_consensus(
+            frozen_hypotheses,
+            expected_ids,
+            reference_marker_id,
+            marker_sizes_m,
+            settings,
+            best_effort=best_effort,
+            restored_pair_edges=restored_pair_edges,
+        )
     dropped_edges.extend(post_drops)
     if pair_failure is not None:
         pair_consensus = _pair_consensus_from_assignment_hypotheses(
@@ -4697,6 +4771,9 @@ def _run_bundle_adjustment(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
     settings: CalibrationSettings,
+    *,
+    solve_diagnostics: CalibrationSolveDiagnostics | None = None,
+    stage_name: str | None = None,
 ) -> tuple[
     dict[int, tuple[np.ndarray, np.ndarray]],
     list[tuple[np.ndarray, np.ndarray] | None],
@@ -4763,17 +4840,33 @@ def _run_bundle_adjustment(
             values.extend(delta.tolist())
         return np.asarray(values, dtype=np.float64)
 
-    try:
-        result = least_squares(
-            residuals,
-            x0,
-            jac_sparsity=jac_sparsity,
-            loss="huber",
-            f_scale=settings.huber_delta_px,
-            max_nfev=max(settings.max_ba_iterations * len(x0), len(x0) + 1),
-        )
-    except ValueError as exc:
-        return marker_poses, frame_poses, inlier_mask, f"Bundle adjustment failed: {exc}"
+    inlier_corner_count = int(np.count_nonzero(inlier_mask))
+    active_frame_count = len(active_frames)
+    stage_timer = (
+        _timed_solve_stage(solve_diagnostics, stage_name)
+        if stage_name is not None
+        else nullcontext()
+    )
+    with stage_timer:
+        try:
+            result = least_squares(
+                residuals,
+                x0,
+                jac_sparsity=jac_sparsity,
+                loss="huber",
+                f_scale=settings.huber_delta_px,
+                max_nfev=max(settings.max_ba_iterations * len(x0), len(x0) + 1),
+            )
+        except ValueError as exc:
+            return marker_poses, frame_poses, inlier_mask, f"Bundle adjustment failed: {exc}"
+
+    _record_optimizer_run(
+        solve_diagnostics,
+        stage_name=stage_name,
+        active_frame_count=active_frame_count,
+        inlier_corner_count=inlier_corner_count,
+        result=result,
+    )
 
     if not result.success or not np.all(np.isfinite(result.x)):
         return (
@@ -4821,6 +4914,7 @@ def _prune_and_refit(
     *,
     best_effort: bool = False,
     restored_pair_edges: list[RestoredPairEdge] | None = None,
+    solve_diagnostics: CalibrationSolveDiagnostics | None = None,
 ) -> tuple[
     dict[int, tuple[np.ndarray, np.ndarray]],
     list[tuple[np.ndarray, np.ndarray] | None],
@@ -4829,38 +4923,39 @@ def _prune_and_refit(
     str | None,
     tuple[DroppedPairEdge, ...],
 ]:
-    errors = _corner_errors(
-        corner_observations,
-        inlier_mask,
-        marker_poses,
-        frame_poses,
-        object_points_by_marker,
-        camera_matrix,
-        dist_coeffs,
-    )
-    pruned = inlier_mask & (errors <= settings.corner_outlier_px)
-    pruned = _drop_frames_without_covisibility(corner_observations, pruned)
-    pruned = _mask_corner_observations_for_frames(corner_observations, accepted_frames) & pruned
-    if int(np.count_nonzero(pruned)) < 8:
-        return marker_poses, frame_poses, inlier_mask, pair_consensus, (
-            "Too few inlier corners remain after pruning."
-        ), ()
+    with _timed_solve_stage(solve_diagnostics, "pruning"):
+        errors = _corner_errors(
+            corner_observations,
+            inlier_mask,
+            marker_poses,
+            frame_poses,
+            object_points_by_marker,
+            camera_matrix,
+            dist_coeffs,
+        )
+        pruned = inlier_mask & (errors <= settings.corner_outlier_px)
+        pruned = _drop_frames_without_covisibility(corner_observations, pruned)
+        pruned = _mask_corner_observations_for_frames(corner_observations, accepted_frames) & pruned
+        if int(np.count_nonzero(pruned)) < 8:
+            return marker_poses, frame_poses, inlier_mask, pair_consensus, (
+                "Too few inlier corners remain after pruning."
+            ), ()
 
-    remaining_frames = _covisible_frames_from_inliers(corner_observations, pruned)
-    updated_consensus, support_failure, dropped_edges = _recheck_pair_support(
-        pair_consensus,
-        corner_observations,
-        pruned,
-        expected_ids,
-        reference_marker_id,
-        settings,
-        allowed_frames=remaining_frames,
-        marker_sizes_m=marker_sizes_m,
-        best_effort=best_effort,
-        restored_pair_edges=restored_pair_edges,
-    )
-    if support_failure is not None:
-        return marker_poses, frame_poses, pruned, updated_consensus, support_failure, dropped_edges
+        remaining_frames = _covisible_frames_from_inliers(corner_observations, pruned)
+        updated_consensus, support_failure, dropped_edges = _recheck_pair_support(
+            pair_consensus,
+            corner_observations,
+            pruned,
+            expected_ids,
+            reference_marker_id,
+            settings,
+            allowed_frames=remaining_frames,
+            marker_sizes_m=marker_sizes_m,
+            best_effort=best_effort,
+            restored_pair_edges=restored_pair_edges,
+        )
+        if support_failure is not None:
+            return marker_poses, frame_poses, pruned, updated_consensus, support_failure, dropped_edges
 
     marker_poses, frame_poses, pruned, ba_failure = _run_bundle_adjustment(
         corner_observations,
@@ -4873,6 +4968,8 @@ def _prune_and_refit(
         camera_matrix,
         dist_coeffs,
         settings,
+        solve_diagnostics=solve_diagnostics,
+        stage_name="post_pruning_refit",
     )
     if ba_failure is not None:
         return marker_poses, frame_poses, pruned, updated_consensus, ba_failure, dropped_edges

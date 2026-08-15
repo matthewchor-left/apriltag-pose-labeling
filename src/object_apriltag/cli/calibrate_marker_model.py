@@ -53,6 +53,7 @@ from object_apriltag.marker_layout_calibration import (
     CalibrationQualityReport,
     CalibrationResult,
     CalibrationSettings,
+    CalibrationSolveDiagnostics,
     FrameObservation,
     PairReadinessEdge,
     calibrate_marker_layout,
@@ -275,7 +276,8 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help=(
             "Headless single-pass benchmark over a video file. Requires "
-            "--diagnostics-output; auto-captures at --sample-rate-hz and solves once at EOF."
+            "--diagnostics-output; decodes every frame but runs AprilTag detection only "
+            "on scheduled video-time samples at --sample-rate-hz, then solves once at EOF."
         ),
     )
     return parser.parse_args()
@@ -808,6 +810,7 @@ def solve_calibration_from_observations(
     anchor_stop_after_expansion: bool,
     best_effort: bool,
     partial_output: bool,
+    solve_diagnostics: CalibrationSolveDiagnostics | None = None,
 ) -> CalibrationResult:
     return calibrate_marker_layout(
         observations,
@@ -822,6 +825,7 @@ def solve_calibration_from_observations(
         marker_sizes_m=marker_sizes_m,
         best_effort=best_effort,
         partial_output=partial_output,
+        solve_diagnostics=solve_diagnostics,
     )
 
 
@@ -891,6 +895,8 @@ def _build_benchmark_payload(
     reported_frame_count: int,
     image_size: tuple[int, int],
     decoded_frames: int,
+    detector_invocations: int,
+    frames_skipped_before_detection: int,
     frames_with_expected_markers: int,
     covisible_frames: int,
     sampled_observations: int,
@@ -901,16 +907,29 @@ def _build_benchmark_payload(
     ingest_total_ns: int,
     calibration_solve_ns: int,
     total_through_solve_ns: int,
+    solve_diagnostics: CalibrationSolveDiagnostics | None = None,
 ) -> dict[str, Any]:
     ingest_seconds = _timing_seconds_from_ns(ingest_total_ns)
     detection_seconds = _timing_seconds_from_ns(detection_ns)
     pipeline_fps = decoded_frames / ingest_seconds if ingest_seconds > 0.0 else 0.0
-    detection_fps = decoded_frames / detection_seconds if detection_seconds > 0.0 else 0.0
+    detection_fps = (
+        detector_invocations / detection_seconds if detection_seconds > 0.0 else 0.0
+    )
     if not math.isfinite(pipeline_fps):
         pipeline_fps = 0.0
     if not math.isfinite(detection_fps):
         detection_fps = 0.0
-    return {
+    timing_seconds: dict[str, Any] = {
+        "open_source": _timing_seconds_from_ns(open_source_ns),
+        "decode": _timing_seconds_from_ns(decode_ns),
+        "detection": _timing_seconds_from_ns(detection_ns),
+        "ingest_total": ingest_seconds,
+        "calibration_solve": _timing_seconds_from_ns(calibration_solve_ns),
+        "total_through_solve": _timing_seconds_from_ns(total_through_solve_ns),
+    }
+    if solve_diagnostics is not None:
+        timing_seconds["solve_stages"] = dict(solve_diagnostics.solve_stages_seconds)
+    payload: dict[str, Any] = {
         "source": {
             "path": str(source_path),
             "size_bytes": source_path.stat().st_size,
@@ -920,25 +939,23 @@ def _build_benchmark_payload(
         },
         "counts": {
             "decoded_frames": decoded_frames,
+            "detector_invocations": detector_invocations,
+            "frames_skipped_before_detection": frames_skipped_before_detection,
             "frames_with_expected_markers": frames_with_expected_markers,
             "covisible_frames": covisible_frames,
             "sampled_observations": sampled_observations,
             "detected_markers": detected_markers,
         },
-        "timing_seconds": {
-            "open_source": _timing_seconds_from_ns(open_source_ns),
-            "decode": _timing_seconds_from_ns(decode_ns),
-            "detection": _timing_seconds_from_ns(detection_ns),
-            "ingest_total": ingest_seconds,
-            "calibration_solve": _timing_seconds_from_ns(calibration_solve_ns),
-            "total_through_solve": _timing_seconds_from_ns(total_through_solve_ns),
-        },
+        "timing_seconds": timing_seconds,
         "throughput": {
             "pipeline_frames_per_second": pipeline_fps,
-            "detection_frames_per_second": detection_fps,
+            "detector_invocations_per_second": detection_fps,
         },
         "environment": _benchmark_environment(),
     }
+    if solve_diagnostics is not None:
+        payload["optimizer_runs"] = list(solve_diagnostics.optimizer_runs)
+    return payload
 
 
 def run_benchmark(args: argparse.Namespace) -> bool:
@@ -992,9 +1009,10 @@ def run_benchmark(args: argparse.Namespace) -> bool:
         observations: list[FrameObservation] = []
         sample_interval = 1.0 / args.sample_rate_hz
         next_sample_time = 0.0
-        pending_sample = False
         frame_index = 0
         decoded_frames = 0
+        detector_invocations = 0
+        frames_skipped_before_detection = 0
         frames_with_expected_markers = 0
         covisible_frames = 0
         detected_markers = 0
@@ -1011,29 +1029,29 @@ def run_benchmark(args: argparse.Namespace) -> bool:
             decoded_frames += 1
             require_frame_size(frame.shape[1], frame.shape[0], width, height, args.calibration)
 
-            detection_start_ns = time.perf_counter_ns()
-            visible = detect_expected_markers(detector, frame, expected_id_set)
-            detection_ns += time.perf_counter_ns() - detection_start_ns
-
-            detected_markers += len(visible)
-            if visible:
-                frames_with_expected_markers += 1
-
             video_time = frame_index / reported_fps
-            if len(visible) >= 2:
-                covisible_frames += 1
-                if pending_sample or video_time >= next_sample_time:
+            if video_time >= next_sample_time:
+                detection_start_ns = time.perf_counter_ns()
+                visible = detect_expected_markers(detector, frame, expected_id_set)
+                detection_ns += time.perf_counter_ns() - detection_start_ns
+                detector_invocations += 1
+
+                detected_markers += len(visible)
+                if visible:
+                    frames_with_expected_markers += 1
+                if len(visible) >= 2:
+                    covisible_frames += 1
                     append_capture_observation(observations, visible)
-                    next_sample_time = video_time + sample_interval
-                    pending_sample = False
-            elif video_time >= next_sample_time:
-                pending_sample = True
+                next_sample_time = video_time + sample_interval
+            else:
+                frames_skipped_before_detection += 1
 
             frame_index += 1
 
         ingest_total_ns = time.perf_counter_ns() - total_start_ns
 
         solve_start_ns = time.perf_counter_ns()
+        solve_diagnostics = CalibrationSolveDiagnostics()
         result = solve_calibration_from_observations(
             observations,
             args,
@@ -1046,6 +1064,7 @@ def run_benchmark(args: argparse.Namespace) -> bool:
             anchor_stop_after_expansion=anchor_stop_after_expansion,
             best_effort=best_effort,
             partial_output=partial_output,
+            solve_diagnostics=solve_diagnostics,
         )
         calibration_solve_ns = time.perf_counter_ns() - solve_start_ns
         total_through_solve_ns = time.perf_counter_ns() - total_start_ns
@@ -1056,6 +1075,8 @@ def run_benchmark(args: argparse.Namespace) -> bool:
             reported_frame_count=reported_frame_count,
             image_size=(width, height),
             decoded_frames=decoded_frames,
+            detector_invocations=detector_invocations,
+            frames_skipped_before_detection=frames_skipped_before_detection,
             frames_with_expected_markers=frames_with_expected_markers,
             covisible_frames=covisible_frames,
             sampled_observations=len(observations),
@@ -1066,6 +1087,7 @@ def run_benchmark(args: argparse.Namespace) -> bool:
             ingest_total_ns=ingest_total_ns,
             calibration_solve_ns=calibration_solve_ns,
             total_through_solve_ns=total_through_solve_ns,
+            solve_diagnostics=solve_diagnostics,
         )
         return apply_calibration_result(args, result, benchmark=benchmark_payload)
     finally:

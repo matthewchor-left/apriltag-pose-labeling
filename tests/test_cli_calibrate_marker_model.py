@@ -509,8 +509,9 @@ class CalibrateMarkerModelBenchmarkTests(unittest.TestCase):
         visible_by_frame: list[dict[int, np.ndarray]],
         calibrate_result: object | None = None,
         reported_fps: float = 10.0,
+        sample_rate_hz: float = 2.0,
         diagnostics_output: Path | None = None,
-    ) -> tuple[mock.Mock, mock.Mock, list, mock.Mock, mock.Mock, mock.Mock, mock.Mock, bool, mock.Mock]:
+    ) -> tuple[mock.Mock, mock.Mock, list, mock.Mock, mock.Mock, mock.Mock, mock.Mock, bool, mock.Mock, mock.MagicMock]:
         from object_apriltag.cli.calibrate_marker_model import run_benchmark
 
         width, height = 640, 480
@@ -536,7 +537,7 @@ class CalibrateMarkerModelBenchmarkTests(unittest.TestCase):
                 output=output,
                 force=True,
                 auto=False,
-                sample_rate_hz=2.0,
+                sample_rate_hz=sample_rate_hz,
                 min_pair_inliers=20,
                 reprojection_rms_gate_px=2.0,
                 pair_translation_rms_gate_ratio=0.10,
@@ -552,13 +553,17 @@ class CalibrateMarkerModelBenchmarkTests(unittest.TestCase):
             )
 
             frame = np.zeros((height, width, 3), dtype=np.uint8)
-            reads: list[tuple[bool, np.ndarray | None]] = [
-                (True, frame.copy()) for _ in visible_by_frame
-            ]
-            reads.append((False, None))
+            decoded_frame_index = {"value": -1}
+
+            def read_frame_from_fixture() -> tuple[bool, np.ndarray | None]:
+                decoded_frame_index["value"] += 1
+                if decoded_frame_index["value"] < len(visible_by_frame):
+                    return True, frame.copy()
+                return False, None
+
             capture = mock.MagicMock()
             capture.isOpened.return_value = True
-            capture.read.side_effect = reads
+            capture.read.side_effect = read_frame_from_fixture
 
             def capture_get(prop: float) -> float:
                 if prop == cv2.CAP_PROP_FPS:
@@ -572,8 +577,7 @@ class CalibrateMarkerModelBenchmarkTests(unittest.TestCase):
             detector = mock.MagicMock()
 
             def detect_markers(_gray):
-                frame_index = detector.detectMarkers.call_count - 1
-                visible = visible_by_frame[frame_index]
+                visible = visible_by_frame[decoded_frame_index["value"]]
                 if not visible:
                     return [], None, None
                 corners = [corner.reshape(1, 4, 2) for corner in visible.values()]
@@ -631,13 +635,23 @@ class CalibrateMarkerModelBenchmarkTests(unittest.TestCase):
                 destroy_mock,
                 saved,
                 save_diagnostics_mock,
+                detector,
             )
 
     def test_benchmark_never_uses_gui_or_readiness_worker(self) -> None:
         visible = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 4
-        *_, worker_cls, imshow_mock, wait_key_mock, destroy_mock, _, __ = self._run_benchmark(
-            visible_by_frame=visible,
-        )
+        (
+            _,
+            _,
+            _,
+            worker_cls,
+            imshow_mock,
+            wait_key_mock,
+            destroy_mock,
+            _,
+            _,
+            _,
+        ) = self._run_benchmark(visible_by_frame=visible)
         worker_cls.assert_not_called()
         imshow_mock.assert_not_called()
         wait_key_mock.assert_not_called()
@@ -708,7 +722,9 @@ class CalibrateMarkerModelBenchmarkTests(unittest.TestCase):
 
     def test_benchmark_solves_exactly_once_at_eof(self) -> None:
         visible = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 6
-        calibrate_mock, save_mock, _, *_, saved, _ = self._run_benchmark(visible_by_frame=visible)
+        calibrate_mock, save_mock, _, _, _, _, _, saved, _, _ = self._run_benchmark(
+            visible_by_frame=visible,
+        )
         calibrate_mock.assert_called_once()
         save_mock.assert_called_once()
         self.assertTrue(saved)
@@ -727,10 +743,12 @@ class CalibrateMarkerModelBenchmarkTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             diagnostics_path = Path(tmp_dir) / "diagnostics.json"
-            calibrate_mock, save_mock, observations, *_, save_diagnostics_mock = self._run_benchmark(
-                visible_by_frame=visible,
-                calibrate_result=refused,
-                diagnostics_output=diagnostics_path,
+            calibrate_mock, save_mock, observations, _, _, _, _, _, save_diagnostics_mock, _ = (
+                self._run_benchmark(
+                    visible_by_frame=visible,
+                    calibrate_result=refused,
+                    diagnostics_output=diagnostics_path,
+                )
             )
             self.assertEqual(len(observations), 2)
             calibrate_mock.assert_called_once()
@@ -743,6 +761,140 @@ class CalibrateMarkerModelBenchmarkTests(unittest.TestCase):
             self.assertIn("throughput", benchmark_payload)
             self.assertIn("environment", benchmark_payload)
             self.assertEqual(benchmark_payload["counts"]["sampled_observations"], 2)
+
+    def test_benchmark_passes_solve_diagnostics_collector(self) -> None:
+        visible = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 6
+        calibrate_mock, *_ = self._run_benchmark(visible_by_frame=visible)
+        self.assertIn("solve_diagnostics", calibrate_mock.call_args.kwargs)
+        diagnostics = calibrate_mock.call_args.kwargs["solve_diagnostics"]
+        self.assertIsNotNone(diagnostics)
+        self.assertEqual(diagnostics.solve_stages_seconds, {})
+        self.assertEqual(diagnostics.optimizer_runs, [])
+
+    def test_build_benchmark_payload_includes_solve_diagnostics(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import _build_benchmark_payload
+        from object_apriltag.marker_layout_calibration import CalibrationSolveDiagnostics
+
+        diagnostics = CalibrationSolveDiagnostics(
+            solve_stages_seconds={
+                "ippe_candidate_generation": 0.5,
+                "initial_bundle_adjustment": 1.25,
+            },
+            optimizer_runs=[
+                {
+                    "stage": "initial_bundle_adjustment",
+                    "nfev": 42,
+                    "njev": None,
+                    "status": 1,
+                    "cost": 0.12,
+                    "active_frame_count": 20,
+                    "inlier_corner_count": 160,
+                }
+            ],
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "clip.mov"
+            source.write_bytes(b"\x00" * 64)
+            payload = _build_benchmark_payload(
+                source_path=source,
+                reported_fps=30.0,
+                reported_frame_count=100,
+                image_size=(640, 480),
+                decoded_frames=100,
+                detector_invocations=10,
+                frames_skipped_before_detection=90,
+                frames_with_expected_markers=9,
+                covisible_frames=8,
+                sampled_observations=10,
+                detected_markers=20,
+                open_source_ns=1_000_000,
+                decode_ns=2_000_000,
+                detection_ns=3_000_000,
+                ingest_total_ns=6_000_000,
+                calibration_solve_ns=7_000_000,
+                total_through_solve_ns=13_000_000,
+                solve_diagnostics=diagnostics,
+            )
+        self.assertEqual(
+            payload["timing_seconds"]["solve_stages"],
+            diagnostics.solve_stages_seconds,
+        )
+        self.assertEqual(payload["optimizer_runs"], diagnostics.optimizer_runs)
+        self.assertNotIn("solve_stages", payload)
+        self.assertEqual(
+            set(payload["counts"]),
+            {
+                "decoded_frames",
+                "detector_invocations",
+                "frames_skipped_before_detection",
+                "frames_with_expected_markers",
+                "covisible_frames",
+                "sampled_observations",
+                "detected_markers",
+            },
+        )
+        self.assertIn("detector_invocations_per_second", payload["throughput"])
+
+    def test_benchmark_60fps_10hz_invokes_detection_on_scheduled_frames(self) -> None:
+        visible = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 60
+        _, _, _, _, _, _, _, _, save_diagnostics_mock, detector = self._run_benchmark(
+            visible_by_frame=visible,
+            reported_fps=60.0,
+            sample_rate_hz=10.0,
+        )
+        self.assertEqual(detector.detectMarkers.call_count, 10)
+        counts = save_diagnostics_mock.call_args.kwargs["benchmark"]["counts"]
+        self.assertEqual(counts["detector_invocations"], 10)
+        self.assertEqual(counts["frames_skipped_before_detection"], 50)
+
+    def test_benchmark_missed_sample_retries_at_sample_interval_not_every_frame(self) -> None:
+        visible_by_frame = (
+            [{0: _marker_corners(0)}]
+            + [{0: _marker_corners(0), 1: _marker_corners(1)}] * 17
+        )
+        _, _, observations, _, _, _, _, _, save_diagnostics_mock, detector = self._run_benchmark(
+            visible_by_frame=visible_by_frame,
+            reported_fps=60.0,
+            sample_rate_hz=10.0,
+        )
+        self.assertEqual(detector.detectMarkers.call_count, 3)
+        self.assertEqual(len(observations), 2)
+        counts = save_diagnostics_mock.call_args.kwargs["benchmark"]["counts"]
+        self.assertEqual(counts["frames_skipped_before_detection"], 15)
+
+    def test_benchmark_sampling_is_deterministic_across_runs(self) -> None:
+        visible_by_frame = (
+            [{0: _marker_corners(0)}] * 5
+            + [{0: _marker_corners(0), 1: _marker_corners(1)}] * 11
+        )
+
+        def run_once() -> tuple[int, int, list]:
+            _, _, observations, _, _, _, _, _, save_diagnostics_mock, detector = self._run_benchmark(
+                visible_by_frame=visible_by_frame,
+                reported_fps=10.0,
+                sample_rate_hz=2.0,
+            )
+            counts = save_diagnostics_mock.call_args.kwargs["benchmark"]["counts"]
+            return (
+                detector.detectMarkers.call_count,
+                len(observations),
+                [sorted(observation.markers) for observation in observations],
+            )
+
+        self.assertEqual(run_once(), run_once())
+
+    def test_benchmark_counts_reconcile_decoded_frames(self) -> None:
+        visible = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 12
+        _, _, _, _, _, _, _, _, save_diagnostics_mock, _ = self._run_benchmark(
+            visible_by_frame=visible,
+            reported_fps=10.0,
+            sample_rate_hz=2.0,
+        )
+        counts = save_diagnostics_mock.call_args.kwargs["benchmark"]["counts"]
+        self.assertEqual(
+            counts["detector_invocations"] + counts["frames_skipped_before_detection"],
+            counts["decoded_frames"],
+        )
 
 
 def _write_object_model(path: Path, *, keypoint_sources: dict | None) -> None:
