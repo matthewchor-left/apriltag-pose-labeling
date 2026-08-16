@@ -99,3 +99,23 @@ _Avoid_: marker graph, connectivity graph
 **Anchor Core**:
 A small explicit subset of markers (including the reference marker) used to bootstrap IPPE assignment with `2^k` exhaustive search, then expand the remaining markers hierarchically from conditioned pose hypotheses before final corner bundle adjustment.
 _Avoid_: anchor set, bootstrap markers
+
+**CAD Landmark**:
+A named meshless node in a CAD GLB file whose world-space position is extracted for geometry comparison.
+_Avoid_: CAD node, mesh landmark
+
+**Marker-Derived Landmark**:
+A 3D point computed from `keypoint_sources` and a candidate marker layout at evaluation time, never taken from persisted `object_model.keypoints`.
+_Avoid_: persisted keypoint, stored landmark
+
+**CAD Disagreement**:
+Rigid-fit and leave-one-marker-out disagreement between CAD landmarks and marker-derived landmarks in millimeters. Combines nominal CAD geometry, physical installation, export/padding choices, and vision-calibration effects; it is not calibration error because physical installation is unsurveyed.
+_Avoid_: calibration error, CAD accuracy
+
+**Detection Consistency**:
+Held-out moving-video metric that solves pose from visible markers excluding the held-out marker, projects its footprint, and scores corner error in pixels. Uses frozen detections shared across candidates.
+_Avoid_: reprojection error, in-sample residual
+
+**Evaluation Candidate**:
+One marker-model layout under test, declared in an evaluation manifest with `name`, `marker_model`, `capture_session`, `solver_variant`, and calibration-source provenance.
+_Avoid_: calibration run, layout variant

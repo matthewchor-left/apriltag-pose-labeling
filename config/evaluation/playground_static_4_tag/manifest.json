@@ -1,0 +1,27 @@
+{
+  "manifest_version": 1,
+  "cad_model": "config/Model/CAD/nexplayground_sim.glb",
+  "object_model": "config/Model/playground_static_4_tag/object_model.json",
+  "intrinsics": "config/Camera/logi_hd_1080p/intrinsic.json",
+  "detector": {
+    "dictionary": "36h11",
+    "sensitivity": "relaxed"
+  },
+  "held_out_videos": [
+    {
+      "path": "data/playground_static_4_tag_test.mov",
+      "held_out": true
+    }
+  ],
+  "candidates": [
+    {
+      "name": "playground_static_4_tag_current",
+      "marker_model": "config/Model/playground_static_4_tag/marker_model.json",
+      "capture_session": "calibration_02",
+      "solver_variant": "sharpest_5hz",
+      "calibration_source": {
+        "video": "data/playground_static_4_tag_calibration_02.mov"
+      }
+    }
+  ]
+}

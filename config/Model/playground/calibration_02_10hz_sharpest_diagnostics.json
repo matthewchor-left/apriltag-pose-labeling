@@ -1,0 +1,3867 @@
+{
+  "version": 8,
+  "benchmark": {
+    "frame_selection": "sharpest",
+    "source": {
+      "path": "data/playground_calibration_02.mov",
+      "size_bytes": 11264195,
+      "reported_fps": 60.0,
+      "reported_frame_count": 1657,
+      "image_size": [
+        1920,
+        1080
+      ]
+    },
+    "counts": {
+      "decoded_frames": 1656,
+      "detector_invocations": 276,
+      "frames_skipped_before_detection": 1380,
+      "frames_with_expected_markers": 264,
+      "covisible_frames": 247,
+      "sampled_observations": 247,
+      "detected_markers": 835
+    },
+    "timing_seconds": {
+      "open_source": 0.019434625,
+      "decode": 0.504792114,
+      "detection": 15.541729795,
+      "ingest_total": 16.63329525,
+      "calibration_solve": 7.572704666,
+      "total_through_solve": 24.206000958,
+      "solve_stages": {
+        "ippe_candidate_generation": 0.025299500091932714,
+        "initial_pair_consensus": 0.48681854095775634,
+        "strict_assignment": 0.054108622833155096,
+        "fallback_assignment": 0.05298030038829893,
+        "initial_bundle_adjustment": 6.8283089169999585,
+        "pruning": 0.016127875074744225
+      },
+      "sharpness_scoring": 0.492347312
+    },
+    "throughput": {
+      "pipeline_frames_per_second": 99.55934618547698,
+      "detector_invocations_per_second": 17.75864100331954
+    },
+    "environment": {
+      "python": "3.14.6",
+      "opencv": "5.0.0",
+      "numpy": "2.5.0",
+      "scipy": "1.18.0",
+      "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O"
+    },
+    "optimizer_runs": [
+      {
+        "stage": "initial_bundle_adjustment",
+        "active_frame_count": 230,
+        "inlier_corner_count": 3124,
+        "nfev": 523,
+        "njev": 523,
+        "status": 3,
+        "cost": 22508.236883103502,
+        "timing_seconds": {
+          "setup": 0.05519499990623444,
+          "least_squares": 6.828307707910426,
+          "post": 0.005532707902602851,
+          "residual_callback_total": 4.7401339688804,
+          "residual_unpack": 1.213497202261351,
+          "projection_loop": 3.512181660044007,
+          "residual_callback_other": 0.01445510657504201,
+          "least_squares_overhead": 2.088173739030026
+        },
+        "counts": {
+          "parameter_count": 1446,
+          "residual_count": 6248,
+          "residual_callback_invocations": 8368,
+          "projection_calls": 26141632,
+          "opencv_projectpoints_invocations": 8368,
+          "batched_corner_count": 26141632
+        }
+      }
+    ]
+  },
+  "succeeded": true,
+  "failure_reason": null,
+  "calibration_policy": "best_effort",
+  "outcome": "provisional",
+  "partial_output": false,
+  "failed_quality_gates": [
+    "Global reprojection RMS 22.170 px exceeds 2.000 px gate.",
+    "Marker 0 reprojection RMS 23.583 px exceeds 2.000 px gate.",
+    "Marker 2 reprojection RMS 4.591 px exceeds 2.000 px gate.",
+    "Marker 3 reprojection RMS 11.027 px exceeds 2.000 px gate.",
+    "Marker 4 reprojection RMS 56.299 px exceeds 2.000 px gate.",
+    "Marker 19 reprojection RMS 38.810 px exceeds 2.000 px gate.",
+    "Marker 22 reprojection RMS 2.774 px exceeds 2.000 px gate.",
+    "Marker 23 reprojection RMS 39.106 px exceeds 2.000 px gate.",
+    "Marker 24 reprojection RMS 10.536 px exceeds 2.000 px gate.",
+    "Marker 25 reprojection RMS 3.904 px exceeds 2.000 px gate.",
+    "Marker 26 reprojection RMS 4.147 px exceeds 2.000 px gate.",
+    "Marker 28 reprojection RMS 2.432 px exceeds 2.000 px gate.",
+    "Marker 29 reprojection RMS 3.969 px exceeds 2.000 px gate."
+  ],
+  "selected_checkpoint_stage": "initial_bundle_adjustment",
+  "failed_refinement_stage": "post_pruning_refit",
+  "omitted_markers": [],
+  "quality": {
+    "reprojection_rms_px": 22.169987543715653,
+    "per_marker_reprojection_rms_px": {
+      "0": 23.58295749598702,
+      "2": 4.591170825095872,
+      "3": 11.026586609914975,
+      "4": 56.299135144073446,
+      "19": 38.81023815752451,
+      "22": 2.77364966964661,
+      "23": 39.10634252990054,
+      "24": 10.536445328515757,
+      "25": 3.904004590225449,
+      "26": 4.147307707078103,
+      "28": 2.4324412353149807,
+      "29": 3.9694888072596632
+    },
+    "edges": [
+      {
+        "marker_a": 0,
+        "marker_b": 2,
+        "inlier_count": 30,
+        "translation_rms_m": 0.0033391687522970155,
+        "rotation_rms_deg": 1.711462533211918
+      },
+      {
+        "marker_a": 0,
+        "marker_b": 4,
+        "inlier_count": 18,
+        "translation_rms_m": 0.0024961316225532455,
+        "rotation_rms_deg": 1.2837565925099133
+      },
+      {
+        "marker_a": 0,
+        "marker_b": 19,
+        "inlier_count": 35,
+        "translation_rms_m": 0.0011691593120187651,
+        "rotation_rms_deg": 1.2851948654489094
+      },
+      {
+        "marker_a": 0,
+        "marker_b": 24,
+        "inlier_count": 22,
+        "translation_rms_m": 0.001157602974914711,
+        "rotation_rms_deg": 2.1240901954086002
+      },
+      {
+        "marker_a": 0,
+        "marker_b": 25,
+        "inlier_count": 25,
+        "translation_rms_m": 0.001347282033789529,
+        "rotation_rms_deg": 1.6869376148497002
+      },
+      {
+        "marker_a": 2,
+        "marker_b": 28,
+        "inlier_count": 16,
+        "translation_rms_m": 0.0008497724381324184,
+        "rotation_rms_deg": 1.218974747488217
+      },
+      {
+        "marker_a": 3,
+        "marker_b": 4,
+        "inlier_count": 8,
+        "translation_rms_m": 0.0025541098936668265,
+        "rotation_rms_deg": 0.592524925877186
+      },
+      {
+        "marker_a": 19,
+        "marker_b": 24,
+        "inlier_count": 39,
+        "translation_rms_m": 0.001151453184860781,
+        "rotation_rms_deg": 1.0321433421772837
+      },
+      {
+        "marker_a": 19,
+        "marker_b": 25,
+        "inlier_count": 34,
+        "translation_rms_m": 0.001174287616526792,
+        "rotation_rms_deg": 1.5874665131000236
+      },
+      {
+        "marker_a": 22,
+        "marker_b": 25,
+        "inlier_count": 32,
+        "translation_rms_m": 0.0010954699305368177,
+        "rotation_rms_deg": 1.7632763682967643
+      },
+      {
+        "marker_a": 23,
+        "marker_b": 29,
+        "inlier_count": 30,
+        "translation_rms_m": 0.001412054326376602,
+        "rotation_rms_deg": 1.8943448832540504
+      },
+      {
+        "marker_a": 24,
+        "marker_b": 25,
+        "inlier_count": 22,
+        "translation_rms_m": 0.0013419967168131928,
+        "rotation_rms_deg": 1.7513321240352766
+      },
+      {
+        "marker_a": 26,
+        "marker_b": 28,
+        "inlier_count": 21,
+        "translation_rms_m": 0.0012929942991205907,
+        "rotation_rms_deg": 1.620674514523014
+      },
+      {
+        "marker_a": 26,
+        "marker_b": 29,
+        "inlier_count": 11,
+        "translation_rms_m": 0.0010079996399459169,
+        "rotation_rms_deg": 1.2441102706588498
+      }
+    ],
+    "pair_translation_rms_max_m": 0.0033391687522970155,
+    "pair_rotation_rms_max_deg": 2.1240901954086002,
+    "frame_count": 230,
+    "observation_count": 3272,
+    "inlier_corner_count": 3124,
+    "input_frame_count": 247,
+    "rejected_frame_count": 17,
+    "accepted_frame_count": 230,
+    "connected_marker_ids": [
+      0,
+      2,
+      3,
+      4,
+      19,
+      22,
+      23,
+      24,
+      25,
+      26,
+      28,
+      29
+    ],
+    "missing_expected_ids": [],
+    "unused_expected_ids": []
+  },
+  "assignment_rejections": {
+    "total_rejected": 17,
+    "by_reason": [
+      [
+        "no_constrained_pair",
+        17
+      ]
+    ],
+    "by_pair": [],
+    "top_causes": [
+      {
+        "reason": "no_constrained_pair",
+        "marker_pair": null,
+        "count": 17
+      }
+    ],
+    "by_cause": [
+      {
+        "reason": "no_constrained_pair",
+        "marker_pair": null,
+        "count": 17,
+        "sample_frame_ids": [
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          198,
+          213
+        ],
+        "translation_error_m": null,
+        "rotation_error_deg": null,
+        "translation_gate_m": null,
+        "rotation_gate_deg": null,
+        "translation_error_ratio": null,
+        "rotation_error_ratio": null
+      }
+    ]
+  },
+  "assignment_rejection_records": [
+    {
+      "frame_index": 169,
+      "frame_id": 169,
+      "visible_marker_ids": [
+        4,
+        29
+      ],
+      "reason": "no_constrained_pair",
+      "marker_pair": null,
+      "translation_error_m": null,
+      "rotation_error_deg": null,
+      "translation_gate_m": null,
+      "rotation_gate_deg": null
+    },
+    {
+      "frame_index": 170,
+      "frame_id": 170,
+      "visible_marker_ids": [
+        4,
+        29
+      ],
+      "reason": "no_constrained_pair",
+      "marker_pair": null,
+      "translation_error_m": null,
+      "rotation_error_deg": null,
+      "translation_gate_m": null,
+      "rotation_gate_deg": null
+    },
+    {
+      "frame_index": 171,
+      "frame_id": 171,
+      "visible_marker_ids": [
+        4,
+        29
+      ],
+      "reason": "no_constrained_pair",
+      "marker_pair": null,
+      "translation_error_m": null,
+      "rotation_error_deg": null,
+      "translation_gate_m": null,
+      "rotation_gate_deg": null
+    },
+    {
+      "frame_index": 172,
+      "frame_id": 172,
+      "visible_marker_ids": [
+        4,
+        19,
+        29
+      ],
+      "reason": "no_constrained_pair",
+      "marker_pair": null,
+      "translation_error_m": null,
+      "rotation_error_deg": null,
+      "translation_gate_m": null,
+      "rotation_gate_deg": null
+    },
+    {
+      "frame_index": 173,
+      "frame_id": 173,
+      "visible_marker_ids": [
+        4,
+        19,
+        29
+      ],
+      "reason": "no_constrained_pair",
+      "marker_pair": null,
+      "translation_error_m": null,
+      "rotation_error_deg": null,
+      "translation_gate_m": null,
+      "rotation_gate_deg": null
+    },
+    {
+      "frame_index": 174,
+      "frame_id": 174,
+      "visible_marker_ids": [
+        4,
+        19
+      ],
+      "reason": "no_constrained_pair",
+      "marker_pair": null,
+      "translation_error_m": null,
+      "rotation_error_deg": null,
+      "translation_gate_m": null,
+      "rotation_gate_deg": null
+    },
+    {
+      "frame_index": 175,
+      "frame_id": 175,
+      "visible_marker_ids": [
+        4,
+        19
+      ],
+      "reason": "no_constrained_pair",
+      "marker_pair": null,
+      "translation_error_m": null,
+      "rotation_error_deg": null,
+      "translation_gate_m": null,
+      "rotation_gate_deg": null
+    },
+    {
+      "frame_index": 176,
+      "frame_id": 176,
+      "visible_marker_ids": [
+        4,
+        23,
+        24
+      ],
+      "reason": "no_constrained_pair",
+      "marker_pair": null,
+      "translation_error_m": null,
+      "rotation_error_deg": null,
+      "translation_gate_m": null,
+      "rotation_gate_deg": null
+    },
+    {
+      "frame_index": 198,
+      "frame_id": 198,
+      "visible_marker_ids": [
+        0,
+        22
+      ],
+      "reason": "no_constrained_pair",
+      "marker_pair": null,
+      "translation_error_m": null,
+      "rotation_error_deg": null,
+      "translation_gate_m": null,
+      "rotation_gate_deg": null
+    },
+    {
+      "frame_index": 213,
+      "frame_id": 213,
+      "visible_marker_ids": [
+        25,
+        26
+      ],
+      "reason": "no_constrained_pair",
+      "marker_pair": null,
+      "translation_error_m": null,
+      "rotation_error_deg": null,
+      "translation_gate_m": null,
+      "rotation_gate_deg": null
+    },
+    {
+      "frame_index": 214,
+      "frame_id": 214,
+      "visible_marker_ids": [
+        23,
+        26
+      ],
+      "reason": "no_constrained_pair",
+      "marker_pair": null,
+      "translation_error_m": null,
+      "rotation_error_deg": null,
+      "translation_gate_m": null,
+      "rotation_gate_deg": null
+    },
+    {
+      "frame_index": 215,
+      "frame_id": 215,
+      "visible_marker_ids": [
+        4,
+        23
+      ],
+      "reason": "no_constrained_pair",
+      "marker_pair": null,
+      "translation_error_m": null,
+      "rotation_error_deg": null,
+      "translation_gate_m": null,
+      "rotation_gate_deg": null
+    },
+    {
+      "frame_index": 216,
+      "frame_id": 216,
+      "visible_marker_ids": [
+        4,
+        23
+      ],
+      "reason": "no_constrained_pair",
+      "marker_pair": null,
+      "translation_error_m": null,
+      "rotation_error_deg": null,
+      "translation_gate_m": null,
+      "rotation_gate_deg": null
+    },
+    {
+      "frame_index": 217,
+      "frame_id": 217,
+      "visible_marker_ids": [
+        4,
+        23
+      ],
+      "reason": "no_constrained_pair",
+      "marker_pair": null,
+      "translation_error_m": null,
+      "rotation_error_deg": null,
+      "translation_gate_m": null,
+      "rotation_gate_deg": null
+    },
+    {
+      "frame_index": 218,
+      "frame_id": 218,
+      "visible_marker_ids": [
+        4,
+        23
+      ],
+      "reason": "no_constrained_pair",
+      "marker_pair": null,
+      "translation_error_m": null,
+      "rotation_error_deg": null,
+      "translation_gate_m": null,
+      "rotation_gate_deg": null
+    },
+    {
+      "frame_index": 219,
+      "frame_id": 219,
+      "visible_marker_ids": [
+        4,
+        23
+      ],
+      "reason": "no_constrained_pair",
+      "marker_pair": null,
+      "translation_error_m": null,
+      "rotation_error_deg": null,
+      "translation_gate_m": null,
+      "rotation_gate_deg": null
+    },
+    {
+      "frame_index": 220,
+      "frame_id": 220,
+      "visible_marker_ids": [
+        4,
+        23
+      ],
+      "reason": "no_constrained_pair",
+      "marker_pair": null,
+      "translation_error_m": null,
+      "rotation_error_deg": null,
+      "translation_gate_m": null,
+      "rotation_gate_deg": null
+    }
+  ],
+  "dropped_pair_edges": [
+    {
+      "marker_a": 2,
+      "marker_b": 19,
+      "stage": "initial_consensus",
+      "reason": "insufficient_inlier_frames",
+      "observed_count": 20,
+      "supported_count": 7,
+      "required_count": 20,
+      "translation_rms_m": 0.0010762541541071713,
+      "rotation_rms_deg": 0.4060094046336612,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 2,
+      "marker_b": 24,
+      "stage": "initial_consensus",
+      "reason": "insufficient_inlier_frames",
+      "observed_count": 24,
+      "supported_count": 7,
+      "required_count": 20,
+      "translation_rms_m": 0.0009668741621043948,
+      "rotation_rms_deg": 0.9906205312398418,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 2,
+      "marker_b": 25,
+      "stage": "initial_consensus",
+      "reason": "insufficient_inlier_frames",
+      "observed_count": 42,
+      "supported_count": 14,
+      "required_count": 20,
+      "translation_rms_m": 0.0013105766476966322,
+      "rotation_rms_deg": 1.0889547459262185,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 0,
+      "marker_b": 4,
+      "stage": "initial_consensus",
+      "reason": "insufficient_inlier_frames",
+      "observed_count": 22,
+      "supported_count": 18,
+      "required_count": 20,
+      "translation_rms_m": 0.0024961316225532455,
+      "rotation_rms_deg": 1.2837565925099133,
+      "translation_gate_m": 0.007000000000000001,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 4,
+      "marker_b": 19,
+      "stage": "initial_consensus",
+      "reason": "insufficient_inlier_frames",
+      "observed_count": 27,
+      "supported_count": 11,
+      "required_count": 20,
+      "translation_rms_m": 0.0012121844769695106,
+      "rotation_rms_deg": 0.8937778251075321,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 4,
+      "marker_b": 24,
+      "stage": "initial_consensus",
+      "reason": "insufficient_inlier_frames",
+      "observed_count": 21,
+      "supported_count": 7,
+      "required_count": 20,
+      "translation_rms_m": 0.001083357695165088,
+      "rotation_rms_deg": 0.828302247134033,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 4,
+      "marker_b": 25,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 11,
+      "supported_count": 11,
+      "required_count": 20,
+      "translation_rms_m": 0.0011358658387406952,
+      "rotation_rms_deg": 0.5222592187588685,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 0,
+      "marker_b": 22,
+      "stage": "initial_consensus",
+      "reason": "insufficient_inlier_frames",
+      "observed_count": 23,
+      "supported_count": 10,
+      "required_count": 20,
+      "translation_rms_m": 0.0012708075451242332,
+      "rotation_rms_deg": 1.1630332838154804,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 3,
+      "marker_b": 22,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 6,
+      "supported_count": 6,
+      "required_count": 20,
+      "translation_rms_m": 0.0002985200558183859,
+      "rotation_rms_deg": 1.2203898033949907,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 3,
+      "marker_b": 25,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 6,
+      "supported_count": 6,
+      "required_count": 20,
+      "translation_rms_m": 4.165428573025387e-05,
+      "rotation_rms_deg": 0.034698151991302495,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 3,
+      "marker_b": 26,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 11,
+      "supported_count": 11,
+      "required_count": 20,
+      "translation_rms_m": 0.0012519972409892343,
+      "rotation_rms_deg": 1.3419351572002165,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 22,
+      "marker_b": 26,
+      "stage": "initial_consensus",
+      "reason": "insufficient_inlier_frames",
+      "observed_count": 32,
+      "supported_count": 15,
+      "required_count": 20,
+      "translation_rms_m": 0.0012490547340319987,
+      "rotation_rms_deg": 1.4190209284740491,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 25,
+      "marker_b": 26,
+      "stage": "initial_consensus",
+      "reason": "insufficient_inlier_frames",
+      "observed_count": 38,
+      "supported_count": 15,
+      "required_count": 20,
+      "translation_rms_m": 0.0013367765898318466,
+      "rotation_rms_deg": 0.9678581804515768,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 2,
+      "marker_b": 22,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 9,
+      "supported_count": 9,
+      "required_count": 20,
+      "translation_rms_m": 0.0007886516318661719,
+      "rotation_rms_deg": 1.3574439882509715,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 2,
+      "marker_b": 26,
+      "stage": "initial_consensus",
+      "reason": "insufficient_inlier_frames",
+      "observed_count": 33,
+      "supported_count": 15,
+      "required_count": 20,
+      "translation_rms_m": 0.001450742440233093,
+      "rotation_rms_deg": 0.7329279667875902,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 2,
+      "marker_b": 3,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 1,
+      "supported_count": 1,
+      "required_count": 20,
+      "translation_rms_m": 0.0,
+      "rotation_rms_deg": 1.2074182697257333e-06,
+      "translation_gate_m": 0.007000000000000001,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 2,
+      "marker_b": 28,
+      "stage": "initial_consensus",
+      "reason": "insufficient_inlier_frames",
+      "observed_count": 25,
+      "supported_count": 16,
+      "required_count": 20,
+      "translation_rms_m": 0.0008497724381324184,
+      "rotation_rms_deg": 1.218974747488217,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 22,
+      "marker_b": 28,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 12,
+      "supported_count": 12,
+      "required_count": 20,
+      "translation_rms_m": 0.0013987005895448388,
+      "rotation_rms_deg": 0.7687827093379428,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 25,
+      "marker_b": 28,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 15,
+      "supported_count": 15,
+      "required_count": 20,
+      "translation_rms_m": 0.0011142297754342626,
+      "rotation_rms_deg": 0.8936011704344916,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 3,
+      "marker_b": 28,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 6,
+      "supported_count": 6,
+      "required_count": 20,
+      "translation_rms_m": 0.00020254644595758744,
+      "rotation_rms_deg": 0.20975659155180967,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 3,
+      "marker_b": 4,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 8,
+      "supported_count": 8,
+      "required_count": 20,
+      "translation_rms_m": 0.0025541098936668265,
+      "rotation_rms_deg": 0.592524925877186,
+      "translation_gate_m": 0.007000000000000001,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 4,
+      "marker_b": 26,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 7,
+      "supported_count": 7,
+      "required_count": 20,
+      "translation_rms_m": 0.0010049444397082984,
+      "rotation_rms_deg": 0.6732807791700168,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 4,
+      "marker_b": 28,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 2,
+      "supported_count": 2,
+      "required_count": 20,
+      "translation_rms_m": 0.0,
+      "rotation_rms_deg": 0.0,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 23,
+      "marker_b": 26,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 16,
+      "supported_count": 16,
+      "required_count": 20,
+      "translation_rms_m": 0.001173993456458229,
+      "rotation_rms_deg": 0.7261487262309053,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 23,
+      "marker_b": 28,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 2,
+      "supported_count": 2,
+      "required_count": 20,
+      "translation_rms_m": 0.0,
+      "rotation_rms_deg": 2.091309789151873e-06,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 26,
+      "marker_b": 29,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 15,
+      "supported_count": 15,
+      "required_count": 20,
+      "translation_rms_m": 0.0010079996399459169,
+      "rotation_rms_deg": 1.2441102706588498,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 28,
+      "marker_b": 29,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 2,
+      "supported_count": 2,
+      "required_count": 20,
+      "translation_rms_m": 0.0,
+      "rotation_rms_deg": 0.0,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 4,
+      "marker_b": 23,
+      "stage": "initial_consensus",
+      "reason": "insufficient_inlier_frames",
+      "observed_count": 22,
+      "supported_count": 5,
+      "required_count": 20,
+      "translation_rms_m": 0.0009213707931031742,
+      "rotation_rms_deg": 1.2417168969059522,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 4,
+      "marker_b": 29,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 12,
+      "supported_count": 12,
+      "required_count": 20,
+      "translation_rms_m": 0.001012310182512942,
+      "rotation_rms_deg": 1.549262274774281,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 19,
+      "marker_b": 29,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 2,
+      "supported_count": 2,
+      "required_count": 20,
+      "translation_rms_m": 0.0007595491510792985,
+      "rotation_rms_deg": 0.508425147230638,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 23,
+      "marker_b": 24,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 10,
+      "supported_count": 10,
+      "required_count": 20,
+      "translation_rms_m": 0.0011800803854855638,
+      "rotation_rms_deg": 2.1532364007677205,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 19,
+      "marker_b": 23,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 9,
+      "supported_count": 9,
+      "required_count": 20,
+      "translation_rms_m": 0.0008283918086581764,
+      "rotation_rms_deg": 0.7769284787342449,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 0,
+      "marker_b": 26,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 4,
+      "supported_count": 4,
+      "required_count": 20,
+      "translation_rms_m": 0.0,
+      "rotation_rms_deg": 0.0,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 0,
+      "marker_b": 23,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 7,
+      "supported_count": 7,
+      "required_count": 20,
+      "translation_rms_m": 0.0008227237450626117,
+      "rotation_rms_deg": 0.731629909242289,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 24,
+      "marker_b": 26,
+      "stage": "initial_consensus",
+      "reason": "insufficient_observed_frames",
+      "observed_count": 1,
+      "supported_count": 1,
+      "required_count": 20,
+      "translation_rms_m": 0.0,
+      "rotation_rms_deg": 0.0,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 0,
+      "marker_b": 4,
+      "stage": "assignment_support",
+      "reason": "insufficient_support",
+      "observed_count": 18,
+      "supported_count": 18,
+      "required_count": 20,
+      "translation_rms_m": 0.0024961316225532455,
+      "rotation_rms_deg": 1.2837565925099133,
+      "translation_gate_m": 0.007000000000000001,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 2,
+      "marker_b": 28,
+      "stage": "assignment_support",
+      "reason": "insufficient_support",
+      "observed_count": 16,
+      "supported_count": 16,
+      "required_count": 20,
+      "translation_rms_m": 0.0008497724381324184,
+      "rotation_rms_deg": 1.218974747488217,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 26,
+      "marker_b": 29,
+      "stage": "assignment_support",
+      "reason": "insufficient_support",
+      "observed_count": 11,
+      "supported_count": 11,
+      "required_count": 20,
+      "translation_rms_m": 0.0010079996399459169,
+      "rotation_rms_deg": 1.2441102706588498,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 3,
+      "marker_b": 4,
+      "stage": "assignment_support",
+      "reason": "insufficient_support",
+      "observed_count": 8,
+      "supported_count": 8,
+      "required_count": 20,
+      "translation_rms_m": 0.0025541098936668265,
+      "rotation_rms_deg": 0.592524925877186,
+      "translation_gate_m": 0.007000000000000001,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 0,
+      "marker_b": 2,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 30,
+      "supported_count": 4,
+      "required_count": 20,
+      "translation_rms_m": 0.0033391687522970155,
+      "rotation_rms_deg": 1.711462533211918,
+      "translation_gate_m": 0.007000000000000001,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 0,
+      "marker_b": 19,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 35,
+      "supported_count": 7,
+      "required_count": 20,
+      "translation_rms_m": 0.0011691593120187651,
+      "rotation_rms_deg": 1.2851948654489094,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 0,
+      "marker_b": 24,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 22,
+      "supported_count": 4,
+      "required_count": 20,
+      "translation_rms_m": 0.001157602974914711,
+      "rotation_rms_deg": 2.1240901954086002,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 0,
+      "marker_b": 25,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 25,
+      "supported_count": 5,
+      "required_count": 20,
+      "translation_rms_m": 0.001347282033789529,
+      "rotation_rms_deg": 1.6869376148497002,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 19,
+      "marker_b": 24,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 39,
+      "supported_count": 15,
+      "required_count": 20,
+      "translation_rms_m": 0.001151453184860781,
+      "rotation_rms_deg": 1.0321433421772837,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 19,
+      "marker_b": 25,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 34,
+      "supported_count": 18,
+      "required_count": 20,
+      "translation_rms_m": 0.001174287616526792,
+      "rotation_rms_deg": 1.5874665131000236,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 24,
+      "marker_b": 25,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 22,
+      "supported_count": 11,
+      "required_count": 20,
+      "translation_rms_m": 0.0013419967168131928,
+      "rotation_rms_deg": 1.7513321240352766,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 26,
+      "marker_b": 28,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 21,
+      "supported_count": 13,
+      "required_count": 20,
+      "translation_rms_m": 0.0012929942991205907,
+      "rotation_rms_deg": 1.620674514523014,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 23,
+      "marker_b": 29,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 30,
+      "supported_count": 5,
+      "required_count": 20,
+      "translation_rms_m": 0.001412054326376602,
+      "rotation_rms_deg": 1.8943448832540504,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 0,
+      "marker_b": 4,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 18,
+      "supported_count": 0,
+      "required_count": 20,
+      "translation_rms_m": 0.0024961316225532455,
+      "rotation_rms_deg": 1.2837565925099133,
+      "translation_gate_m": 0.007000000000000001,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 2,
+      "marker_b": 28,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 16,
+      "supported_count": 0,
+      "required_count": 20,
+      "translation_rms_m": 0.0008497724381324184,
+      "rotation_rms_deg": 1.218974747488217,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 26,
+      "marker_b": 29,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 11,
+      "supported_count": 0,
+      "required_count": 20,
+      "translation_rms_m": 0.0010079996399459169,
+      "rotation_rms_deg": 1.2441102706588498,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 3,
+      "marker_b": 4,
+      "stage": "post_pruning",
+      "reason": "insufficient_support",
+      "observed_count": 8,
+      "supported_count": 0,
+      "required_count": 20,
+      "translation_rms_m": 0.0025541098936668265,
+      "rotation_rms_deg": 0.592524925877186,
+      "translation_gate_m": 0.007000000000000001,
+      "rotation_gate_deg": 5.0
+    }
+  ],
+  "restored_pair_edges": [
+    {
+      "marker_a": 0,
+      "marker_b": 4,
+      "stage": "initial_consensus",
+      "original_stage": "initial_consensus",
+      "original_reason": "insufficient_inlier_frames",
+      "observed_count": 22,
+      "supported_count": 18,
+      "required_count": 20,
+      "support_fraction": 0.8181818181818182,
+      "translation_rms_m": 0.0024961316225532455,
+      "rotation_rms_deg": 1.2837565925099133,
+      "translation_gate_m": 0.007000000000000001,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 2,
+      "marker_b": 28,
+      "stage": "initial_consensus",
+      "original_stage": "initial_consensus",
+      "original_reason": "insufficient_inlier_frames",
+      "observed_count": 25,
+      "supported_count": 16,
+      "required_count": 20,
+      "support_fraction": 0.64,
+      "translation_rms_m": 0.0008497724381324184,
+      "rotation_rms_deg": 1.218974747488217,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 26,
+      "marker_b": 29,
+      "stage": "initial_consensus",
+      "original_stage": "initial_consensus",
+      "original_reason": "insufficient_observed_frames",
+      "observed_count": 15,
+      "supported_count": 11,
+      "required_count": 20,
+      "support_fraction": 0.7333333333333333,
+      "translation_rms_m": 0.0010079996399459169,
+      "rotation_rms_deg": 1.2441102706588498,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 3,
+      "marker_b": 4,
+      "stage": "initial_consensus",
+      "original_stage": "initial_consensus",
+      "original_reason": "insufficient_observed_frames",
+      "observed_count": 8,
+      "supported_count": 8,
+      "required_count": 20,
+      "support_fraction": 1.0,
+      "translation_rms_m": 0.0025541098936668265,
+      "rotation_rms_deg": 0.592524925877186,
+      "translation_gate_m": 0.007000000000000001,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 0,
+      "marker_b": 4,
+      "stage": "assignment_support",
+      "original_stage": "assignment_support",
+      "original_reason": "insufficient_support",
+      "observed_count": 18,
+      "supported_count": 18,
+      "required_count": 20,
+      "support_fraction": 1.0,
+      "translation_rms_m": 0.0024961316225532455,
+      "rotation_rms_deg": 1.2837565925099133,
+      "translation_gate_m": 0.007000000000000001,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 2,
+      "marker_b": 28,
+      "stage": "assignment_support",
+      "original_stage": "assignment_support",
+      "original_reason": "insufficient_support",
+      "observed_count": 16,
+      "supported_count": 16,
+      "required_count": 20,
+      "support_fraction": 1.0,
+      "translation_rms_m": 0.0008497724381324184,
+      "rotation_rms_deg": 1.218974747488217,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 26,
+      "marker_b": 29,
+      "stage": "assignment_support",
+      "original_stage": "assignment_support",
+      "original_reason": "insufficient_support",
+      "observed_count": 11,
+      "supported_count": 11,
+      "required_count": 20,
+      "support_fraction": 1.0,
+      "translation_rms_m": 0.0010079996399459169,
+      "rotation_rms_deg": 1.2441102706588498,
+      "translation_gate_m": 0.002,
+      "rotation_gate_deg": 5.0
+    },
+    {
+      "marker_a": 3,
+      "marker_b": 4,
+      "stage": "assignment_support",
+      "original_stage": "assignment_support",
+      "original_reason": "insufficient_support",
+      "observed_count": 8,
+      "supported_count": 8,
+      "required_count": 20,
+      "support_fraction": 1.0,
+      "translation_rms_m": 0.0025541098936668265,
+      "rotation_rms_deg": 0.592524925877186,
+      "translation_gate_m": 0.007000000000000001,
+      "rotation_gate_deg": 5.0
+    }
+  ],
+  "fallback_assignment_records": [
+    {
+      "frame_index": 0,
+      "frame_id": 0,
+      "visible_marker_ids": [
+        0,
+        2,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 44.39492417083447,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.00930005162369558,
+      "rotation_error_deg": 1.1829539378607838
+    },
+    {
+      "frame_index": 1,
+      "frame_id": 1,
+      "visible_marker_ids": [
+        0,
+        2,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 23.928138107369648,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.007468445629188064,
+      "rotation_error_deg": 1.4050956427239236
+    },
+    {
+      "frame_index": 2,
+      "frame_id": 2,
+      "visible_marker_ids": [
+        0,
+        2,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 29.775993086091248,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.007790009594302759,
+      "rotation_error_deg": 1.2612199680412137
+    },
+    {
+      "frame_index": 3,
+      "frame_id": 3,
+      "visible_marker_ids": [
+        0,
+        2,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 29.417703872324083,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.007729574254801544,
+      "rotation_error_deg": 1.377014386283454
+    },
+    {
+      "frame_index": 4,
+      "frame_id": 4,
+      "visible_marker_ids": [
+        0,
+        2,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 9.020045956192547,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.003686798967527648,
+      "rotation_error_deg": 1.7019502653066205
+    },
+    {
+      "frame_index": 5,
+      "frame_id": 5,
+      "visible_marker_ids": [
+        0,
+        2,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 9.018143973511624,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.003706768518028132,
+      "rotation_error_deg": 1.6601557951288213
+    },
+    {
+      "frame_index": 6,
+      "frame_id": 6,
+      "visible_marker_ids": [
+        0,
+        2,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 19.56215391537322,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.00524590792045315,
+      "rotation_error_deg": 1.5232547343523501
+    },
+    {
+      "frame_index": 7,
+      "frame_id": 7,
+      "visible_marker_ids": [
+        0,
+        2,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 19.660418376067234,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.0052450199330449,
+      "rotation_error_deg": 1.5218958697787626
+    },
+    {
+      "frame_index": 8,
+      "frame_id": 8,
+      "visible_marker_ids": [
+        0,
+        2,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 23.497000753284137,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.006137599727642219,
+      "rotation_error_deg": 1.4815831368151462
+    },
+    {
+      "frame_index": 9,
+      "frame_id": 9,
+      "visible_marker_ids": [
+        0,
+        2,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 9.357961102053007,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.00418092459307176,
+      "rotation_error_deg": 1.6560500851146034
+    },
+    {
+      "frame_index": 10,
+      "frame_id": 10,
+      "visible_marker_ids": [
+        0,
+        2,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 32.2992648421978,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.007946130588570199,
+      "rotation_error_deg": 1.02538358624235
+    },
+    {
+      "frame_index": 11,
+      "frame_id": 11,
+      "visible_marker_ids": [
+        0,
+        2,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 32.147716954913264,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.007986540316886111,
+      "rotation_error_deg": 1.6141717581228074
+    },
+    {
+      "frame_index": 12,
+      "frame_id": 12,
+      "visible_marker_ids": [
+        0,
+        2,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 33.162841758419056,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.007987724923985504,
+      "rotation_error_deg": 1.8205632845371125
+    },
+    {
+      "frame_index": 13,
+      "frame_id": 13,
+      "visible_marker_ids": [
+        0,
+        2,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 57.15117420465341,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.009095554359629722,
+      "rotation_error_deg": 3.763681494387385
+    },
+    {
+      "frame_index": 14,
+      "frame_id": 14,
+      "visible_marker_ids": [
+        0,
+        2,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 30.55094344434641,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.006739680438791734,
+      "rotation_error_deg": 2.7379990567622627
+    },
+    {
+      "frame_index": 15,
+      "frame_id": 15,
+      "visible_marker_ids": [
+        0,
+        2,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 34.583369470432714,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.006793214239418816,
+      "rotation_error_deg": 2.48705681107109
+    },
+    {
+      "frame_index": 16,
+      "frame_id": 16,
+      "visible_marker_ids": [
+        0,
+        2,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 13.197227593608352,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.004591168408386984,
+      "rotation_error_deg": 1.0973643100615715
+    },
+    {
+      "frame_index": 17,
+      "frame_id": 17,
+      "visible_marker_ids": [
+        0,
+        2,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 14.901411318035828,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.005088109807714211,
+      "rotation_error_deg": 1.2322364894000253
+    },
+    {
+      "frame_index": 18,
+      "frame_id": 18,
+      "visible_marker_ids": [
+        0,
+        19,
+        24
+      ],
+      "disagreement_cost": 5.6859235119775215,
+      "marker_pair": [
+        19,
+        24
+      ],
+      "translation_error_m": 0.003893023630771178,
+      "rotation_error_deg": 1.7678340961025436
+    },
+    {
+      "frame_index": 19,
+      "frame_id": 19,
+      "visible_marker_ids": [
+        0,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 20.549278470546298,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.007108770053989398,
+      "rotation_error_deg": 1.0264711797699666
+    },
+    {
+      "frame_index": 20,
+      "frame_id": 20,
+      "visible_marker_ids": [
+        0,
+        4,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 19.10773314455992,
+      "marker_pair": [
+        24,
+        25
+      ],
+      "translation_error_m": 0.0050585954231823355,
+      "rotation_error_deg": 4.13777150852338
+    },
+    {
+      "frame_index": 21,
+      "frame_id": 21,
+      "visible_marker_ids": [
+        0,
+        4,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 13.049465640099708,
+      "marker_pair": [
+        24,
+        25
+      ],
+      "translation_error_m": 0.004225958107872977,
+      "rotation_error_deg": 3.309295021638392
+    },
+    {
+      "frame_index": 25,
+      "frame_id": 25,
+      "visible_marker_ids": [
+        0,
+        4,
+        19,
+        25
+      ],
+      "disagreement_cost": 19.365899338230406,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.007429274171527617,
+      "rotation_error_deg": 1.7388932609721899
+    },
+    {
+      "frame_index": 26,
+      "frame_id": 26,
+      "visible_marker_ids": [
+        0,
+        4,
+        19,
+        25
+      ],
+      "disagreement_cost": 10.130592323019037,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.004913213856149914,
+      "rotation_error_deg": 1.704597902610234
+    },
+    {
+      "frame_index": 27,
+      "frame_id": 27,
+      "visible_marker_ids": [
+        0,
+        4,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 12.72452705877231,
+      "marker_pair": [
+        19,
+        24
+      ],
+      "translation_error_m": 0.003480503534375434,
+      "rotation_error_deg": 0.8578203309241322
+    },
+    {
+      "frame_index": 28,
+      "frame_id": 28,
+      "visible_marker_ids": [
+        0,
+        4,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 8.008486002744023,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.004838547396417536,
+      "rotation_error_deg": 1.6097444105557217
+    },
+    {
+      "frame_index": 29,
+      "frame_id": 29,
+      "visible_marker_ids": [
+        0,
+        4,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 6.277331194311757,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.0037673485072886137,
+      "rotation_error_deg": 1.6147740286465249
+    },
+    {
+      "frame_index": 31,
+      "frame_id": 31,
+      "visible_marker_ids": [
+        0,
+        4,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 6.033421398712307,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.0034801100177818053,
+      "rotation_error_deg": 1.571945824093711
+    },
+    {
+      "frame_index": 32,
+      "frame_id": 32,
+      "visible_marker_ids": [
+        0,
+        4,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 9.446091271827529,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.005283014084065906,
+      "rotation_error_deg": 1.653681943458671
+    },
+    {
+      "frame_index": 33,
+      "frame_id": 33,
+      "visible_marker_ids": [
+        0,
+        4,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 6.511155818766786,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.00429515812508361,
+      "rotation_error_deg": 1.500992825656411
+    },
+    {
+      "frame_index": 40,
+      "frame_id": 40,
+      "visible_marker_ids": [
+        0,
+        19,
+        24
+      ],
+      "disagreement_cost": 2.3647269115801732,
+      "marker_pair": [
+        19,
+        24
+      ],
+      "translation_error_m": 0.002240693163353361,
+      "rotation_error_deg": 0.7758865786189559
+    },
+    {
+      "frame_index": 43,
+      "frame_id": 43,
+      "visible_marker_ids": [
+        0,
+        19,
+        25
+      ],
+      "disagreement_cost": 8.165342614825617,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.005266410892025833,
+      "rotation_error_deg": 2.602979369856655
+    },
+    {
+      "frame_index": 44,
+      "frame_id": 44,
+      "visible_marker_ids": [
+        0,
+        22,
+        25
+      ],
+      "disagreement_cost": 9.996136522461281,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.006068923282292015,
+      "rotation_error_deg": 2.6333945538559704
+    },
+    {
+      "frame_index": 45,
+      "frame_id": 45,
+      "visible_marker_ids": [
+        0,
+        22,
+        25
+      ],
+      "disagreement_cost": 4.231340863267066,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.0037643742269156833,
+      "rotation_error_deg": 2.7967408350841563
+    },
+    {
+      "frame_index": 46,
+      "frame_id": 46,
+      "visible_marker_ids": [
+        0,
+        22,
+        25
+      ],
+      "disagreement_cost": 1.6101108966376394,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.0023282312619818733,
+      "rotation_error_deg": 2.206693840198836
+    },
+    {
+      "frame_index": 47,
+      "frame_id": 47,
+      "visible_marker_ids": [
+        0,
+        22,
+        25
+      ],
+      "disagreement_cost": 3.3244204843134852,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.003121330862574914,
+      "rotation_error_deg": 1.853898244859947
+    },
+    {
+      "frame_index": 49,
+      "frame_id": 49,
+      "visible_marker_ids": [
+        0,
+        22,
+        25
+      ],
+      "disagreement_cost": 4.098487274812652,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.0029342145039032495,
+      "rotation_error_deg": 1.8811430054324114
+    },
+    {
+      "frame_index": 51,
+      "frame_id": 51,
+      "visible_marker_ids": [
+        0,
+        22,
+        25
+      ],
+      "disagreement_cost": 2.4954915846186627,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.002564240840073512,
+      "rotation_error_deg": 1.6963744038961688
+    },
+    {
+      "frame_index": 53,
+      "frame_id": 53,
+      "visible_marker_ids": [
+        0,
+        22,
+        25
+      ],
+      "disagreement_cost": 3.819540778086067,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.0035688902336981233,
+      "rotation_error_deg": 1.6772342847055193
+    },
+    {
+      "frame_index": 56,
+      "frame_id": 56,
+      "visible_marker_ids": [
+        22,
+        25
+      ],
+      "disagreement_cost": 2.7454830663131506,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.0030099212728931716,
+      "rotation_error_deg": 3.466181433001736
+    },
+    {
+      "frame_index": 57,
+      "frame_id": 57,
+      "visible_marker_ids": [
+        0,
+        22,
+        25
+      ],
+      "disagreement_cost": 1.5766642034178215,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.002282609903531262,
+      "rotation_error_deg": 1.6447715639365534
+    },
+    {
+      "frame_index": 58,
+      "frame_id": 58,
+      "visible_marker_ids": [
+        0,
+        22,
+        25
+      ],
+      "disagreement_cost": 6.918380178209501,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.005179722684489316,
+      "rotation_error_deg": 1.7578146684224127
+    },
+    {
+      "frame_index": 60,
+      "frame_id": 60,
+      "visible_marker_ids": [
+        0,
+        22,
+        25
+      ],
+      "disagreement_cost": 2.579575772549484,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.002902981667866126,
+      "rotation_error_deg": 1.5281898360449788
+    },
+    {
+      "frame_index": 61,
+      "frame_id": 61,
+      "visible_marker_ids": [
+        0,
+        22,
+        25
+      ],
+      "disagreement_cost": 6.930668762401984,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.004795624851899238,
+      "rotation_error_deg": 2.3969897619745577
+    },
+    {
+      "frame_index": 62,
+      "frame_id": 62,
+      "visible_marker_ids": [
+        22,
+        25
+      ],
+      "disagreement_cost": 1.642258429306152,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.0020631637717082743,
+      "rotation_error_deg": 3.8016353128744926
+    },
+    {
+      "frame_index": 63,
+      "frame_id": 63,
+      "visible_marker_ids": [
+        0,
+        22,
+        25
+      ],
+      "disagreement_cost": 6.553019499460602,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.00457949270924117,
+      "rotation_error_deg": 2.489524935404842
+    },
+    {
+      "frame_index": 64,
+      "frame_id": 64,
+      "visible_marker_ids": [
+        0,
+        22,
+        25
+      ],
+      "disagreement_cost": 1.390885778422594,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.002241065220232527,
+      "rotation_error_deg": 1.0071077620343492
+    },
+    {
+      "frame_index": 67,
+      "frame_id": 67,
+      "visible_marker_ids": [
+        22,
+        25
+      ],
+      "disagreement_cost": 1.6382945589874451,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.0023803588863144064,
+      "rotation_error_deg": 2.354609585862669
+    },
+    {
+      "frame_index": 68,
+      "frame_id": 68,
+      "visible_marker_ids": [
+        22,
+        25
+      ],
+      "disagreement_cost": 9.420504152450743,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.005605038578111901,
+      "rotation_error_deg": 6.257774738115925
+    },
+    {
+      "frame_index": 69,
+      "frame_id": 69,
+      "visible_marker_ids": [
+        22,
+        25
+      ],
+      "disagreement_cost": 5.736692133606232,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.004001324059971196,
+      "rotation_error_deg": 6.5841544168179595
+    },
+    {
+      "frame_index": 71,
+      "frame_id": 71,
+      "visible_marker_ids": [
+        22,
+        25
+      ],
+      "disagreement_cost": 1.9691953294004154,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.0026903060752934225,
+      "rotation_error_deg": 1.998490897591488
+    },
+    {
+      "frame_index": 74,
+      "frame_id": 74,
+      "visible_marker_ids": [
+        3,
+        22,
+        25,
+        26
+      ],
+      "disagreement_cost": 6.972821894249436,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.005144214497797833,
+      "rotation_error_deg": 2.987834476720067
+    },
+    {
+      "frame_index": 75,
+      "frame_id": 75,
+      "visible_marker_ids": [
+        22,
+        25,
+        26
+      ],
+      "disagreement_cost": 23.17758939308408,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.009521964576736977,
+      "rotation_error_deg": 3.5729436146041706
+    },
+    {
+      "frame_index": 76,
+      "frame_id": 76,
+      "visible_marker_ids": [
+        2,
+        22,
+        25,
+        26
+      ],
+      "disagreement_cost": 2.526088770898692,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.0031014640215576163,
+      "rotation_error_deg": 1.7415438671234111
+    },
+    {
+      "frame_index": 78,
+      "frame_id": 78,
+      "visible_marker_ids": [
+        2,
+        22,
+        25,
+        26,
+        28
+      ],
+      "disagreement_cost": 30.72831535353845,
+      "marker_pair": [
+        2,
+        28
+      ],
+      "translation_error_m": 0.010807483934795869,
+      "rotation_error_deg": 1.8500975561160788
+    },
+    {
+      "frame_index": 79,
+      "frame_id": 79,
+      "visible_marker_ids": [
+        2,
+        22,
+        25,
+        26,
+        28
+      ],
+      "disagreement_cost": 29.137235479107986,
+      "marker_pair": [
+        2,
+        28
+      ],
+      "translation_error_m": 0.01072246488613744,
+      "rotation_error_deg": 1.7048273507602063
+    },
+    {
+      "frame_index": 80,
+      "frame_id": 80,
+      "visible_marker_ids": [
+        22,
+        25,
+        26,
+        28
+      ],
+      "disagreement_cost": 2.03018517475285,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.0022855024601120596,
+      "rotation_error_deg": 0.9147556555555144
+    },
+    {
+      "frame_index": 83,
+      "frame_id": 83,
+      "visible_marker_ids": [
+        22,
+        25,
+        26,
+        28
+      ],
+      "disagreement_cost": 2.9263257845307433,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.0030638915457851072,
+      "rotation_error_deg": 1.9423859727084563
+    },
+    {
+      "frame_index": 84,
+      "frame_id": 84,
+      "visible_marker_ids": [
+        22,
+        25,
+        26,
+        28
+      ],
+      "disagreement_cost": 8.248642315839385,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.004310694383150857,
+      "rotation_error_deg": 1.1869987163458875
+    },
+    {
+      "frame_index": 85,
+      "frame_id": 85,
+      "visible_marker_ids": [
+        22,
+        25,
+        26,
+        28
+      ],
+      "disagreement_cost": 7.955940936420472,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.003998504934541051,
+      "rotation_error_deg": 1.2070796684958163
+    },
+    {
+      "frame_index": 86,
+      "frame_id": 86,
+      "visible_marker_ids": [
+        22,
+        25,
+        26,
+        28
+      ],
+      "disagreement_cost": 3.8925904573706522,
+      "marker_pair": [
+        26,
+        28
+      ],
+      "translation_error_m": 0.003607448579366372,
+      "rotation_error_deg": 1.185951893240966
+    },
+    {
+      "frame_index": 87,
+      "frame_id": 87,
+      "visible_marker_ids": [
+        22,
+        25,
+        26,
+        28
+      ],
+      "disagreement_cost": 35.51430070859842,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.010211585365771533,
+      "rotation_error_deg": 3.2091636790843805
+    },
+    {
+      "frame_index": 88,
+      "frame_id": 88,
+      "visible_marker_ids": [
+        22,
+        25,
+        26,
+        28
+      ],
+      "disagreement_cost": 41.06253032250333,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.01183419353099855,
+      "rotation_error_deg": 2.7935097746622426
+    },
+    {
+      "frame_index": 89,
+      "frame_id": 89,
+      "visible_marker_ids": [
+        22,
+        25,
+        26,
+        28
+      ],
+      "disagreement_cost": 6.219422079609442,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.004580652534174033,
+      "rotation_error_deg": 2.5538264616926694
+    },
+    {
+      "frame_index": 90,
+      "frame_id": 90,
+      "visible_marker_ids": [
+        2,
+        26,
+        28
+      ],
+      "disagreement_cost": 9.987625843195886,
+      "marker_pair": [
+        26,
+        28
+      ],
+      "translation_error_m": 0.005309315794522989,
+      "rotation_error_deg": 3.74468828759109
+    },
+    {
+      "frame_index": 91,
+      "frame_id": 91,
+      "visible_marker_ids": [
+        2,
+        26,
+        28
+      ],
+      "disagreement_cost": 2.6882360581930187,
+      "marker_pair": [
+        2,
+        28
+      ],
+      "translation_error_m": 0.0029507842412739844,
+      "rotation_error_deg": 2.2065989610782055
+    },
+    {
+      "frame_index": 92,
+      "frame_id": 92,
+      "visible_marker_ids": [
+        2,
+        26,
+        28
+      ],
+      "disagreement_cost": 2.741478324586783,
+      "marker_pair": [
+        2,
+        28
+      ],
+      "translation_error_m": 0.0029876802753353816,
+      "rotation_error_deg": 2.2000391084113033
+    },
+    {
+      "frame_index": 93,
+      "frame_id": 93,
+      "visible_marker_ids": [
+        2,
+        26,
+        28
+      ],
+      "disagreement_cost": 4.61607023189497,
+      "marker_pair": [
+        2,
+        28
+      ],
+      "translation_error_m": 0.0037308993252433966,
+      "rotation_error_deg": 1.4777053723782698
+    },
+    {
+      "frame_index": 94,
+      "frame_id": 94,
+      "visible_marker_ids": [
+        2,
+        26,
+        28
+      ],
+      "disagreement_cost": 4.560280642056348,
+      "marker_pair": [
+        2,
+        28
+      ],
+      "translation_error_m": 0.0032145386509673814,
+      "rotation_error_deg": 2.1877648843470716
+    },
+    {
+      "frame_index": 97,
+      "frame_id": 97,
+      "visible_marker_ids": [
+        2,
+        26,
+        28
+      ],
+      "disagreement_cost": 1.8255201897322075,
+      "marker_pair": [
+        26,
+        28
+      ],
+      "translation_error_m": 0.0025328277316864424,
+      "rotation_error_deg": 1.5037497129061494
+    },
+    {
+      "frame_index": 98,
+      "frame_id": 98,
+      "visible_marker_ids": [
+        2,
+        26,
+        28
+      ],
+      "disagreement_cost": 1.8734772779124182,
+      "marker_pair": [
+        26,
+        28
+      ],
+      "translation_error_m": 0.002566301993521396,
+      "rotation_error_deg": 1.4775599961958026
+    },
+    {
+      "frame_index": 102,
+      "frame_id": 102,
+      "visible_marker_ids": [
+        2,
+        26,
+        28
+      ],
+      "disagreement_cost": 6.969050923216192,
+      "marker_pair": [
+        26,
+        28
+      ],
+      "translation_error_m": 0.00365839687914945,
+      "rotation_error_deg": 4.229987628887101
+    },
+    {
+      "frame_index": 103,
+      "frame_id": 103,
+      "visible_marker_ids": [
+        2,
+        26,
+        28
+      ],
+      "disagreement_cost": 6.517335622364701,
+      "marker_pair": [
+        2,
+        28
+      ],
+      "translation_error_m": 0.0034076354763165305,
+      "rotation_error_deg": 3.313544160650071
+    },
+    {
+      "frame_index": 111,
+      "frame_id": 111,
+      "visible_marker_ids": [
+        2,
+        26,
+        28
+      ],
+      "disagreement_cost": 1.6405742811622663,
+      "marker_pair": [
+        26,
+        28
+      ],
+      "translation_error_m": 0.0020030527213941904,
+      "rotation_error_deg": 3.18503353492059
+    },
+    {
+      "frame_index": 112,
+      "frame_id": 112,
+      "visible_marker_ids": [
+        2,
+        26,
+        28
+      ],
+      "disagreement_cost": 1.670687595698114,
+      "marker_pair": [
+        26,
+        28
+      ],
+      "translation_error_m": 0.002017481103354719,
+      "rotation_error_deg": 3.1980326850975485
+    },
+    {
+      "frame_index": 113,
+      "frame_id": 113,
+      "visible_marker_ids": [
+        3,
+        26,
+        28
+      ],
+      "disagreement_cost": 13.800248136388293,
+      "marker_pair": [
+        26,
+        28
+      ],
+      "translation_error_m": 0.0065965793860202045,
+      "rotation_error_deg": 8.546246599197243
+    },
+    {
+      "frame_index": 114,
+      "frame_id": 114,
+      "visible_marker_ids": [
+        3,
+        4,
+        26,
+        28
+      ],
+      "disagreement_cost": 13.225598648210806,
+      "marker_pair": [
+        26,
+        28
+      ],
+      "translation_error_m": 0.006279674370161634,
+      "rotation_error_deg": 8.802422719372952
+    },
+    {
+      "frame_index": 122,
+      "frame_id": 122,
+      "visible_marker_ids": [
+        3,
+        26,
+        28
+      ],
+      "disagreement_cost": 7.45155194479261,
+      "marker_pair": [
+        26,
+        28
+      ],
+      "translation_error_m": 0.005196228299677542,
+      "rotation_error_deg": 4.187346442558134
+    },
+    {
+      "frame_index": 123,
+      "frame_id": 123,
+      "visible_marker_ids": [
+        3,
+        26,
+        28
+      ],
+      "disagreement_cost": 2.6632668213404753,
+      "marker_pair": [
+        26,
+        28
+      ],
+      "translation_error_m": 0.002962216314218552,
+      "rotation_error_deg": 3.42631525215077
+    },
+    {
+      "frame_index": 124,
+      "frame_id": 124,
+      "visible_marker_ids": [
+        3,
+        26,
+        28
+      ],
+      "disagreement_cost": 4.114786656940667,
+      "marker_pair": [
+        26,
+        28
+      ],
+      "translation_error_m": 0.003956291423146677,
+      "rotation_error_deg": 2.245697000513856
+    },
+    {
+      "frame_index": 125,
+      "frame_id": 125,
+      "visible_marker_ids": [
+        26,
+        28
+      ],
+      "disagreement_cost": 28.50280110342063,
+      "marker_pair": [
+        26,
+        28
+      ],
+      "translation_error_m": 0.01061471071924995,
+      "rotation_error_deg": 2.8930096356592014
+    },
+    {
+      "frame_index": 126,
+      "frame_id": 126,
+      "visible_marker_ids": [
+        26,
+        28
+      ],
+      "disagreement_cost": 55.454564542146976,
+      "marker_pair": [
+        26,
+        28
+      ],
+      "translation_error_m": 0.014814207376398663,
+      "rotation_error_deg": 3.838552768983486
+    },
+    {
+      "frame_index": 127,
+      "frame_id": 127,
+      "visible_marker_ids": [
+        26,
+        28
+      ],
+      "disagreement_cost": 13.262548538112265,
+      "marker_pair": [
+        26,
+        28
+      ],
+      "translation_error_m": 0.007092037429627962,
+      "rotation_error_deg": 4.148191811805676
+    },
+    {
+      "frame_index": 128,
+      "frame_id": 128,
+      "visible_marker_ids": [
+        26,
+        28
+      ],
+      "disagreement_cost": 7.717006415232502,
+      "marker_pair": [
+        26,
+        28
+      ],
+      "translation_error_m": 0.005360071434136335,
+      "rotation_error_deg": 3.6551845728752763
+    },
+    {
+      "frame_index": 129,
+      "frame_id": 129,
+      "visible_marker_ids": [
+        23,
+        26,
+        28,
+        29
+      ],
+      "disagreement_cost": 32.86743574295021,
+      "marker_pair": [
+        26,
+        28
+      ],
+      "translation_error_m": 0.009264043519749968,
+      "rotation_error_deg": 2.6653711120946286
+    },
+    {
+      "frame_index": 130,
+      "frame_id": 130,
+      "visible_marker_ids": [
+        23,
+        26,
+        28,
+        29
+      ],
+      "disagreement_cost": 30.220578311553854,
+      "marker_pair": [
+        23,
+        29
+      ],
+      "translation_error_m": 0.007343263559106926,
+      "rotation_error_deg": 3.632571129096798
+    },
+    {
+      "frame_index": 131,
+      "frame_id": 131,
+      "visible_marker_ids": [
+        23,
+        29
+      ],
+      "disagreement_cost": 4.897038449053759,
+      "marker_pair": [
+        23,
+        29
+      ],
+      "translation_error_m": 0.004197441086317693,
+      "rotation_error_deg": 3.508598476517351
+    },
+    {
+      "frame_index": 149,
+      "frame_id": 149,
+      "visible_marker_ids": [
+        23,
+        26,
+        29
+      ],
+      "disagreement_cost": 4.43310034999897,
+      "marker_pair": [
+        23,
+        29
+      ],
+      "translation_error_m": 0.0031255950818562953,
+      "rotation_error_deg": 5.419575167579324
+    },
+    {
+      "frame_index": 160,
+      "frame_id": 160,
+      "visible_marker_ids": [
+        4,
+        23,
+        26,
+        29
+      ],
+      "disagreement_cost": 2.2914297683745235,
+      "marker_pair": [
+        23,
+        29
+      ],
+      "translation_error_m": 0.002556069452148069,
+      "rotation_error_deg": 3.4363565031089434
+    },
+    {
+      "frame_index": 161,
+      "frame_id": 161,
+      "visible_marker_ids": [
+        4,
+        23,
+        26,
+        29
+      ],
+      "disagreement_cost": 4.881823749719737,
+      "marker_pair": [
+        26,
+        29
+      ],
+      "translation_error_m": 0.0038816511885277284,
+      "rotation_error_deg": 0.7923786993699027
+    },
+    {
+      "frame_index": 162,
+      "frame_id": 162,
+      "visible_marker_ids": [
+        4,
+        23,
+        26,
+        29
+      ],
+      "disagreement_cost": 5.0160455586875825,
+      "marker_pair": [
+        26,
+        29
+      ],
+      "translation_error_m": 0.0039198913210767945,
+      "rotation_error_deg": 0.8198099634022001
+    },
+    {
+      "frame_index": 164,
+      "frame_id": 164,
+      "visible_marker_ids": [
+        23,
+        29
+      ],
+      "disagreement_cost": 3.41352797910155,
+      "marker_pair": [
+        23,
+        29
+      ],
+      "translation_error_m": 0.0034125939428911703,
+      "rotation_error_deg": 3.5428753306360283
+    },
+    {
+      "frame_index": 165,
+      "frame_id": 165,
+      "visible_marker_ids": [
+        23,
+        29
+      ],
+      "disagreement_cost": 5.518702014852566,
+      "marker_pair": [
+        23,
+        29
+      ],
+      "translation_error_m": 0.004246371204147972,
+      "rotation_error_deg": 5.02688997790456
+    },
+    {
+      "frame_index": 166,
+      "frame_id": 166,
+      "visible_marker_ids": [
+        23,
+        29
+      ],
+      "disagreement_cost": 8.781291003351834,
+      "marker_pair": [
+        23,
+        29
+      ],
+      "translation_error_m": 0.005462675993364856,
+      "rotation_error_deg": 5.746920373623282
+    },
+    {
+      "frame_index": 167,
+      "frame_id": 167,
+      "visible_marker_ids": [
+        23,
+        29
+      ],
+      "disagreement_cost": 5.2983961985239,
+      "marker_pair": [
+        23,
+        29
+      ],
+      "translation_error_m": 0.0040078116848635175,
+      "rotation_error_deg": 5.662944404617979
+    },
+    {
+      "frame_index": 168,
+      "frame_id": 168,
+      "visible_marker_ids": [
+        4,
+        23,
+        29
+      ],
+      "disagreement_cost": 3.112684880239111,
+      "marker_pair": [
+        23,
+        29
+      ],
+      "translation_error_m": 0.0033105199186321556,
+      "rotation_error_deg": 3.0528648321046243
+    },
+    {
+      "frame_index": 178,
+      "frame_id": 178,
+      "visible_marker_ids": [
+        19,
+        24
+      ],
+      "disagreement_cost": 2.389177596920629,
+      "marker_pair": [
+        19,
+        24
+      ],
+      "translation_error_m": 0.0026673693718545005,
+      "rotation_error_deg": 3.906605801215939
+    },
+    {
+      "frame_index": 179,
+      "frame_id": 179,
+      "visible_marker_ids": [
+        19,
+        23,
+        24
+      ],
+      "disagreement_cost": 2.980711479846563,
+      "marker_pair": [
+        19,
+        24
+      ],
+      "translation_error_m": 0.0033608524077848906,
+      "rotation_error_deg": 1.9803992849813676
+    },
+    {
+      "frame_index": 180,
+      "frame_id": 180,
+      "visible_marker_ids": [
+        19,
+        24
+      ],
+      "disagreement_cost": 3.9134005213022456,
+      "marker_pair": [
+        19,
+        24
+      ],
+      "translation_error_m": 0.003907054452239176,
+      "rotation_error_deg": 1.5582995388544039
+    },
+    {
+      "frame_index": 181,
+      "frame_id": 181,
+      "visible_marker_ids": [
+        19,
+        24
+      ],
+      "disagreement_cost": 3.944647949296558,
+      "marker_pair": [
+        19,
+        24
+      ],
+      "translation_error_m": 0.003922185398252139,
+      "rotation_error_deg": 1.5713320362910752
+    },
+    {
+      "frame_index": 182,
+      "frame_id": 182,
+      "visible_marker_ids": [
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 11.542895249718704,
+      "marker_pair": [
+        24,
+        25
+      ],
+      "translation_error_m": 0.004589578791455679,
+      "rotation_error_deg": 3.8094857446618886
+    },
+    {
+      "frame_index": 183,
+      "frame_id": 183,
+      "visible_marker_ids": [
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 9.569523263429694,
+      "marker_pair": [
+        24,
+        25
+      ],
+      "translation_error_m": 0.005424749379565385,
+      "rotation_error_deg": 3.6428985873197552
+    },
+    {
+      "frame_index": 184,
+      "frame_id": 184,
+      "visible_marker_ids": [
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 5.94201578167646,
+      "marker_pair": [
+        24,
+        25
+      ],
+      "translation_error_m": 0.004178529019359944,
+      "rotation_error_deg": 2.1860953090867175
+    },
+    {
+      "frame_index": 185,
+      "frame_id": 185,
+      "visible_marker_ids": [
+        0,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 16.634831435974558,
+      "marker_pair": [
+        0,
+        19
+      ],
+      "translation_error_m": 0.005565403833256469,
+      "rotation_error_deg": 2.4965156153099954
+    },
+    {
+      "frame_index": 186,
+      "frame_id": 186,
+      "visible_marker_ids": [
+        0,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 14.830550541881022,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.00459499662902235,
+      "rotation_error_deg": 3.673154073820919
+    },
+    {
+      "frame_index": 187,
+      "frame_id": 187,
+      "visible_marker_ids": [
+        0,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 5.4199597207843615,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.002798761380621361,
+      "rotation_error_deg": 1.9728705099263375
+    },
+    {
+      "frame_index": 188,
+      "frame_id": 188,
+      "visible_marker_ids": [
+        0,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 5.271354185515358,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.0026358170937855778,
+      "rotation_error_deg": 2.0443329161954162
+    },
+    {
+      "frame_index": 189,
+      "frame_id": 189,
+      "visible_marker_ids": [
+        0,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 4.60248974407248,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.0027727662978097177,
+      "rotation_error_deg": 1.6372769123017383
+    },
+    {
+      "frame_index": 190,
+      "frame_id": 190,
+      "visible_marker_ids": [
+        0,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 9.692785863586032,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.004287718819257164,
+      "rotation_error_deg": 1.1227577471972705
+    },
+    {
+      "frame_index": 191,
+      "frame_id": 191,
+      "visible_marker_ids": [
+        0,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 7.514083252099747,
+      "marker_pair": [
+        0,
+        19
+      ],
+      "translation_error_m": 0.0029246067073454957,
+      "rotation_error_deg": 0.7833012526222984
+    },
+    {
+      "frame_index": 192,
+      "frame_id": 192,
+      "visible_marker_ids": [
+        0,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 8.003466335048362,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.004074324402380095,
+      "rotation_error_deg": 0.8665606630484022
+    },
+    {
+      "frame_index": 193,
+      "frame_id": 193,
+      "visible_marker_ids": [
+        0,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 66.68159643544618,
+      "marker_pair": [
+        0,
+        19
+      ],
+      "translation_error_m": 0.011085197817847265,
+      "rotation_error_deg": 2.653520349432188
+    },
+    {
+      "frame_index": 194,
+      "frame_id": 194,
+      "visible_marker_ids": [
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 2.9958730087493644,
+      "marker_pair": [
+        19,
+        25
+      ],
+      "translation_error_m": 0.0026436984099511753,
+      "rotation_error_deg": 2.2774496735123013
+    },
+    {
+      "frame_index": 195,
+      "frame_id": 195,
+      "visible_marker_ids": [
+        0,
+        24,
+        25
+      ],
+      "disagreement_cost": 25.50896090608131,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.008331318382219673,
+      "rotation_error_deg": 2.77357404620413
+    },
+    {
+      "frame_index": 196,
+      "frame_id": 196,
+      "visible_marker_ids": [
+        22,
+        25
+      ],
+      "disagreement_cost": 1.8872820495288534,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.0012967479688502695,
+      "rotation_error_deg": 6.055768377855796
+    },
+    {
+      "frame_index": 197,
+      "frame_id": 197,
+      "visible_marker_ids": [
+        22,
+        25
+      ],
+      "disagreement_cost": 1.8873954016353856,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.0012970231955084738,
+      "rotation_error_deg": 6.055633966013865
+    },
+    {
+      "frame_index": 199,
+      "frame_id": 199,
+      "visible_marker_ids": [
+        0,
+        2,
+        22,
+        25,
+        26
+      ],
+      "disagreement_cost": 6.1223083965453045,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.0019624437639449723,
+      "rotation_error_deg": 8.057835952019076
+    },
+    {
+      "frame_index": 202,
+      "frame_id": 202,
+      "visible_marker_ids": [
+        2,
+        22,
+        25,
+        26
+      ],
+      "disagreement_cost": 2.4480908489963658,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.002819261141009794,
+      "rotation_error_deg": 3.3949687174346845
+    },
+    {
+      "frame_index": 203,
+      "frame_id": 203,
+      "visible_marker_ids": [
+        22,
+        25,
+        26
+      ],
+      "disagreement_cost": 5.116165839156906,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.004475119442817628,
+      "rotation_error_deg": 1.6544812803853284
+    },
+    {
+      "frame_index": 204,
+      "frame_id": 204,
+      "visible_marker_ids": [
+        22,
+        25,
+        26
+      ],
+      "disagreement_cost": 3.1076679875955007,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.00337382443075861,
+      "rotation_error_deg": 2.559273164394468
+    },
+    {
+      "frame_index": 205,
+      "frame_id": 205,
+      "visible_marker_ids": [
+        22,
+        25,
+        26
+      ],
+      "disagreement_cost": 2.20345059870497,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.002712532429711726,
+      "rotation_error_deg": 3.0165897680390703
+    },
+    {
+      "frame_index": 207,
+      "frame_id": 207,
+      "visible_marker_ids": [
+        22,
+        25,
+        26
+      ],
+      "disagreement_cost": 12.829369668338822,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.007011808879222995,
+      "rotation_error_deg": 3.667436872841898
+    },
+    {
+      "frame_index": 208,
+      "frame_id": 208,
+      "visible_marker_ids": [
+        3,
+        22,
+        25,
+        26
+      ],
+      "disagreement_cost": 17.957032641745645,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.008344747902966179,
+      "rotation_error_deg": 3.70245948907965
+    },
+    {
+      "frame_index": 209,
+      "frame_id": 209,
+      "visible_marker_ids": [
+        22,
+        25,
+        26
+      ],
+      "disagreement_cost": 2.807732448869597,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.0033090431646673004,
+      "rotation_error_deg": 1.325620443997376
+    },
+    {
+      "frame_index": 211,
+      "frame_id": 211,
+      "visible_marker_ids": [
+        3,
+        22,
+        25,
+        26
+      ],
+      "disagreement_cost": 4.149794834796287,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.0038874582179771965,
+      "rotation_error_deg": 3.0484093625474467
+    },
+    {
+      "frame_index": 212,
+      "frame_id": 212,
+      "visible_marker_ids": [
+        22,
+        25,
+        26
+      ],
+      "disagreement_cost": 4.130734623393399,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.003807356565153833,
+      "rotation_error_deg": 3.559296348431809
+    },
+    {
+      "frame_index": 221,
+      "frame_id": 221,
+      "visible_marker_ids": [
+        0,
+        4,
+        19,
+        23,
+        24
+      ],
+      "disagreement_cost": 53.993797639454215,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.011455508214704986,
+      "rotation_error_deg": 7.748965240449429
+    },
+    {
+      "frame_index": 222,
+      "frame_id": 222,
+      "visible_marker_ids": [
+        0,
+        4,
+        19,
+        23,
+        24
+      ],
+      "disagreement_cost": 29.84778710918975,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.00816517301497055,
+      "rotation_error_deg": 8.957208025647402
+    },
+    {
+      "frame_index": 223,
+      "frame_id": 223,
+      "visible_marker_ids": [
+        0,
+        4,
+        19,
+        23,
+        24
+      ],
+      "disagreement_cost": 56.11138747293992,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.010970410844285551,
+      "rotation_error_deg": 9.598297814062624
+    },
+    {
+      "frame_index": 224,
+      "frame_id": 224,
+      "visible_marker_ids": [
+        0,
+        4,
+        19,
+        23,
+        24
+      ],
+      "disagreement_cost": 4.185687214237078,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.0029959444487706053,
+      "rotation_error_deg": 1.9260408011958372
+    },
+    {
+      "frame_index": 225,
+      "frame_id": 225,
+      "visible_marker_ids": [
+        0,
+        4,
+        19,
+        23,
+        24
+      ],
+      "disagreement_cost": 13.782107714416428,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.005440287531665508,
+      "rotation_error_deg": 2.017680735865593
+    },
+    {
+      "frame_index": 226,
+      "frame_id": 226,
+      "visible_marker_ids": [
+        0,
+        4,
+        19,
+        23,
+        24
+      ],
+      "disagreement_cost": 57.12175783014317,
+      "marker_pair": [
+        0,
+        19
+      ],
+      "translation_error_m": 0.01073441308715787,
+      "rotation_error_deg": 4.211229208206117
+    },
+    {
+      "frame_index": 227,
+      "frame_id": 227,
+      "visible_marker_ids": [
+        0,
+        4,
+        19,
+        23,
+        24
+      ],
+      "disagreement_cost": 56.78010048616463,
+      "marker_pair": [
+        0,
+        19
+      ],
+      "translation_error_m": 0.010706901541960434,
+      "rotation_error_deg": 4.191640592919769
+    },
+    {
+      "frame_index": 228,
+      "frame_id": 228,
+      "visible_marker_ids": [
+        0,
+        4,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 110.61295315419193,
+      "marker_pair": [
+        0,
+        19
+      ],
+      "translation_error_m": 0.01084985258743125,
+      "rotation_error_deg": 6.126892746857583
+    },
+    {
+      "frame_index": 229,
+      "frame_id": 229,
+      "visible_marker_ids": [
+        0,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 176.37283221061827,
+      "marker_pair": [
+        0,
+        19
+      ],
+      "translation_error_m": 0.01586368701202442,
+      "rotation_error_deg": 5.120425784677997
+    },
+    {
+      "frame_index": 230,
+      "frame_id": 230,
+      "visible_marker_ids": [
+        0,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 55.83767515132529,
+      "marker_pair": [
+        0,
+        19
+      ],
+      "translation_error_m": 0.009210920560901587,
+      "rotation_error_deg": 2.2743207777431054
+    },
+    {
+      "frame_index": 231,
+      "frame_id": 231,
+      "visible_marker_ids": [
+        0,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 95.28328939658496,
+      "marker_pair": [
+        0,
+        19
+      ],
+      "translation_error_m": 0.011564829425646421,
+      "rotation_error_deg": 1.42404227044807
+    },
+    {
+      "frame_index": 232,
+      "frame_id": 232,
+      "visible_marker_ids": [
+        0,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 33.208986216079666,
+      "marker_pair": [
+        0,
+        19
+      ],
+      "translation_error_m": 0.008326490180622325,
+      "rotation_error_deg": 1.1936373899246042
+    },
+    {
+      "frame_index": 233,
+      "frame_id": 233,
+      "visible_marker_ids": [
+        0,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 32.910614472493336,
+      "marker_pair": [
+        0,
+        19
+      ],
+      "translation_error_m": 0.008264365701222683,
+      "rotation_error_deg": 1.195940365358465
+    },
+    {
+      "frame_index": 234,
+      "frame_id": 234,
+      "visible_marker_ids": [
+        0,
+        2,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 9.425413579460972,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.003318916894029436,
+      "rotation_error_deg": 1.8642655016087506
+    },
+    {
+      "frame_index": 235,
+      "frame_id": 235,
+      "visible_marker_ids": [
+        0,
+        2,
+        19,
+        24,
+        25
+      ],
+      "disagreement_cost": 53.96301934631938,
+      "marker_pair": [
+        19,
+        25
+      ],
+      "translation_error_m": 0.008862805503799984,
+      "rotation_error_deg": 3.206618024420285
+    },
+    {
+      "frame_index": 236,
+      "frame_id": 236,
+      "visible_marker_ids": [
+        0,
+        2,
+        24,
+        25
+      ],
+      "disagreement_cost": 37.07742812884507,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.007224667864389987,
+      "rotation_error_deg": 4.4682359495275765
+    },
+    {
+      "frame_index": 237,
+      "frame_id": 237,
+      "visible_marker_ids": [
+        0,
+        2,
+        25
+      ],
+      "disagreement_cost": 9.462257461669546,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.0057549739533526096,
+      "rotation_error_deg": 4.4171520012723935
+    },
+    {
+      "frame_index": 238,
+      "frame_id": 238,
+      "visible_marker_ids": [
+        0,
+        2,
+        24,
+        25
+      ],
+      "disagreement_cost": 29.60182596217748,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.009994453731070147,
+      "rotation_error_deg": 2.471595658917033
+    },
+    {
+      "frame_index": 239,
+      "frame_id": 239,
+      "visible_marker_ids": [
+        0,
+        2,
+        25
+      ],
+      "disagreement_cost": 49.90566762596458,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.013000271900179054,
+      "rotation_error_deg": 5.69010731910964
+    },
+    {
+      "frame_index": 240,
+      "frame_id": 240,
+      "visible_marker_ids": [
+        0,
+        2,
+        25
+      ],
+      "disagreement_cost": 14.061986465986028,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.007076043048744117,
+      "rotation_error_deg": 2.653285791144881
+    },
+    {
+      "frame_index": 241,
+      "frame_id": 241,
+      "visible_marker_ids": [
+        0,
+        2,
+        25
+      ],
+      "disagreement_cost": 4.533604330020079,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.003964244607456611,
+      "rotation_error_deg": 2.150974756386186
+    },
+    {
+      "frame_index": 242,
+      "frame_id": 242,
+      "visible_marker_ids": [
+        0,
+        2,
+        25,
+        26
+      ],
+      "disagreement_cost": 2.1432941509197363,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.0025237480797721075,
+      "rotation_error_deg": 3.3748788741334375
+    },
+    {
+      "frame_index": 243,
+      "frame_id": 243,
+      "visible_marker_ids": [
+        0,
+        2,
+        25
+      ],
+      "disagreement_cost": 2.557841072059752,
+      "marker_pair": [
+        0,
+        25
+      ],
+      "translation_error_m": 0.003104508076570536,
+      "rotation_error_deg": 1.3493657067404696
+    },
+    {
+      "frame_index": 244,
+      "frame_id": 244,
+      "visible_marker_ids": [
+        0,
+        2,
+        22,
+        25
+      ],
+      "disagreement_cost": 5.71469948383073,
+      "marker_pair": [
+        22,
+        25
+      ],
+      "translation_error_m": 0.00396535994439981,
+      "rotation_error_deg": 5.3428053274317175
+    },
+    {
+      "frame_index": 245,
+      "frame_id": 245,
+      "visible_marker_ids": [
+        0,
+        2,
+        24,
+        25,
+        26
+      ],
+      "disagreement_cost": 31.550701413677135,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.007165537571270872,
+      "rotation_error_deg": 2.120928647186182
+    },
+    {
+      "frame_index": 246,
+      "frame_id": 246,
+      "visible_marker_ids": [
+        0,
+        2,
+        24,
+        25
+      ],
+      "disagreement_cost": 19.391017623988667,
+      "marker_pair": [
+        0,
+        24
+      ],
+      "translation_error_m": 0.007941141018637318,
+      "rotation_error_deg": 0.9724565233430039
+    }
+  ],
+  "anchor_core": null
+}

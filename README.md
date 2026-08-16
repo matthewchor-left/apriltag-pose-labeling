@@ -60,8 +60,21 @@ uv run object-charuco \
 
 Print the PNG at **100% scale** (not “fit to page”) so each square matches `--square-size`.
 
+Live camera (`--source 0`):
+
 - **Space** — capture a frame when the board is fully detected
 - **q** — finish and save to `--output`
+
+Video file `--source` captures automatically at `--sample-rate-hz` (default 10 Hz) on video time whenever the board is detected. There is no preview window; calibration runs at end of file.
+
+```bash
+uv run object-charuco \
+  --source path/to/calibration.mov \
+  --layout 7 10 \
+  --marker-size 0.018 \
+  --sample-rate-hz 10 \
+  --output config/Camera/nexplaygroundcam/intrinsics.json
+```
 
 `--layout` is height × width (rows × columns). For ChArUco that is chess **square** count; for checkerboard it is **inner corner** count.
 
@@ -335,6 +348,28 @@ Supported corners match marker footprints: `top_left`, `top_right`, `bottom_righ
 
 Validation runs at startup when `--object-model` is set: the file must exist, `keypoint_sources` must be non-empty with valid specs, and every source marker must appear in `--marker-ids`. Refused or no-layout solves do not modify the object model. If a source marker is missing from the solved layout (including partial solves that omit it), the marker model is still saved but the command fails clearly without changing the object model.
 
+## Marker model evaluation (offline)
+
+`object-evaluate-marker-model` compares one or more marker-model candidates against CAD landmark geometry and held-out moving-video detection consistency. It emits separate rankings for CAD disagreement and detection consistency; there is no overall winner, pass/fail gate, or absolute accuracy claim.
+
+```bash
+uv run object-evaluate-marker-model \
+  --manifest config/evaluation/playground_static_4_tag/manifest.json \
+  --output /tmp/playground_static_4_tag_evaluation.json
+```
+
+**Manifest (`manifest_version: 1`):** declares shared `cad_model`, `object_model`, `intrinsics`, `detector`, `held_out_videos` (each must set `held_out: true`), and `candidates` with `{name, marker_model, capture_session, solver_variant, calibration_source}`. Relative paths resolve from the repository root (parent of `config/`). Comparable candidates must share the same marker IDs and object-model landmark coverage.
+
+**Held-out declaration:** the manifest states which videos were excluded from calibration. The tool preserves that declaration in the report but cannot independently verify it.
+
+**Primary metrics:**
+- **CAD disagreement:** leave-one-marker-out CAD prediction RMSE in millimeters (lower is better). CAD is a nominal reference; disagreement combines installation, CAD/export, padding, and vision-calibration effects without an installation survey.
+- **Detection consistency:** P95 held-out corner error in pixels (lower is better), using frozen detections decoded once per held-out video.
+
+**Repeatability grouping:** same-session solver comparisons and cross-session same-variant groups are reported only when at least two candidates qualify; otherwise the report notes insufficient candidates. No statistical confidence is fabricated.
+
+**Output:** versioned JSON with normalized input paths and SHA-256 hashes, correspondence diagnostics, per-candidate metrics, separate rankings, grouping notes, and normalization counters (unknown IDs, duplicate IDs, malformed detections). A concise console summary is printed from the same report object.
+
 ```bash
 uv run object-calibrate-marker-model \
   ... \
@@ -382,8 +417,9 @@ src/object_apriltag/
   layout.py            # marker model JSON + transforms
   calibration.py       # intrinsics loader + config profile paths
   viz/                 # optional overlays and plots
-  cli/                 # object-detect, object-charuco, object-calibrate-marker-model, object-inspect-marker-model
+  cli/                 # object-detect, object-charuco, object-calibrate-marker-model, object-inspect-marker-model, object-evaluate-marker-model
 config/
+  evaluation/          # versioned marker-model evaluation manifests
   Board/
     charuco_h6_w9_25mm_4x4_50/  # board_model.json
   Camera/
@@ -396,7 +432,7 @@ pyproject.toml         # project metadata and dependencies
 uv.lock                # locked dependency versions (commit this)
 ```
 
-Live camera and video file CLIs use `--source`: pass a camera device index (e.g. `0`) or a path to a video file. Video files loop on end-of-file in interactive tools.
+Live camera and video file CLIs use `--source`: pass a camera device index (e.g. `0`) or a path to a video file. Video files loop on end-of-file in interactive tools. `object-charuco` with a video file does not loop; it samples to EOF and then calibrates.
 
 ## Common options
 
@@ -408,6 +444,7 @@ Live camera and video file CLIs use `--source`: pass a camera device index (e.g.
 | `object-charuco` | `--marker-size` | ArUco marker size in meters (ChArUco only) |
 | `object-charuco` | `--source` | Camera device index (e.g. `0`) or path to a video file |
 | `object-charuco` | `--output` | Intrinsics JSON path |
+| `object-charuco` | `--sample-rate-hz` | Video-file automatic capture rate (default 10 Hz); ignored for live camera |
 | `object-visualize-board-frame` | `--calibration` | Path to camera intrinsics JSON |
 | `object-visualize-board-frame` | `--board-model` | ChArUco board model JSON path |
 | `object-visualize-board-frame` | `--source` / `--image` | Live camera index, video file, or still image |
@@ -437,3 +474,5 @@ Live camera and video file CLIs use `--source`: pass a camera device index (e.g.
 | `object-calibrate-marker-model` | `--output` / `--force` | Marker model JSON; refuse overwrite unless `--force` |
 | `object-calibrate-marker-model` | `--object-model` | Optional object model JSON; update mapped keypoints from solved footprints after a successful save |
 | `object-inspect-marker-model` | `--marker-model` / `--visualize` | Print or diagram an existing marker model |
+| `object-evaluate-marker-model` | `--manifest` | Versioned evaluation manifest JSON |
+| `object-evaluate-marker-model` | `--output` | Versioned evaluation report JSON |

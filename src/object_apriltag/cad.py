@@ -6,7 +6,7 @@ import json
 import struct
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import numpy as np
 
@@ -53,6 +53,11 @@ class CadModel:
 
 
 @dataclass(frozen=True)
+class CadLandmarks:
+    landmarks: dict[str, np.ndarray]
+
+
+@dataclass(frozen=True)
 class CadRegistration:
     units: str
     source_frame: str
@@ -65,6 +70,23 @@ def load_cad_model(path: Path | str) -> CadModel:
     data = Path(path).read_bytes()
     gltf, bin_chunk = _parse_glb(data)
     return _build_cad_model(gltf, bin_chunk)
+
+
+def load_cad_landmarks(
+    path: Path | str,
+    required_names: Sequence[str] | None = None,
+) -> CadLandmarks:
+    """Load named meshless scene nodes as world-space CAD landmark positions."""
+    data = Path(path).read_bytes()
+    gltf, _bin_chunk = _parse_glb(data)
+    landmarks = _build_cad_landmarks(gltf)
+    if required_names is not None:
+        missing = sorted(set(required_names) - set(landmarks))
+        if missing:
+            raise ValueError(
+                f"GLB file is missing required CAD landmarks: {missing}."
+            )
+    return CadLandmarks(landmarks=landmarks)
 
 
 def load_cad_registration(path: Path | str) -> CadRegistration:
@@ -193,6 +215,72 @@ def _build_cad_model(gltf: dict[str, Any], bin_chunk: bytes) -> CadModel:
     if not parts:
         raise ValueError("GLB file does not contain any renderable mesh parts.")
     return CadModel(parts=tuple(parts))
+
+
+def _build_cad_landmarks(gltf: dict[str, Any]) -> dict[str, np.ndarray]:
+    scenes = gltf.get("scenes")
+    nodes = gltf.get("nodes")
+    if not isinstance(scenes, list) or not scenes:
+        raise ValueError("GLB file must define at least one scene.")
+    if not isinstance(nodes, list):
+        raise ValueError("GLB file must define a nodes array.")
+
+    scene_index = int(gltf.get("scene", 0))
+    if scene_index < 0 or scene_index >= len(scenes):
+        raise ValueError(f"GLB scene index {scene_index} is out of range.")
+    scene = scenes[scene_index]
+    root_nodes = scene.get("nodes")
+    if not isinstance(root_nodes, list):
+        raise ValueError("GLB scene must define a nodes array.")
+
+    landmarks: dict[str, np.ndarray] = {}
+    for node_index in root_nodes:
+        _collect_node_landmarks(
+            node_index=int(node_index),
+            nodes=nodes,
+            parent_transform=np.eye(4, dtype=np.float64),
+            landmarks=landmarks,
+        )
+    return landmarks
+
+
+def _collect_node_landmarks(
+    *,
+    node_index: int,
+    nodes: list[dict[str, Any]],
+    parent_transform: np.ndarray,
+    landmarks: dict[str, np.ndarray],
+) -> None:
+    if node_index < 0 or node_index >= len(nodes):
+        raise ValueError(f"GLB node index {node_index} is out of range.")
+
+    node = nodes[node_index]
+    if not isinstance(node, dict):
+        raise ValueError(f"GLB node {node_index} must be an object.")
+
+    world_transform = parent_transform @ _node_local_transform(node)
+    mesh_index = node.get("mesh")
+    if mesh_index is None:
+        name = node.get("name")
+        if isinstance(name, str) and name:
+            if name in landmarks:
+                raise ValueError(f"Duplicate CAD landmark name {name!r}.")
+            position = world_transform[:3, 3].copy()
+            if not np.all(np.isfinite(position)):
+                raise ValueError(f"CAD landmark {name!r} has non-finite position.")
+            landmarks[name] = position
+
+    children = node.get("children")
+    if children is not None:
+        if not isinstance(children, list):
+            raise ValueError(f"GLB node {node_index} children must be an array.")
+        for child_index in children:
+            _collect_node_landmarks(
+                node_index=int(child_index),
+                nodes=nodes,
+                parent_transform=world_transform,
+                landmarks=landmarks,
+            )
 
 
 def _collect_node_parts(

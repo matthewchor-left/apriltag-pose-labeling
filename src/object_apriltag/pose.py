@@ -396,6 +396,25 @@ def _estimate_best_marker_pose(
     return origin, rotation
 
 
+def estimate_strict_global_pose(
+    detections: list[Detection],
+    layout: MarkerLayout,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """Estimate layout-wide object pose from multi-marker RANSAC/LM only.
+
+    Unlike estimate_fused_pose, this never falls back to single-marker IPPE or
+    temporal pose history.
+    """
+    pose = _estimate_global_layout_pose(
+        detections, layout, camera_matrix, dist_coeffs
+    )
+    if pose is None:
+        return None, None
+    return pose
+
+
 def estimate_fused_pose(
     detections: list[Detection],
     layout: MarkerLayout,
