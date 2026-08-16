@@ -270,7 +270,12 @@ By default, frames are recorded only when you press **C** with **at least two** 
 
 ### Benchmark mode (video file)
 
-Pass **`--benchmark`** with a video-file **`--source`** to measure offline calibration throughput without preview or HUD. The tool decodes every frame once to EOF, but runs AprilTag detection only on scheduled video-time samples at **`--sample-rate-hz`** (default 10 Hz) using the video's reported frame rate and the same two-marker visibility rule as **`--auto`**, then runs a single solve. **`--auto`** is unnecessary — benchmark mode implies automatic capture. **`--diagnostics-output`** is required; timings, frame counts, and environment metadata are written under a top-level **`benchmark`** object while existing quality diagnostics remain unchanged. Benchmark counts distinguish decoded frames, detector invocations, and skipped frames; marker visibility counts (`frames_with_expected_markers`, `covisible_frames`) apply only to detector-invoked frames.
+Pass **`--benchmark`** with a video-file **`--source`** to measure offline calibration throughput without preview or HUD. The tool **decodes every frame** once to EOF; **`--benchmark-frame-selection`** (default **`uniform`**) controls which decoded frames run AprilTag detection:
+
+- **`uniform`** — detect on scheduled video-time samples at **`--sample-rate-hz`** (default 10 Hz), using the video's reported frame rate and the same two-marker visibility rule as **`--auto`**.
+- **`sharpest`** — still decode every frame to score relative sharpness (downsampled grayscale Laplacian variance), group frames into half-open windows of `1/--sample-rate-hz` seconds, and detect only the sharpest frame per window (earliest frame on ties); the final partial window is flushed at EOF.
+
+**`--auto`** is unnecessary — benchmark mode implies automatic capture. **`--diagnostics-output`** is required; timings, frame counts, and environment metadata are written under a top-level **`benchmark`** object while existing quality diagnostics remain unchanged. Benchmark counts distinguish decoded frames, detector invocations, and skipped frames; marker visibility counts (`frames_with_expected_markers`, `covisible_frames`) apply only to detector-invoked frames. Sharpest mode adds `frame_selection` and `timing_seconds.sharpness_scoring` to the benchmark payload.
 
 ```bash
 uv run object-calibrate-marker-model \
@@ -425,7 +430,8 @@ Live camera and video file CLIs use `--source`: pass a camera device index (e.g.
 | `object-calibrate-marker-model` | `--marker-size` | Default physical tag edge length in meters |
 | `object-calibrate-marker-model` | `--marker-size-for` | Per-marker overrides (`ID_OR_RANGE:SIZE`, repeatable) |
 | `object-calibrate-marker-model` | `--min-pair-inliers` | Minimum co-visible frames per pair (default 20) |
-| `object-calibrate-marker-model` | `--benchmark` | Video-file throughput mode: decode all frames, detect only on scheduled samples, single solve |
+| `object-calibrate-marker-model` | `--benchmark` | Video-file throughput mode: decode all frames, detect on selected frames, single solve |
+| `object-calibrate-marker-model` | `--benchmark-frame-selection` | Benchmark-only: `uniform` (default) or `sharpest` per-window selection; requires `--benchmark` |
 | `object-calibrate-marker-model` | `--diagnostics-output` | Diagnostics JSON (required with `--benchmark`); adds top-level `benchmark` timings/counts/environment |
 | `object-calibrate-marker-model` | `--auto` / `--sample-rate-hz` | Periodic capture at sample rate (default 10 Hz); `--auto` not needed with `--benchmark` |
 | `object-calibrate-marker-model` | `--output` / `--force` | Marker model JSON; refuse overwrite unless `--force` |

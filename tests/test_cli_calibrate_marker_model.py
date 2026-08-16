@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import subprocess
 import sys
@@ -87,6 +88,8 @@ class CliHelpTests(unittest.TestCase):
         self.assertIn("ignored in manual mode", help_text)
         self.assertIn("--diagnostics-output", help_text)
         self.assertIn("--benchmark", help_text)
+        self.assertIn("--benchmark-frame-selection", help_text)
+        self.assertIn("Selecting sharpest", help_text)
         self.assertIn("--object-model", help_text)
         self.assertIn("--overlay-object-model", help_text)
         self.assertIn("keypoint_sources", help_text)
@@ -463,7 +466,23 @@ class CalibrateMarkerModelBenchmarkValidationTests(unittest.TestCase):
         )
         for key, value in overrides.items():
             setattr(args, key, value)
+        if not hasattr(args, "benchmark_frame_selection"):
+            args.benchmark_frame_selection = "uniform"
         return args
+
+    def test_benchmark_frame_selection_requires_benchmark(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import validate_args
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            args = self._validation_args(
+                tmp_dir,
+                benchmark=False,
+                benchmark_frame_selection="sharpest",
+            )
+            with self.assertRaises(RuntimeError) as ctx:
+                validate_args(args)
+            self.assertIn("--benchmark-frame-selection", str(ctx.exception))
+            self.assertIn("--benchmark", str(ctx.exception))
 
     def test_benchmark_requires_diagnostics_output(self) -> None:
         from object_apriltag.cli.calibrate_marker_model import validate_args
@@ -511,6 +530,8 @@ class CalibrateMarkerModelBenchmarkTests(unittest.TestCase):
         reported_fps: float = 10.0,
         sample_rate_hz: float = 2.0,
         diagnostics_output: Path | None = None,
+        benchmark_frame_selection: str = "uniform",
+        sharpness_by_frame: list[float] | None = None,
     ) -> tuple[mock.Mock, mock.Mock, list, mock.Mock, mock.Mock, mock.Mock, mock.Mock, bool, mock.Mock, mock.MagicMock]:
         from object_apriltag.cli.calibrate_marker_model import run_benchmark
 
@@ -550,6 +571,7 @@ class CalibrateMarkerModelBenchmarkTests(unittest.TestCase):
                 marker_size_for=None,
                 object_model=None,
                 overlay_object_model=False,
+                benchmark_frame_selection=benchmark_frame_selection,
             )
 
             frame = np.zeros((height, width, 3), dtype=np.uint8)
@@ -558,7 +580,10 @@ class CalibrateMarkerModelBenchmarkTests(unittest.TestCase):
             def read_frame_from_fixture() -> tuple[bool, np.ndarray | None]:
                 decoded_frame_index["value"] += 1
                 if decoded_frame_index["value"] < len(visible_by_frame):
-                    return True, frame.copy()
+                    encoded = frame.copy()
+                    index = decoded_frame_index["value"]
+                    encoded[0, 0, :] = index
+                    return True, encoded
                 return False, None
 
             capture = mock.MagicMock()
@@ -577,7 +602,8 @@ class CalibrateMarkerModelBenchmarkTests(unittest.TestCase):
             detector = mock.MagicMock()
 
             def detect_markers(_gray):
-                visible = visible_by_frame[decoded_frame_index["value"]]
+                frame_index = int(_gray[0, 0])
+                visible = visible_by_frame[frame_index]
                 if not visible:
                     return [], None, None
                 corners = [corner.reshape(1, 4, 2) for corner in visible.values()]
@@ -585,6 +611,17 @@ class CalibrateMarkerModelBenchmarkTests(unittest.TestCase):
                 return corners, ids, None
 
             detector.detectMarkers.side_effect = detect_markers
+
+            sharpness_ctx = (
+                mock.patch(
+                    "object_apriltag.cli.calibrate_marker_model._frame_sharpness_score",
+                    side_effect=lambda frame: float(
+                        sharpness_by_frame[int(frame[0, 0, 0])]
+                    ),
+                )
+                if sharpness_by_frame is not None
+                else contextlib.nullcontext()
+            )
 
             accepted_layout = mock.Mock()
             accepted_layout.marker_ids = {0, 1}
@@ -605,6 +642,7 @@ class CalibrateMarkerModelBenchmarkTests(unittest.TestCase):
                     "object_apriltag.cli.calibrate_marker_model.build_apriltag_detector",
                     return_value=detector,
                 ),
+                sharpness_ctx,
                 mock.patch(
                     "object_apriltag.cli.calibrate_marker_model.calibrate_marker_layout",
                     calibrate_mock,
@@ -838,6 +876,7 @@ class CalibrateMarkerModelBenchmarkTests(unittest.TestCase):
             diagnostics.solve_stages_seconds,
         )
         self.assertEqual(payload["optimizer_runs"], diagnostics.optimizer_runs)
+        self.assertEqual(payload["frame_selection"], "uniform")
         self.assertNotIn("solve_stages", payload)
         self.assertEqual(
             set(payload["counts"]),
@@ -909,6 +948,111 @@ class CalibrateMarkerModelBenchmarkTests(unittest.TestCase):
             sample_rate_hz=2.0,
         )
         counts = save_diagnostics_mock.call_args.kwargs["benchmark"]["counts"]
+        self.assertEqual(
+            counts["detector_invocations"] + counts["frames_skipped_before_detection"],
+            counts["decoded_frames"],
+        )
+
+    def test_benchmark_sharpest_picks_highest_sharpness_in_window(self) -> None:
+        visible_by_frame = [{0: _marker_corners(0)}] * 5
+        visible_by_frame[2] = {0: _marker_corners(0), 1: _marker_corners(1)}
+        sharpness = [1.0, 2.0, 50.0, 49.0, 3.0]
+        _, _, observations, _, _, _, _, _, save_diagnostics_mock, detector = self._run_benchmark(
+            visible_by_frame=visible_by_frame,
+            reported_fps=10.0,
+            sample_rate_hz=1.0,
+            benchmark_frame_selection="sharpest",
+            sharpness_by_frame=sharpness,
+        )
+        self.assertEqual(len(observations), 1)
+        self.assertEqual(detector.detectMarkers.call_count, 1)
+        benchmark = save_diagnostics_mock.call_args.kwargs["benchmark"]
+        self.assertEqual(benchmark["frame_selection"], "sharpest")
+        self.assertIn("sharpness_scoring", benchmark["timing_seconds"])
+
+    def test_benchmark_sharpest_one_detection_per_completed_window(self) -> None:
+        visible = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 60
+        _, _, _, _, _, _, _, _, save_diagnostics_mock, detector = self._run_benchmark(
+            visible_by_frame=visible,
+            reported_fps=60.0,
+            sample_rate_hz=10.0,
+            benchmark_frame_selection="sharpest",
+            sharpness_by_frame=[float(index) for index in range(60)],
+        )
+        self.assertEqual(detector.detectMarkers.call_count, 10)
+        counts = save_diagnostics_mock.call_args.kwargs["benchmark"]["counts"]
+        self.assertEqual(counts["detector_invocations"], 10)
+        self.assertEqual(counts["frames_skipped_before_detection"], 50)
+
+    def test_benchmark_sharpest_starts_new_window_on_exact_decimal_boundary(self) -> None:
+        visible = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 61
+        *_, detector = self._run_benchmark(
+            visible_by_frame=visible,
+            reported_fps=60.0,
+            sample_rate_hz=10.0,
+            benchmark_frame_selection="sharpest",
+            sharpness_by_frame=[float(index) for index in range(61)],
+        )
+        self.assertEqual(detector.detectMarkers.call_count, 11)
+
+    def test_benchmark_sharpest_tie_breaks_to_earliest_frame(self) -> None:
+        visible_by_frame = [{0: _marker_corners(0)}] * 6
+        visible_by_frame[1] = {0: _marker_corners(0), 1: _marker_corners(1)}
+        visible_by_frame[4] = {0: _marker_corners(0), 1: _marker_corners(1)}
+        sharpness = [5.0, 30.0, 30.0, 10.0, 30.0, 1.0]
+        detected_indices: list[int] = []
+
+        from object_apriltag.cli import calibrate_marker_model as cli_module
+
+        original_detect = cli_module.detect_expected_markers
+
+        def record_detect(detector, frame, expected_ids):
+            detected_indices.append(int(frame[0, 0, 0]))
+            return original_detect(detector, frame, expected_ids)
+
+        with mock.patch.object(cli_module, "detect_expected_markers", side_effect=record_detect):
+            self._run_benchmark(
+                visible_by_frame=visible_by_frame,
+                reported_fps=10.0,
+                sample_rate_hz=1.0,
+                benchmark_frame_selection="sharpest",
+                sharpness_by_frame=sharpness,
+            )
+        self.assertEqual(detected_indices, [1])
+
+    def test_benchmark_sharpest_flushes_final_partial_window(self) -> None:
+        visible = [{0: _marker_corners(0), 1: _marker_corners(1)}] * 7
+        _, _, observations, _, _, _, _, _, save_diagnostics_mock, detector = self._run_benchmark(
+            visible_by_frame=visible,
+            reported_fps=10.0,
+            sample_rate_hz=2.0,
+            benchmark_frame_selection="sharpest",
+            sharpness_by_frame=[float(index) for index in range(7)],
+        )
+        self.assertEqual(detector.detectMarkers.call_count, 2)
+        self.assertEqual(len(observations), 2)
+        counts = save_diagnostics_mock.call_args.kwargs["benchmark"]["counts"]
+        self.assertEqual(
+            counts["detector_invocations"] + counts["frames_skipped_before_detection"],
+            counts["decoded_frames"],
+        )
+
+    def test_benchmark_uniform_frame_selection_unchanged_by_default(self) -> None:
+        visible_by_frame = (
+            [{0: _marker_corners(0)}] * 5
+            + [{0: _marker_corners(0), 1: _marker_corners(1)}] * 11
+        )
+        _, _, observations, _, _, _, _, _, save_diagnostics_mock, detector = self._run_benchmark(
+            visible_by_frame=visible_by_frame,
+            reported_fps=10.0,
+            sample_rate_hz=2.0,
+            benchmark_frame_selection="uniform",
+        )
+        self.assertEqual(len(observations), 3)
+        benchmark = save_diagnostics_mock.call_args.kwargs["benchmark"]
+        self.assertEqual(benchmark["frame_selection"], "uniform")
+        self.assertNotIn("sharpness_scoring", benchmark["timing_seconds"])
+        counts = benchmark["counts"]
         self.assertEqual(
             counts["detector_invocations"] + counts["frames_skipped_before_detection"],
             counts["decoded_frames"],

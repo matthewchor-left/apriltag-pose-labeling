@@ -72,6 +72,10 @@ DEFAULT_PAIR_TRANSLATION_RMS_GATE_RATIO = 0.10
 DEFAULT_PAIR_ROTATION_RMS_GATE_DEG = 5.0
 DEFAULT_PAIR_READINESS_HUD_LINES = 8
 
+BENCHMARK_FRAME_SELECTION_UNIFORM = "uniform"
+BENCHMARK_FRAME_SELECTION_SHARPEST = "sharpest"
+DEFAULT_BENCHMARK_FRAME_SELECTION = BENCHMARK_FRAME_SELECTION_UNIFORM
+
 
 def _is_benchmark_mode(args: argparse.Namespace) -> bool:
     return getattr(args, "benchmark", False) is True
@@ -277,7 +281,26 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Headless single-pass benchmark over a video file. Requires "
             "--diagnostics-output; decodes every frame but runs AprilTag detection only "
-            "on scheduled video-time samples at --sample-rate-hz, then solves once at EOF."
+            "on frames selected by --benchmark-frame-selection (default: uniform scheduled "
+            "samples at --sample-rate-hz), then solves once at EOF."
+        ),
+    )
+    parser.add_argument(
+        "--benchmark-frame-selection",
+        choices=(
+            BENCHMARK_FRAME_SELECTION_UNIFORM,
+            BENCHMARK_FRAME_SELECTION_SHARPEST,
+        ),
+        default=DEFAULT_BENCHMARK_FRAME_SELECTION,
+        help=(
+            "Benchmark-only: which decoded frames run AprilTag detection. "
+            f"'{BENCHMARK_FRAME_SELECTION_UNIFORM}' (default) detects on scheduled "
+            "video-time samples at --sample-rate-hz. "
+            f"'{BENCHMARK_FRAME_SELECTION_SHARPEST}' still decodes every frame to score "
+            "relative sharpness, groups frames into half-open windows of "
+            "1/--sample-rate-hz seconds, and detects only the sharpest frame per window "
+            "(earliest frame on ties); the final partial window is flushed at EOF. "
+            "Selecting sharpest requires --benchmark."
         ),
     )
     return parser.parse_args()
@@ -379,6 +402,11 @@ def validate_args(
     assert marker_sizes_m is not None
     if not math.isfinite(args.sample_rate_hz) or args.sample_rate_hz <= 0.0:
         raise RuntimeError("--sample-rate-hz must be finite and positive.")
+    frame_selection = getattr(
+        args, "benchmark_frame_selection", DEFAULT_BENCHMARK_FRAME_SELECTION
+    )
+    if frame_selection == BENCHMARK_FRAME_SELECTION_SHARPEST and not _is_benchmark_mode(args):
+        raise RuntimeError("--benchmark-frame-selection requires --benchmark.")
     if args.min_pair_inliers <= 0:
         raise RuntimeError("--min-pair-inliers must be positive.")
     for name, value in (
@@ -869,6 +897,54 @@ def apply_calibration_result(
     return True
 
 
+def _frame_sharpness_score(frame: np.ndarray) -> float:
+    """Relative sharpness via downsampled grayscale Laplacian variance (OpenCV)."""
+    gray = frame if frame.ndim == 2 else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    # ponytail: fixed 1/4 scale is enough to rank frames within one clip; bump scale if needed.
+    small = cv2.resize(gray, (0, 0), fx=0.25, fy=0.25, interpolation=cv2.INTER_AREA)
+    laplacian = cv2.Laplacian(small, cv2.CV_64F)
+    return float(laplacian.var())
+
+
+def _benchmark_window_index(video_time: float, sample_interval: float) -> int:
+    # Keep frames exactly on a decimal window boundary out of the preceding window.
+    return int(math.floor(video_time / sample_interval + 1e-12))
+
+
+def _benchmark_detect_on_frame(
+    detector: cv2.aruco.ArucoDetector,
+    frame: np.ndarray,
+    expected_id_set: set[int],
+) -> tuple[dict[int, np.ndarray], int]:
+    detection_start_ns = time.perf_counter_ns()
+    visible = detect_expected_markers(detector, frame, expected_id_set)
+    return visible, time.perf_counter_ns() - detection_start_ns
+
+
+def _record_benchmark_detection(
+    visible: dict[int, np.ndarray],
+    observations: list[FrameObservation],
+    *,
+    detector_invocations: int,
+    frames_with_expected_markers: int,
+    covisible_frames: int,
+    detected_markers: int,
+) -> tuple[int, int, int, int]:
+    detector_invocations += 1
+    detected_markers += len(visible)
+    if visible:
+        frames_with_expected_markers += 1
+    if len(visible) >= 2:
+        covisible_frames += 1
+        append_capture_observation(observations, visible)
+    return (
+        detector_invocations,
+        frames_with_expected_markers,
+        covisible_frames,
+        detected_markers,
+    )
+
+
 def _timing_seconds_from_ns(duration_ns: int) -> float:
     seconds = max(0.0, duration_ns / 1_000_000_000)
     if not math.isfinite(seconds):
@@ -908,6 +984,8 @@ def _build_benchmark_payload(
     calibration_solve_ns: int,
     total_through_solve_ns: int,
     solve_diagnostics: CalibrationSolveDiagnostics | None = None,
+    frame_selection: str = DEFAULT_BENCHMARK_FRAME_SELECTION,
+    sharpness_scoring_ns: int | None = None,
 ) -> dict[str, Any]:
     ingest_seconds = _timing_seconds_from_ns(ingest_total_ns)
     detection_seconds = _timing_seconds_from_ns(detection_ns)
@@ -929,7 +1007,10 @@ def _build_benchmark_payload(
     }
     if solve_diagnostics is not None:
         timing_seconds["solve_stages"] = dict(solve_diagnostics.solve_stages_seconds)
+    if sharpness_scoring_ns is not None:
+        timing_seconds["sharpness_scoring"] = _timing_seconds_from_ns(sharpness_scoring_ns)
     payload: dict[str, Any] = {
+        "frame_selection": frame_selection,
         "source": {
             "path": str(source_path),
             "size_bytes": source_path.stat().st_size,
@@ -981,9 +1062,20 @@ def run_benchmark(args: argparse.Namespace) -> bool:
     width, height = require_calibration_image_size(image_width, image_height, args.calibration)
     detector = build_apriltag_detector(args.dictionary, args.detection_sensitivity)
 
+    frame_selection = getattr(
+        args, "benchmark_frame_selection", DEFAULT_BENCHMARK_FRAME_SELECTION
+    )
+
     print(f"Expected marker IDs: {expected_ids}")
     print(f"Reference marker ID: {args.reference_marker_id}")
-    print(f"Benchmark capture: automatic at {args.sample_rate_hz:g} Hz (video time)")
+    if frame_selection == BENCHMARK_FRAME_SELECTION_SHARPEST:
+        print(
+            "Benchmark capture: sharpest frame per "
+            f"{1.0 / args.sample_rate_hz:g}s window "
+            f"({args.sample_rate_hz:g} Hz; every frame decoded for scoring)"
+        )
+    else:
+        print(f"Benchmark capture: automatic at {args.sample_rate_hz:g} Hz (video time)")
     print(f"Using calibration: {args.calibration}")
     if calibration_source:
         print(f"Calibration source: {calibration_source}")
@@ -1008,7 +1100,6 @@ def run_benchmark(args: argparse.Namespace) -> bool:
 
         observations: list[FrameObservation] = []
         sample_interval = 1.0 / args.sample_rate_hz
-        next_sample_time = 0.0
         frame_index = 0
         decoded_frames = 0
         detector_invocations = 0
@@ -1018,35 +1109,114 @@ def run_benchmark(args: argparse.Namespace) -> bool:
         detected_markers = 0
         decode_ns = 0
         detection_ns = 0
+        sharpness_scoring_ns = 0
 
-        while True:
-            decode_start_ns = time.perf_counter_ns()
-            ok, frame = read_frame(capture, args.source, loop_on_eof=False)
-            decode_ns += time.perf_counter_ns() - decode_start_ns
-            if not ok or frame is None:
-                break
+        if frame_selection == BENCHMARK_FRAME_SELECTION_SHARPEST:
+            current_window: int | None = None
+            best_frame: np.ndarray | None = None
+            best_sharpness = float("-inf")
+            window_frame_count = 0
 
-            decoded_frames += 1
-            require_frame_size(frame.shape[1], frame.shape[0], width, height, args.calibration)
+            def flush_sharpest_window() -> None:
+                nonlocal best_frame, best_sharpness, window_frame_count
+                nonlocal detector_invocations, frames_skipped_before_detection
+                nonlocal frames_with_expected_markers, covisible_frames, detected_markers
+                nonlocal detection_ns
+                if best_frame is None:
+                    return
+                visible, elapsed_ns = _benchmark_detect_on_frame(
+                    detector, best_frame, expected_id_set
+                )
+                detection_ns += elapsed_ns
+                (
+                    detector_invocations,
+                    frames_with_expected_markers,
+                    covisible_frames,
+                    detected_markers,
+                ) = _record_benchmark_detection(
+                    visible,
+                    observations,
+                    detector_invocations=detector_invocations,
+                    frames_with_expected_markers=frames_with_expected_markers,
+                    covisible_frames=covisible_frames,
+                    detected_markers=detected_markers,
+                )
+                frames_skipped_before_detection += window_frame_count - 1
+                best_frame = None
+                best_sharpness = float("-inf")
+                window_frame_count = 0
 
-            video_time = frame_index / reported_fps
-            if video_time >= next_sample_time:
-                detection_start_ns = time.perf_counter_ns()
-                visible = detect_expected_markers(detector, frame, expected_id_set)
-                detection_ns += time.perf_counter_ns() - detection_start_ns
-                detector_invocations += 1
+            while True:
+                decode_start_ns = time.perf_counter_ns()
+                ok, frame = read_frame(capture, args.source, loop_on_eof=False)
+                decode_ns += time.perf_counter_ns() - decode_start_ns
+                if not ok or frame is None:
+                    break
 
-                detected_markers += len(visible)
-                if visible:
-                    frames_with_expected_markers += 1
-                if len(visible) >= 2:
-                    covisible_frames += 1
-                    append_capture_observation(observations, visible)
-                next_sample_time = video_time + sample_interval
-            else:
-                frames_skipped_before_detection += 1
+                decoded_frames += 1
+                require_frame_size(
+                    frame.shape[1], frame.shape[0], width, height, args.calibration
+                )
 
-            frame_index += 1
+                video_time = frame_index / reported_fps
+                window_index = _benchmark_window_index(video_time, sample_interval)
+                if current_window is None:
+                    current_window = window_index
+                elif window_index != current_window:
+                    flush_sharpest_window()
+                    current_window = window_index
+
+                score_start_ns = time.perf_counter_ns()
+                sharpness = _frame_sharpness_score(frame)
+                sharpness_scoring_ns += time.perf_counter_ns() - score_start_ns
+
+                window_frame_count += 1
+                # Earliest frame wins ties: update only on strictly higher sharpness.
+                if sharpness > best_sharpness:
+                    best_sharpness = sharpness
+                    best_frame = frame.copy()
+
+                frame_index += 1
+
+            flush_sharpest_window()
+        else:
+            next_sample_time = 0.0
+            while True:
+                decode_start_ns = time.perf_counter_ns()
+                ok, frame = read_frame(capture, args.source, loop_on_eof=False)
+                decode_ns += time.perf_counter_ns() - decode_start_ns
+                if not ok or frame is None:
+                    break
+
+                decoded_frames += 1
+                require_frame_size(
+                    frame.shape[1], frame.shape[0], width, height, args.calibration
+                )
+
+                video_time = frame_index / reported_fps
+                if video_time >= next_sample_time:
+                    visible, elapsed_ns = _benchmark_detect_on_frame(
+                        detector, frame, expected_id_set
+                    )
+                    detection_ns += elapsed_ns
+                    (
+                        detector_invocations,
+                        frames_with_expected_markers,
+                        covisible_frames,
+                        detected_markers,
+                    ) = _record_benchmark_detection(
+                        visible,
+                        observations,
+                        detector_invocations=detector_invocations,
+                        frames_with_expected_markers=frames_with_expected_markers,
+                        covisible_frames=covisible_frames,
+                        detected_markers=detected_markers,
+                    )
+                    next_sample_time = video_time + sample_interval
+                else:
+                    frames_skipped_before_detection += 1
+
+                frame_index += 1
 
         ingest_total_ns = time.perf_counter_ns() - total_start_ns
 
@@ -1088,6 +1258,12 @@ def run_benchmark(args: argparse.Namespace) -> bool:
             calibration_solve_ns=calibration_solve_ns,
             total_through_solve_ns=total_through_solve_ns,
             solve_diagnostics=solve_diagnostics,
+            frame_selection=frame_selection,
+            sharpness_scoring_ns=(
+                sharpness_scoring_ns
+                if frame_selection == BENCHMARK_FRAME_SELECTION_SHARPEST
+                else None
+            ),
         )
         return apply_calibration_result(args, result, benchmark=benchmark_payload)
     finally:
