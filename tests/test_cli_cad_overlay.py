@@ -61,6 +61,7 @@ class CliCadOverlayHelpTests(unittest.TestCase):
         self.assertIn("--side2side-cad-model", help_text)
         self.assertIn("--cad-model", help_text)
         self.assertIn("cad_registration.json", help_text)
+        self.assertIn("--object-model", help_text)
 
 
 class CliCadOverlayContractTests(unittest.TestCase):
@@ -73,7 +74,7 @@ class CliCadOverlayContractTests(unittest.TestCase):
                 detect_main()
         self.assertIn("--cad-model", str(ctx.exception))
 
-    def test_object_detect_requires_sibling_cad_registration(self) -> None:
+    def test_missing_registration_requires_object_model_for_generation(self) -> None:
         from object_apriltag.cli.detect import main as detect_main
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -83,7 +84,103 @@ class CliCadOverlayContractTests(unittest.TestCase):
             with mock.patch("sys.argv", argv):
                 with self.assertRaises(RuntimeError) as ctx:
                     detect_main()
-        self.assertIn("cad_registration.json", str(ctx.exception))
+        self.assertIn("--object-model", str(ctx.exception))
+
+    def test_missing_registration_is_fitted_before_opening_frame_source(self) -> None:
+        from object_apriltag.cli.detect import main as detect_main
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            directory = Path(tmp_dir)
+            calibration = directory / "intrinsics.json"
+            marker_model_path = directory / "marker_model.json"
+            object_model_path = directory / "object_model.json"
+            cad_model_path = directory / "model.glb"
+            for path in (
+                calibration,
+                marker_model_path,
+                object_model_path,
+                cad_model_path,
+            ):
+                path.write_bytes(b"fixture")
+
+            marker_layout = mock.Mock(name="marker_layout", marker_ids={0, 1, 2})
+            detector = mock.Mock(marker_model=marker_layout, marker_size_m=0.07)
+            fitted_registration = mock.Mock(name="fitted_registration")
+            cad_module = mock.Mock(
+                load_cad_model=mock.Mock(return_value=mock.Mock(name="cad_model")),
+                load_cad_landmarks=mock.Mock(return_value=mock.Mock(name="cad_landmarks")),
+                load_cad_registration=mock.Mock(),
+            )
+            cad_geometry_module = mock.Mock(
+                fit_cad_registration=mock.Mock(return_value=fitted_registration)
+            )
+            cad_overlay_module = mock.Mock(draw_cad_model_overlay=mock.Mock())
+            argv = [
+                "object-detect",
+                "--source",
+                "0",
+                "--calibration",
+                str(calibration),
+                "--marker-model",
+                str(marker_model_path),
+                "--dictionary",
+                "36h11",
+                "--detection-sensitivity",
+                "relaxed",
+                "--object-model",
+                str(object_model_path),
+                "--overlay-cad-model",
+                "--cad-model",
+                str(cad_model_path),
+            ]
+
+            with (
+                mock.patch.dict(
+                    sys.modules,
+                    {
+                        "object_apriltag.cad": cad_module,
+                        "object_apriltag.evaluation.cad_geometry": cad_geometry_module,
+                        "object_apriltag.viz.cad_overlay": cad_overlay_module,
+                    },
+                ),
+                mock.patch("sys.argv", argv),
+                mock.patch(
+                    "object_apriltag.cli.detect.load_intrinsics",
+                    return_value=(
+                        np.eye(3),
+                        np.zeros(5),
+                        640,
+                        480,
+                        "test",
+                    ),
+                ),
+                mock.patch(
+                    "object_apriltag.cli.detect.require_calibration_image_size",
+                    return_value=(640, 480),
+                ),
+                mock.patch(
+                    "object_apriltag.cli.detect.ObjectDetector",
+                    return_value=detector,
+                ),
+                mock.patch(
+                    "object_apriltag.cli.detect.load_object_model_document",
+                    return_value=(mock.Mock(), {"keypoint_sources": {}}),
+                ),
+                mock.patch(
+                    "object_apriltag.cli.detect.open_frame_source",
+                    side_effect=RuntimeError("stop-after-startup"),
+                ),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "stop-after-startup"):
+                    detect_main()
+
+        cad_module.load_cad_registration.assert_not_called()
+        cad_module.load_cad_landmarks.assert_called_once_with(cad_model_path)
+        cad_geometry_module.fit_cad_registration.assert_called_once_with(
+            cad_module.load_cad_landmarks.return_value,
+            {"keypoint_sources": {}},
+            marker_layout,
+        )
 
     def test_cad_overlay_is_allowed_with_pose_projection_overlay(self) -> None:
         from object_apriltag.cli.detect import main as detect_main
@@ -199,7 +296,7 @@ class CliSide2SideCadModelTests(unittest.TestCase):
                     detect_main()
         self.assertIn("--side2side-cad-model requires --preview", str(ctx.exception))
 
-    def test_side2side_requires_sibling_cad_registration(self) -> None:
+    def test_side2side_missing_registration_requires_object_model_for_generation(self) -> None:
         from object_apriltag.cli.detect import main as detect_main
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -209,7 +306,7 @@ class CliSide2SideCadModelTests(unittest.TestCase):
             with mock.patch("sys.argv", argv):
                 with self.assertRaises(RuntimeError) as ctx:
                     detect_main()
-        self.assertIn("cad_registration.json", str(ctx.exception))
+        self.assertIn("--object-model", str(ctx.exception))
 
     def test_cad_assets_load_once_when_both_cad_flags_enabled(self) -> None:
         from object_apriltag.cli.detect import main as detect_main

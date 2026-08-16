@@ -18,7 +18,11 @@ from object_apriltag.frame_source import (
     parse_frame_source,
     read_frame,
 )
-from object_apriltag.object_model_edit import ObjectModelEditSession, object_model_for_render
+from object_apriltag.object_model_edit import (
+    ObjectModelEditSession,
+    load_object_model_document,
+    object_model_for_render,
+)
 from object_apriltag.eraser import load_eraser_model, project_eraser_planes
 from object_apriltag.pose import layout_reprojection_errors, reference_marker_camera_position
 from object_apriltag.viz import (
@@ -65,7 +69,8 @@ def main() -> None:
             "  --overlay-eraser-model   Eraser plane quads (--eraser-model).\n"
             "  (neither)                RGB object axis arrows (--axis-length).\n"
             "\n"
-            "CAD (--cad-model; registration from cad_registration.json next to --cad-model):\n"
+            "CAD (--cad-model; registration loaded from sibling cad_registration.json, or fitted\n"
+            "     from matching GLB landmarks and --object-model keypoint_sources when absent):\n"
             "  --overlay-cad-model      Semi-transparent GLB on camera frame (--visualize on).\n"
             "  --side2side-cad-model    Side-by-side preview: camera | opaque CAD pane (--preview).\n"
             "  With --plot-graph: camera | CAD | skeleton chart.\n"
@@ -204,7 +209,8 @@ def main() -> None:
         type=Path,
         help=(
             "GLB CAD model path. Required when --overlay-cad-model or --side2side-cad-model "
-            "is enabled."
+            "is enabled. A missing sibling cad_registration.json is generated in memory from "
+            "--object-model and --marker-model."
         ),
     )
     parser.add_argument(
@@ -267,8 +273,11 @@ def main() -> None:
     )
     if needs_cad and not args.cad_model.exists():
         raise RuntimeError(f"CAD model file not found: {args.cad_model}")
-    if needs_cad and not cad_registration_path.exists():
-        raise RuntimeError(f"CAD registration file not found: {cad_registration_path}")
+    if needs_cad and not cad_registration_path.exists() and args.object_model is None:
+        raise RuntimeError(
+            f"CAD registration file not found: {cad_registration_path}. "
+            "Pass --object-model to generate it in memory from matching named landmarks."
+        )
     if not args.calibration.exists():
         raise RuntimeError(
             f"Calibration file not found: {args.calibration}\n"
@@ -279,6 +288,8 @@ def main() -> None:
         raise RuntimeError(f"Marker model file not found: {args.marker_model}")
     if args.eraser_model is not None and not args.eraser_model.exists():
         raise RuntimeError(f"Eraser model file not found: {args.eraser_model}")
+    if args.object_model is not None and not args.object_model.exists():
+        raise RuntimeError(f"Object model file not found: {args.object_model}")
     if args.board_frame and not args.board_model.exists():
         raise RuntimeError(f"Board model file not found: {args.board_model}")
 
@@ -323,10 +334,30 @@ def main() -> None:
     draw_cad_model_overlay = None
     render_cad_model_view = None
     if needs_cad:
-        from object_apriltag.cad import load_cad_model, load_cad_registration
+        from object_apriltag.cad import (
+            load_cad_landmarks,
+            load_cad_model,
+            load_cad_registration,
+        )
 
         cad_model = load_cad_model(args.cad_model)
-        cad_registration = load_cad_registration(cad_registration_path)
+        if cad_registration_path.exists():
+            cad_registration = load_cad_registration(cad_registration_path)
+        else:
+            from object_apriltag.evaluation.cad_geometry import fit_cad_registration
+
+            _, object_model_document = load_object_model_document(args.object_model)
+            try:
+                cad_registration = fit_cad_registration(
+                    load_cad_landmarks(args.cad_model),
+                    object_model_document,
+                    marker_model,
+                )
+            except ValueError as error:
+                raise RuntimeError(
+                    f"Cannot generate CAD registration from {args.cad_model} and "
+                    f"{args.object_model}: {error}"
+                ) from error
         if args.overlay_cad_model:
             from object_apriltag.viz.cad_overlay import draw_cad_model_overlay as _draw_cad_overlay
 
@@ -345,7 +376,13 @@ def main() -> None:
         print(f"Board camera motion: {args.camera_motion}")
     if cad_model is not None:
         print(f"Using CAD model: {args.cad_model}")
-        print(f"Using CAD registration: {cad_registration_path}")
+        if cad_registration_path.exists():
+            print(f"Using CAD registration: {cad_registration_path}")
+        else:
+            print(
+                "Generated CAD registration in memory from "
+                f"{args.object_model} and {args.marker_model}"
+            )
     print(f"Using camera calibration: {args.calibration}")
     if calibration_source:
         print(f"Calibration source: {calibration_source}")

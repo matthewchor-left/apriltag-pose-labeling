@@ -6,7 +6,7 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from object_apriltag.cad import CadLandmarks
+from object_apriltag.cad import CadLandmarks, CadRegistration
 from object_apriltag.evaluation.kabsch import (
     apply_rigid_transform,
     kabsch_rigid_transform,
@@ -27,6 +27,60 @@ from object_apriltag.object_model_edit import parse_keypoint_sources
 
 _MIN_RETAINED_LANDMARKS = 3
 _DEGENERACY_EIGENVALUE_RATIO = 1e-6
+
+
+def fit_cad_registration(
+    cad_landmarks: CadLandmarks | Mapping[str, np.ndarray],
+    object_model_document: dict[str, Any],
+    marker_layout: MarkerLayout,
+) -> CadRegistration:
+    """Fit an in-memory CAD-to-marker_model registration from named landmarks."""
+    cad_by_name = (
+        dict(cad_landmarks.landmarks)
+        if isinstance(cad_landmarks, CadLandmarks)
+        else dict(cad_landmarks)
+    )
+    marker_by_name = derive_marker_derived_landmarks(object_model_document, marker_layout)
+    landmark_names = tuple(sorted(marker_by_name))
+    if len(landmark_names) < _MIN_RETAINED_LANDMARKS:
+        raise ValueError(
+            f"CAD registration requires at least {_MIN_RETAINED_LANDMARKS} "
+            f"keypoint_sources; found {len(landmark_names)}."
+        )
+    missing_cad = sorted(set(landmark_names) - set(cad_by_name))
+    if missing_cad:
+        raise ValueError(f"CAD landmarks missing names required by keypoint_sources: {missing_cad}.")
+    _require_finite_landmarks(cad_by_name, label="CAD", names=landmark_names)
+    _require_finite_landmarks(marker_by_name, label="Marker-derived", names=landmark_names)
+
+    cad_points = np.asarray([cad_by_name[name] for name in landmark_names], dtype=np.float64)
+    marker_points = np.asarray(
+        [marker_by_name[name] for name in landmark_names],
+        dtype=np.float64,
+    )
+    if _is_degenerate_point_set(
+        cad_points,
+        degeneracy_eigenvalue_ratio=_DEGENERACY_EIGENVALUE_RATIO,
+    ):
+        raise ValueError("CAD registration landmarks are degenerate (coincident or collinear).")
+    if _is_degenerate_point_set(
+        marker_points,
+        degeneracy_eigenvalue_ratio=_DEGENERACY_EIGENVALUE_RATIO,
+    ):
+        raise ValueError(
+            "Marker-derived registration landmarks are degenerate (coincident or collinear)."
+        )
+
+    rotation, translation = kabsch_rigid_transform(cad_points, marker_points)
+    transform = np.eye(4, dtype=np.float64)
+    transform[:3, :3] = rotation
+    transform[:3, 3] = translation
+    return CadRegistration(
+        units="meters",
+        source_frame="cad",
+        target_frame="marker_model",
+        transform_4x4=transform,
+    )
 
 
 def derive_marker_derived_landmarks(

@@ -3,6 +3,7 @@
 from object_apriltag.evaluation.cad_geometry import (
     derive_marker_derived_landmarks,
     evaluate_cad_geometry,
+    fit_cad_registration,
     metric_summary_mm,
 )
 from object_apriltag.evaluation.detection_consistency import (
@@ -57,6 +58,7 @@ __all__ = [
     "evaluate_detection_consistency",
     "evaluate_marker_models",
     "evaluate_marker_models_from_manifest",
+    "fit_cad_registration",
     "format_marker_model_evaluation_console_summary",
     "freeze_held_out_video_detections",
     "kabsch_rigid_transform",

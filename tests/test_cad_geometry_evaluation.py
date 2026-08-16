@@ -11,6 +11,7 @@ from object_apriltag.cad import CadLandmarks
 from object_apriltag.evaluation.cad_geometry import (
     derive_marker_derived_landmarks,
     evaluate_cad_geometry,
+    fit_cad_registration,
     metric_summary_mm,
 )
 from object_apriltag.evaluation.kabsch import (
@@ -172,6 +173,32 @@ class CadGeometryEvaluationTests(unittest.TestCase):
         report = evaluate_cad_geometry(cad, document, layout)
         self.assertLess(report.rigid_fit.summary_mm.rmse_mm, 1e-6)
         self.assertLess(report.leave_one_marker_out.all_excluded_summary_mm.rmse_mm, 1e-6)
+
+    def test_fits_in_memory_registration_from_marker_derived_landmarks(self) -> None:
+        document = _four_landmark_document()
+        layout = _four_landmark_layout()
+        target = derive_marker_derived_landmarks(document, layout)
+        rotation = np.array(
+            [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
+            dtype=np.float64,
+        )
+        translation = np.array([0.2, -0.1, 0.3], dtype=np.float64)
+        cad = CadLandmarks(
+            landmarks={
+                name: rotation.T @ (point - translation)
+                for name, point in target.items()
+            }
+        )
+
+        registration = fit_cad_registration(cad, document, layout)
+
+        self.assertEqual(registration.units, "meters")
+        self.assertEqual(registration.source_frame, "cad")
+        self.assertEqual(registration.target_frame, "marker_model")
+        for name, point in cad.landmarks.items():
+            homogeneous = np.append(point, 1.0)
+            transformed = (registration.transform_4x4 @ homogeneous)[:3]
+            np.testing.assert_allclose(transformed, target[name], atol=1e-9)
 
     def test_perturbed_marker_localized_by_leave_one_marker_out(self) -> None:
         document = _four_landmark_document()

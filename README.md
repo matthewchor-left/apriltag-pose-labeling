@@ -167,7 +167,10 @@ On `object-detect`, `--no-visualize` disables detection and pose-projection over
 
 ### CAD overlay
 
-`object-detect` can render a GLB CAD mesh when fused pose is available. Registration is read from `cad_registration.json` in the same directory as `--cad-model`.
+`object-detect` can render a GLB CAD mesh when fused pose is available. If
+`cad_registration.json` exists next to `--cad-model`, it is loaded. Otherwise,
+registration is fitted in memory from matching named, meshless GLB landmarks and
+`--object-model` `keypoint_sources`, using the current `--marker-model`.
 
 - `--overlay-cad-model` draws a semi-transparent mesh on the camera frame (requires `--visualize`). Additive with pose projection overlays.
 - `--side2side-cad-model` opens a side-by-side preview: camera on the left, opaque CAD-only rendering on the right (black when pose is unavailable). Requires `--preview`. Still renders the CAD pane under `--no-visualize` (left pane stays raw).
@@ -191,7 +194,7 @@ uv run object-detect \
 |------|-------------|
 | `--overlay-cad-model` | Semi-transparent `--cad-model` GLB on camera frame (requires `--visualize`) |
 | `--side2side-cad-model` | Side-by-side opaque CAD pane (requires `--preview` and `--cad-model`) |
-| `--cad-model` | GLB path; required with either CAD flag. Uses sibling `cad_registration.json` |
+| `--cad-model` | GLB path; required with either CAD flag. Uses sibling `cad_registration.json`, or auto-fits from `--object-model` when absent |
 
 ## Core API (no visualization)
 
@@ -455,7 +458,7 @@ Live camera and video file CLIs use `--source`: pass a camera device index (e.g.
 | `object-detect` | `--no-visualize` | Camera preview without overlays |
 | `object-detect` | `--overlay-cad-model` | Semi-transparent GLB CAD mesh overlay on camera frame |
 | `object-detect` | `--side2side-cad-model` | Side-by-side opaque CAD pane (`--preview` required) |
-| `object-detect` | `--cad-model` | GLB path; sibling `cad_registration.json` required |
+| `object-detect` | `--cad-model` | GLB path; loads sibling `cad_registration.json` or auto-fits from `--object-model` |
 | `object-detect` / `annotation-tool` | `--board-frame` | Board Reference Frame grid, axes, and coordinate labels |
 | `object-detect` / `annotation-tool` | `--board-model` | ChArUco board model JSON (required with `--board-frame`) |
 | `object-detect` / `annotation-tool` | `--camera-motion` | `static` (default) or `dynamic` board pose retention |
