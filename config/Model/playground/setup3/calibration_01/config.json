@@ -1,7 +1,7 @@
 {
     "config_version": 1,
     "inputs": {
-      "source": "../../../../../data/playground_setup2_calibration_02.mov",
+      "source": "../../../../../data/playground_setup3_calibration_01.mov",
       "intrinsics": "../../../../../config/Camera/logi_hd_1080p/intrinsic.json"
     },
     "detector": {
@@ -9,12 +9,11 @@
       "sensitivity": "relaxed"
     },
     "markers": {
-      "reference_marker_id": 0,
+      "reference_marker_id": null,
       "anchor_marker_ids": null,
       "groups": [
-        {"ids": [12, 5, "14-16", 6, 13, 20, 9, 2, 19, 28, 22, 23], "size_m": 0.02},
-        {"ids": ["0-1"], "size_m": 0.07}
-      ]
+        {"ids": ["0-31"], "size_m": 0.02}
+        ]
     },
     "execution": {
       "mode": "benchmark",
@@ -26,7 +25,7 @@
       "discrete_method": "rotation_consistent",
       "anchor_stop_after_expansion": false,
       "partial_output": true,
-      "min_inliers_per_edge": 20,
+      "min_inliers_per_edge": 5,
       "reprojection_rms_gate_px": 2.0,
       "pair_translation_rms_gate_ratio": 0.1,
       "pair_rotation_rms_gate_deg": 5.0,
@@ -39,12 +38,23 @@
         "top-center": {"marker_id": 22, "corner": "top_right", "padding_mm": 4.0},
         "left-center": {"marker_id": 19, "corner": "top_right", "padding_mm": 4.0},
         "front-center": {"marker_id": 28, "corner": "top_right", "padding_mm": 4.0},
-        "right-center": {"marker_id": 23, "corner": "top_right", "padding_mm": 4.0}
+        "right-center": {"marker_id": 23, "corner": "top_right", "padding_mm": 4.0},
+        "top-front-left": {"marker_id": 25, "corner": "top_right", "padding_mm": 4.0},
+        "top-front-right": {"marker_id": 21, "corner": "top_right", "padding_mm": 4.0},
+        "top-back-left": {"marker_id": 27, "corner": "top_right", "padding_mm": 4.0},
+        "top-back-right": {"marker_id": 24, "corner": "top_right", "padding_mm": 4.0},
+        "back-center": {"marker_id": 29, "corner": "top_right", "padding_mm": 4.0},
+        "top-left-center": {"marker_id": 26, "corner": "top_right", "padding_mm": 4.0}
       },
       "skeleton": [
+        ["top-center", "top-front-left"],
+        ["top-center", "top-front-right"],
+        ["top-center", "top-back-left"],
+        ["top-center", "top-back-right"],
         ["top-center", "left-center"],
         ["top-center", "front-center"],
-        ["top-center", "right-center"]
+        ["top-center", "right-center"],
+        ["top-center", "back-center"]
       ]
     }
   }

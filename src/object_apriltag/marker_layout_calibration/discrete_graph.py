@@ -370,6 +370,48 @@ def compute_live_pair_readiness(
     )
 
 
+def largest_connected_component_from_pairs(
+    pairs: Iterable[MarkerPair],
+    candidate_ids: Iterable[int],
+) -> set[int]:
+    """Return the largest connected component among ``candidate_ids`` in the pair graph.
+
+    Args:
+        pairs: Undirected marker-pair edges.
+        candidate_ids: Marker IDs eligible for component membership.
+
+    Returns:
+        Marker IDs in the largest connected component; empty when no candidates remain.
+    """
+    candidates = {int(marker_id) for marker_id in candidate_ids}
+    if not candidates:
+        return set()
+
+    adjacency: dict[int, set[int]] = {marker_id: set() for marker_id in candidates}
+    for marker_a, marker_b in pairs:
+        if marker_a in candidates and marker_b in candidates:
+            adjacency[marker_a].add(marker_b)
+            adjacency[marker_b].add(marker_a)
+
+    visited: set[int] = set()
+    largest: set[int] = set()
+    for start in sorted(candidates):
+        if start in visited:
+            continue
+        component: set[int] = set()
+        stack = [start]
+        while stack:
+            current = stack.pop()
+            if current in visited:
+                continue
+            visited.add(current)
+            component.add(current)
+            stack.extend(sorted(adjacency[current] - visited))
+        if len(component) > len(largest):
+            largest = component
+    return largest
+
+
 def connected_marker_ids_from_pairs(
     pairs: Iterable[MarkerPair],
     reference_marker_id: int,

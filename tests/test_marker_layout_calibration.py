@@ -1998,7 +1998,10 @@ class PartialOutputCalibrationTests(unittest.TestCase):
             )
 
     def test_emit_partial_refuses_reference_only_component(self) -> None:
-        from object_apriltag.marker_layout_calibration.finalize import emit_partial_calibration_result
+        from object_apriltag.marker_layout_calibration.finalize import (
+            emit_partial_calibration_result,
+            empty_quality,
+        )
 
         observations = synthesize_observations(
             _two_marker_poses(self.marker_size_m),
@@ -2016,9 +2019,11 @@ class PartialOutputCalibrationTests(unittest.TestCase):
             marker_sizes_m=uniform_marker_sizes([0, 1, 2], self.marker_size_m),
             settings=self.settings,
             best_effort=True,
+            quality=empty_quality(frozenset({1, 2}), frozenset({0}), input_frame_count=25),
         )
         self.assertIsNone(result.layout)
         self.assertEqual(result.outcome, "refused")
+        self.assertIsNotNone(result.quality)
         self.assertIn("reference", (result.failure_reason or "").lower())
 
     def test_partial_output_validates_marker_sizes_for_emitted_subset(self) -> None:

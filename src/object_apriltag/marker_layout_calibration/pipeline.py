@@ -33,6 +33,7 @@ from object_apriltag.marker_layout_calibration.discrete_graph import (
     connected_marker_ids_from_pairs,
     estimate_frame_candidates,
     estimate_pair_consensus,
+    largest_connected_component_from_pairs,
     normalize_observations,
     raw_covisible_pair_counts,
 )
@@ -261,21 +262,16 @@ def calibrate_marker_layout(
                     partial_output=True,
                 )
             if len(expected_ids) < 2:
-                return CalibrationResult(
-                    None,
-                    empty_quality(
-                        frozenset(never_observed),
-                        frozenset(observed_ids),
-                        input_frame_count=len(normalized_observations),
-                    ),
-                    (
-                        "Partial output requires at least one non-reference marker connected "
-                        f"to reference {reference_marker_id}."
-                    ),
-                    outcome="refused",
-                    calibration_policy="best_effort",
-                    partial_output=True,
+                largest = largest_connected_component_from_pairs(
+                    raw_covisible_pair_counts(normalized_observations).keys(),
+                    observed_ids,
                 )
+                if len(largest) >= 2:
+                    for marker_id in set(requested_marker_ids) - largest:
+                        omitted_markers.setdefault(marker_id, "never_observed")
+                    expected_ids = sorted(largest)
+                elif len(expected_ids) == 1:
+                    pass
         else:
             return CalibrationResult(
                 None,
@@ -329,26 +325,30 @@ def calibrate_marker_layout(
                 marker_id for marker_id in expected_ids if marker_id != reference_marker_id
             ]
             if not non_reference:
-                return CalibrationResult(
-                    None,
-                    quality_from_pairs(
-                        {},
-                        requested_marker_ids,
-                        reference_marker_id,
-                        frozenset(raw_missing),
-                        input_frame_count=len(normalized_observations),
-                        rejected_frame_count=0,
-                        accepted_frame_count=0,
-                        observation_count=0,
-                    ),
+                largest = largest_connected_component_from_pairs(
+                    raw_pair_counts.keys(),
                     (
-                        "Partial output requires at least one non-reference marker connected "
-                        f"to reference {reference_marker_id}."
+                        marker_id
+                        for marker_id in requested_marker_ids
+                        if marker_id in observed_ids
                     ),
-                    outcome="refused",
-                    calibration_policy="best_effort",
-                    partial_output=True,
                 )
+                if len(largest) >= 2:
+                    for marker_id in set(expected_ids) - largest:
+                        if marker_id not in omitted_markers:
+                            omitted_markers[marker_id] = "not_connected_in_raw_observations"
+                    expected_ids = sorted(largest)
+                    if auto_reference:
+                        selected_reference, auto_failure = _auto_select_reference_marker(
+                            list(raw_pair_counts.keys()),
+                            expected_ids,
+                            keypoint_sources,
+                            anchor_ids,
+                        )
+                        if auto_failure is not None:
+                            return CalibrationResult(None, None, auto_failure)
+                        assert selected_reference is not None
+                        reference_marker_id = selected_reference
             pair_hypotheses = collect_pair_hypotheses(frame_candidates, expected_ids)
         else:
             return CalibrationResult(
@@ -1142,6 +1142,7 @@ def _run_continuous_refinement(
             settings=settings,
             best_effort=best_effort,
             anchor_marker_ids=anchor_ids,
+            quality=quality,
         )
     finalized = finalize_solved_calibration(
         marker_poses,

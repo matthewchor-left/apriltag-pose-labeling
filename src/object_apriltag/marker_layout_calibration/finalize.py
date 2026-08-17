@@ -179,10 +179,12 @@ def emit_partial_calibration_result(
     settings: CalibrationSettings,
     best_effort: bool,
     anchor_marker_ids: Sequence[int] | None = None,
+    quality: CalibrationQualityReport | None = None,
 ) -> CalibrationResult:
     """Re-run calibration on the connected subset when partial output is allowed.
 
-    Refuses when the reference marker or any connected non-reference marker is missing.
+    Skips subset re-solve when the reference marker is isolated, returning ``quality``
+    when provided so diagnostics can still be exported.
 
     Args:
         observations: Full multi-frame corner observations.
@@ -197,6 +199,7 @@ def emit_partial_calibration_result(
         settings: Calibration thresholds and iteration limits.
         best_effort: Whether best-effort policy applies to the subset solve.
         anchor_marker_ids: Optional explicit anchor-core marker IDs.
+        quality: Optional quality report to preserve when subset re-solve is skipped.
 
     Returns:
         A ``partial`` result when the subset solve succeeds, or ``refused`` when
@@ -205,16 +208,25 @@ def emit_partial_calibration_result(
     emitted_ids = sorted(connected_ids & set(requested_marker_ids))
     non_reference = [marker_id for marker_id in emitted_ids if marker_id != reference_marker_id]
     if reference_marker_id not in emitted_ids or not non_reference:
+        merged_omitted = dict(omitted)
+        for marker_id in requested_marker_ids:
+            if marker_id not in connected_ids and marker_id not in merged_omitted:
+                merged_omitted[marker_id] = "not_connected_to_reference"
         return CalibrationResult(
             None,
-            None,
+            quality,
             (
-                "Partial output requires at least one non-reference marker connected "
-                f"to reference {reference_marker_id}."
+                "Partial subset re-solve skipped: reference marker "
+                f"{reference_marker_id} has no connected non-reference markers."
             ),
             outcome="refused",
             calibration_policy="best_effort",
             partial_output=True,
+            omitted_markers=omitted_marker_records(
+                requested_marker_ids,
+                set(connected_ids),
+                merged_omitted,
+            ),
         )
 
     merged_omitted = dict(omitted)
@@ -328,6 +340,7 @@ def partial_from_pair_consensus_or_refuse(
             settings=settings,
             best_effort=best_effort,
             anchor_marker_ids=anchor_marker_ids,
+            quality=quality,
         )
     return CalibrationResult(None, quality, failure_message)
 
@@ -395,6 +408,7 @@ def partial_after_missing_accepted_frames_or_refuse(
             settings=settings,
             best_effort=best_effort,
             anchor_marker_ids=anchor_marker_ids,
+            quality=quality,
         )
     return CalibrationResult(None, quality, failure_message)
 
