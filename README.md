@@ -147,40 +147,34 @@ pose = detector.detect(frame)  # ObjectPose(origin, rotation) or None
 
 `ObjectPose.origin` and `ObjectPose.rotation` are in the **camera frame**.
 
-`ObjectPose.rotation` maps object-frame vectors to the camera frame using:
-
-- **+X** `[1, 0, 0]` — left → right  
-- **+Y** `[0, -1, 0]` — handle → tip (the matrix’s second column points tip → handle)  
-- **+Z** `[0, 0, 1]` — out of the rubber  
-
-Example: `pose.rotation @ np.array([0.0, -1.0, 0.0])` is the handle→tip direction in the camera frame.
+`ObjectPose.rotation` maps **reference-marker-centered** model coordinates into the camera frame. Those axes match the model frame below when the reference marker faces the camera: **+X** right, **+Y** down, **+Z** into the scene. There is no separate object-pose axis flip — `marker_model.json`, `object_model.json`, and runtime pose all use the same convention.
 
 ## Marker model coordinates
 
-`config/Model/<object>/marker_model.json` stores sticker corner positions in a **object-fixed model frame**, not in camera coordinates. The frame stays attached to the object regardless of where the camera is.
+`config/Model/<object>/marker_model.json` stores sticker corner positions in the **model frame** (also `coordinate_frame: "marker_model"` in `object_model.json`). The frame stays attached to the object regardless of where the camera is.
 
 | Axis | Direction |
 |------|-----------|
-| **+X** | Left → right across the object |
-| **+Y** | Handle → blade tip |
-| **+Z** | Out of the rubber (normal to the striking surface) |
+| **+X** | Right in the image when the reference marker faces the camera |
+| **+Y** | Down in the image |
+| **+Z** | Into the scene (away from the camera) |
 
-Marker 0 (front rubber) sits at **z = 0** on that reference plane. The back marker (id 1) is at **z ≈ −0.073** because it lies on the opposite side of the rubber: you move **into** the object, opposite **+Z**. Side and edge markers use negative **z** where they wrap around the blade.
+Corner names (`top_left`, `top_right`, …) follow **OpenCV AprilTag detection order** (image-relative), not a physical left/right label on the object. When the sticker is viewed from another angle, the same corner name still refers to the same sticker corner.
 
-When the **rubber faces the camera**, **+Z** points toward the camera and **−Z** points through the blade toward the back — so negative **z** in the model file corresponds to points that are farther from the camera. That is expected; it does not mean model **z** is defined as camera depth.
+When the **reference marker faces the camera**, **+Z** points away from the camera into the object. Markers on the far side of the object therefore have larger **+Z** values in the model file. That is expected; model **Z** is object-fixed depth, not camera depth.
 
 ```
         camera
           │
           ▼
-    ═════════════  z = 0   (marker 0, rubber)
+    ═════════════  reference marker (near side, smaller +Z)
     │   object    │
-    ═════════════  z ≈ −0.073   (marker 1, back)
+    ═════════════  back markers (farther into the scene, larger +Z)
 ```
 
 If the object is viewed from the back or from the side, the mapping between model **±Z** and closer/farther relative to the camera changes because the object rotated — the model frame itself does not change.
 
-`ObjectDetector` estimates one **camera-frame** `origin` and `rotation` from all visible marker-model corners with a layout-wide RANSAC PnP solve. This rejects inconsistent corner detections instead of averaging independent marker poses. When only one marker is usable, both IPPE candidates are considered and the candidate closest to the preceding pose is selected; without history, the lower-reprojection candidate is used.
+`ObjectDetector` estimates one **camera-frame** `origin` and `rotation` from all visible marker-model corners with a layout-wide RANSAC PnP solve (requires at least two markers). This rejects inconsistent corner detections instead of averaging independent marker poses.
 
 Marker model JSON uses top-level `marker_size_m` as the default physical edge length (meters). Each `markers.<id>` entry may optionally include `size_m` when that sticker differs from the default; omitted `size_m` means the default. Calibration writes `size_m` only for non-default markers. Saved models record `anchor_marker_ids`: every marker in the layout when `--anchor-marker-ids` is omitted, or the explicit bootstrap core when it is provided. Footprint validation checks each marker against its resolved size.
 

@@ -7,7 +7,7 @@
       "sha256": "d4ec6184cd1a138d35f00f524a337673968e0b224feccb7221671cc728d5dd01"
     },
     "object_model": {
-      "path": "config/Model/playground/object_model.json",
+      "path": "config/Model/playground/calibration_01/object_model.json",
       "sha256": "3f61efd71968c95ed8fdbb1028222edaa5349d370eb2390037045c3f7018a757"
     },
     "intrinsics": {
@@ -35,7 +35,7 @@
       {
         "name": "calibration_01",
         "marker_model": {
-          "path": "config/Model/playground/marker_model_calibration_01.json",
+          "path": "config/Model/playground/calibration_01/marker_model.json",
           "sha256": "b0accd44894d5118ae7b6506d4159e41df8005caa53365cdc8d2572e5f28f39b"
         },
         "capture_session": "calibration_01",
@@ -50,7 +50,7 @@
       {
         "name": "calibration_02",
         "marker_model": {
-          "path": "config/Model/playground/marker_model_calibration_02.json",
+          "path": "config/Model/playground/calibration_02/marker_model.json",
           "sha256": "6fbfcf31be0998314acdf6bf9d07b49237f126e84431dbac702c92ee6806edf0"
         },
         "capture_session": "calibration_02",
@@ -65,7 +65,7 @@
       {
         "name": "calibration_03",
         "marker_model": {
-          "path": "config/Model/playground/marker_model_calibration_03.json",
+          "path": "config/Model/playground/calibration_03/marker_model.json",
           "sha256": "e415b575751f2f2ec9bc25d0a072f6f4d577b1457d736d57c3eddaa15fdc5eb8"
         },
         "capture_session": "calibration_03",
@@ -151,7 +151,7 @@
       "capture_session": "calibration_01",
       "solver_variant": "sharpest_10hz",
       "marker_model": {
-        "path": "config/Model/playground/marker_model_calibration_01.json",
+        "path": "config/Model/playground/calibration_01/marker_model.json",
         "sha256": "b0accd44894d5118ae7b6506d4159e41df8005caa53365cdc8d2572e5f28f39b"
       },
       "calibration_source": {
@@ -794,27 +794,27 @@
         "compatible": true,
         "incompatibility_reason": null,
         "summary_px": {
-          "count": 12804,
-          "min_px": 0.017533005824455453,
-          "median_px": 4.39700416233498,
-          "rmse_px": 7.612421132548435,
-          "p95_px": 14.625778366291357,
-          "max_px": 81.76536025276373
+          "count": 12816,
+          "min_px": 0.01753383874237806,
+          "median_px": 4.354042459942038,
+          "rmse_px": 7.712752711888489,
+          "p95_px": 14.478891437273607,
+          "max_px": 82.30613335639656
         },
         "eligible_fold_count": 3205,
         "possible_fold_count": 6824,
-        "solve_failure_count": 4,
+        "solve_failure_count": 1,
         "ineligible_fold_count": 3619,
         "per_marker": [
           {
             "marker_id": 0,
             "summary_px": {
               "count": 3612,
-              "min_px": 0.017533005824455453,
-              "median_px": 4.533213851743791,
-              "rmse_px": 6.809012553961443,
-              "p95_px": 13.69224255762569,
-              "max_px": 33.080303630530565
+              "min_px": 0.01753383874237806,
+              "median_px": 4.388379960813693,
+              "rmse_px": 6.739145731498248,
+              "p95_px": 13.448681027326135,
+              "max_px": 33.08031543630714
             },
             "eligible_fold_count": 903,
             "possible_fold_count": 2264,
@@ -825,11 +825,11 @@
             "marker_id": 2,
             "summary_px": {
               "count": 3464,
-              "min_px": 0.11446039766246417,
-              "median_px": 3.825880177353147,
-              "rmse_px": 6.390023824101289,
-              "p95_px": 12.710493672632044,
-              "max_px": 33.12854416528456
+              "min_px": 0.11446381309294033,
+              "median_px": 3.7958634042175836,
+              "rmse_px": 6.490311964555514,
+              "p95_px": 12.79896497411094,
+              "max_px": 33.66913191709155
             },
             "eligible_fold_count": 866,
             "possible_fold_count": 1785,
@@ -839,31 +839,31 @@
           {
             "marker_id": 3,
             "summary_px": {
-              "count": 3400,
-              "min_px": 0.06996442552000791,
-              "median_px": 5.149155873009379,
-              "rmse_px": 8.410927385272881,
-              "p95_px": 15.56901266551117,
-              "max_px": 66.66311637730556
+              "count": 3404,
+              "min_px": 0.06996779399522085,
+              "median_px": 5.062986084910449,
+              "rmse_px": 8.312798796752627,
+              "p95_px": 15.3452758361287,
+              "max_px": 66.6631215150485
             },
             "eligible_fold_count": 852,
             "possible_fold_count": 1907,
-            "solve_failure_count": 2,
+            "solve_failure_count": 1,
             "ineligible_fold_count": 1055
           },
           {
             "marker_id": 4,
             "summary_px": {
-              "count": 2328,
-              "min_px": 0.049416730931470344,
-              "median_px": 4.00169180141279,
-              "rmse_px": 9.094400395830965,
-              "p95_px": 17.233652623350547,
-              "max_px": 81.76536025276373
+              "count": 2336,
+              "min_px": 0.04941658402555922,
+              "median_px": 3.9683525907341917,
+              "rmse_px": 9.642438755705484,
+              "p95_px": 18.155213536672694,
+              "max_px": 82.30613335639656
             },
             "eligible_fold_count": 584,
             "possible_fold_count": 868,
-            "solve_failure_count": 2,
+            "solve_failure_count": 0,
             "ineligible_fold_count": 284
           },
           {
@@ -1021,27 +1021,27 @@
           {
             "visible_marker_count": 3,
             "summary_px": {
-              "count": 6788,
-              "min_px": 0.10705892369483545,
-              "median_px": 5.9297032354591686,
-              "rmse_px": 8.487757233298634,
-              "p95_px": 15.547654894801939,
-              "max_px": 57.03054732736868
+              "count": 6800,
+              "min_px": 0.10706659977614283,
+              "median_px": 5.902976718454521,
+              "rmse_px": 8.650085184283794,
+              "p95_px": 15.971879663792514,
+              "max_px": 56.139807414978975
             },
             "eligible_fold_count": 1701,
             "possible_fold_count": 1701,
-            "solve_failure_count": 4,
+            "solve_failure_count": 1,
             "ineligible_fold_count": 0
           },
           {
             "visible_marker_count": 4,
             "summary_px": {
               "count": 6016,
-              "min_px": 0.017533005824455453,
-              "median_px": 2.8313383836127954,
-              "rmse_px": 6.48439687060218,
-              "p95_px": 12.67283728352839,
-              "max_px": 81.76536025276373
+              "min_px": 0.01753383874237806,
+              "median_px": 2.8435368266000323,
+              "rmse_px": 6.492332066675743,
+              "p95_px": 11.688163088248674,
+              "max_px": 82.30613335639656
             },
             "eligible_fold_count": 1504,
             "possible_fold_count": 1504,
@@ -1053,27 +1053,27 @@
           {
             "source_video": "data/playground_test_01.mov",
             "summary_px": {
-              "count": 3156,
-              "min_px": 0.34185817868472806,
-              "median_px": 6.286639099802947,
-              "rmse_px": 8.771726731197752,
-              "p95_px": 15.57566381763087,
-              "max_px": 56.13983842769651
+              "count": 3168,
+              "min_px": 0.34036481164150245,
+              "median_px": 6.304524341739228,
+              "rmse_px": 9.208389380469944,
+              "p95_px": 16.657547656302448,
+              "max_px": 56.139807414978975
             },
             "eligible_fold_count": 793,
             "possible_fold_count": 2905,
-            "solve_failure_count": 4,
+            "solve_failure_count": 1,
             "ineligible_fold_count": 2112
           },
           {
             "source_video": "data/playground_test_02.mov",
             "summary_px": {
               "count": 9648,
-              "min_px": 0.017533005824455453,
-              "median_px": 3.731641805467789,
-              "rmse_px": 7.192751031283005,
-              "p95_px": 13.87486399379878,
-              "max_px": 81.76536025276373
+              "min_px": 0.01753383874237806,
+              "median_px": 3.6829931958683506,
+              "rmse_px": 7.153775510354198,
+              "p95_px": 13.43817421028895,
+              "max_px": 82.30613335639656
             },
             "eligible_fold_count": 2412,
             "possible_fold_count": 3919,
@@ -1088,7 +1088,7 @@
       "capture_session": "calibration_02",
       "solver_variant": "sharpest_10hz",
       "marker_model": {
-        "path": "config/Model/playground/marker_model_calibration_02.json",
+        "path": "config/Model/playground/calibration_02/marker_model.json",
         "sha256": "6fbfcf31be0998314acdf6bf9d07b49237f126e84431dbac702c92ee6806edf0"
       },
       "calibration_source": {
@@ -1731,57 +1731,57 @@
         "compatible": true,
         "incompatibility_reason": null,
         "summary_px": {
-          "count": 12776,
-          "min_px": 0.0095561146240735,
-          "median_px": 4.81412734627192,
-          "rmse_px": 8.483249397834879,
-          "p95_px": 16.001371352942108,
-          "max_px": 206.86280695694666
+          "count": 12788,
+          "min_px": 0.009572640488325929,
+          "median_px": 4.780874972787262,
+          "rmse_px": 8.09116015734563,
+          "p95_px": 15.790209731654151,
+          "max_px": 96.72669561787778
         },
         "eligible_fold_count": 3205,
         "possible_fold_count": 6824,
-        "solve_failure_count": 11,
+        "solve_failure_count": 8,
         "ineligible_fold_count": 3619,
         "per_marker": [
           {
             "marker_id": 0,
             "summary_px": {
-              "count": 3600,
-              "min_px": 0.0095561146240735,
-              "median_px": 4.528942107063737,
-              "rmse_px": 9.0301252326095,
-              "p95_px": 15.672287893255273,
-              "max_px": 206.86280695694666
+              "count": 3612,
+              "min_px": 0.009572640488325929,
+              "median_px": 4.414403554649219,
+              "rmse_px": 7.2926749926842485,
+              "p95_px": 14.575375697527415,
+              "max_px": 41.95147469182099
             },
             "eligible_fold_count": 903,
             "possible_fold_count": 2264,
-            "solve_failure_count": 3,
+            "solve_failure_count": 0,
             "ineligible_fold_count": 1361
           },
           {
             "marker_id": 2,
             "summary_px": {
-              "count": 3460,
-              "min_px": 0.10158124671012596,
-              "median_px": 4.323931751695087,
-              "rmse_px": 6.732247106143417,
-              "p95_px": 12.61981430263806,
-              "max_px": 41.20645708363202
+              "count": 3456,
+              "min_px": 0.05402542601199697,
+              "median_px": 4.349290074257002,
+              "rmse_px": 7.082748863017071,
+              "p95_px": 12.747713369155154,
+              "max_px": 96.72669561787778
             },
             "eligible_fold_count": 866,
             "possible_fold_count": 1785,
-            "solve_failure_count": 1,
+            "solve_failure_count": 2,
             "ineligible_fold_count": 919
           },
           {
             "marker_id": 3,
             "summary_px": {
               "count": 3384,
-              "min_px": 0.18695158079181778,
-              "median_px": 6.920215839879756,
-              "rmse_px": 10.073155122992553,
-              "p95_px": 19.484419696998042,
-              "max_px": 63.7138262756002
+              "min_px": 0.08232251292016796,
+              "median_px": 7.0147434910782565,
+              "rmse_px": 10.119813005458742,
+              "p95_px": 19.501473227871813,
+              "max_px": 87.71223422371109
             },
             "eligible_fold_count": 852,
             "possible_fold_count": 1907,
@@ -1791,16 +1791,16 @@
           {
             "marker_id": 4,
             "summary_px": {
-              "count": 2332,
-              "min_px": 0.1952234142256359,
-              "median_px": 3.8435121425102543,
-              "rmse_px": 7.341485370928773,
-              "p95_px": 15.683285887488951,
-              "max_px": 51.99480539367238
+              "count": 2336,
+              "min_px": 0.12630611854876997,
+              "median_px": 3.8343354264441474,
+              "rmse_px": 7.319870928925005,
+              "p95_px": 15.42860483899952,
+              "max_px": 44.75676161073297
             },
             "eligible_fold_count": 584,
             "possible_fold_count": 868,
-            "solve_failure_count": 1,
+            "solve_failure_count": 0,
             "ineligible_fold_count": 284
           },
           {
@@ -1958,27 +1958,27 @@
           {
             "visible_marker_count": 3,
             "summary_px": {
-              "count": 6760,
-              "min_px": 0.0095561146240735,
-              "median_px": 6.162889222266754,
-              "rmse_px": 9.784740362504932,
-              "p95_px": 17.84214356286692,
-              "max_px": 206.86280695694666
+              "count": 6772,
+              "min_px": 0.009572640488325929,
+              "median_px": 6.10394832360236,
+              "rmse_px": 9.393201528528246,
+              "p95_px": 17.74645305230507,
+              "max_px": 96.72669561787778
             },
             "eligible_fold_count": 1701,
             "possible_fold_count": 1701,
-            "solve_failure_count": 11,
+            "solve_failure_count": 8,
             "ineligible_fold_count": 0
           },
           {
             "visible_marker_count": 4,
             "summary_px": {
               "count": 6016,
-              "min_px": 0.07903273836687015,
-              "median_px": 3.878961792938176,
-              "rmse_px": 6.726779340731582,
-              "p95_px": 12.450576843833597,
-              "max_px": 63.7138262756002
+              "min_px": 0.07903039474932415,
+              "median_px": 3.8817643970797535,
+              "rmse_px": 6.311949271109915,
+              "p95_px": 12.161906472218762,
+              "max_px": 42.75317666010776
             },
             "eligible_fold_count": 1504,
             "possible_fold_count": 1504,
@@ -1990,31 +1990,31 @@
           {
             "source_video": "data/playground_test_01.mov",
             "summary_px": {
-              "count": 3132,
-              "min_px": 0.22014271380249556,
-              "median_px": 6.360014684438104,
-              "rmse_px": 9.250880932560548,
-              "p95_px": 17.912084236078638,
-              "max_px": 51.99480539367238
+              "count": 3140,
+              "min_px": 0.12855543480104142,
+              "median_px": 6.301989474956324,
+              "rmse_px": 9.677986390781424,
+              "p95_px": 18.213966283513052,
+              "max_px": 96.72669561787778
             },
             "eligible_fold_count": 793,
             "possible_fold_count": 2905,
-            "solve_failure_count": 10,
+            "solve_failure_count": 8,
             "ineligible_fold_count": 2112
           },
           {
             "source_video": "data/playground_test_02.mov",
             "summary_px": {
-              "count": 9644,
-              "min_px": 0.0095561146240735,
-              "median_px": 4.497714673253108,
-              "rmse_px": 8.21854316366818,
-              "p95_px": 15.168121930207748,
-              "max_px": 206.86280695694666
+              "count": 9648,
+              "min_px": 0.009572640488325929,
+              "median_px": 4.466070406498053,
+              "rmse_px": 7.50267522327455,
+              "p95_px": 14.754799304035721,
+              "max_px": 87.71223422371109
             },
             "eligible_fold_count": 2412,
             "possible_fold_count": 3919,
-            "solve_failure_count": 1,
+            "solve_failure_count": 0,
             "ineligible_fold_count": 1507
           }
         ]
@@ -2025,7 +2025,7 @@
       "capture_session": "calibration_03",
       "solver_variant": "sharpest_10hz",
       "marker_model": {
-        "path": "config/Model/playground/marker_model_calibration_03.json",
+        "path": "config/Model/playground/calibration_03/marker_model.json",
         "sha256": "e415b575751f2f2ec9bc25d0a072f6f4d577b1457d736d57c3eddaa15fdc5eb8"
       },
       "calibration_source": {
@@ -2668,42 +2668,42 @@
         "compatible": true,
         "incompatibility_reason": null,
         "summary_px": {
-          "count": 12776,
-          "min_px": 0.021254158791582333,
-          "median_px": 3.5478794956138016,
-          "rmse_px": 7.429113028362235,
-          "p95_px": 14.213949629316005,
-          "max_px": 151.95389958141686
+          "count": 12796,
+          "min_px": 0.02124684266438343,
+          "median_px": 3.471800707508512,
+          "rmse_px": 7.227519193353937,
+          "p95_px": 14.007783358431062,
+          "max_px": 151.95398512627014
         },
         "eligible_fold_count": 3205,
         "possible_fold_count": 6824,
-        "solve_failure_count": 11,
+        "solve_failure_count": 6,
         "ineligible_fold_count": 3619,
         "per_marker": [
           {
             "marker_id": 0,
             "summary_px": {
-              "count": 3592,
-              "min_px": 0.0623381053842343,
-              "median_px": 4.181610583085464,
-              "rmse_px": 8.043953640026501,
-              "p95_px": 14.608259706992301,
-              "max_px": 151.95389958141686
+              "count": 3612,
+              "min_px": 0.06233392403479076,
+              "median_px": 4.015083914494882,
+              "rmse_px": 7.850735488409097,
+              "p95_px": 14.67751296228314,
+              "max_px": 151.95398512627014
             },
             "eligible_fold_count": 903,
             "possible_fold_count": 2264,
-            "solve_failure_count": 5,
+            "solve_failure_count": 0,
             "ineligible_fold_count": 1361
           },
           {
             "marker_id": 2,
             "summary_px": {
               "count": 3464,
-              "min_px": 0.021254158791582333,
-              "median_px": 2.9924538115414197,
-              "rmse_px": 7.079083036840667,
-              "p95_px": 12.933998006278722,
-              "max_px": 94.49371199144908
+              "min_px": 0.02124684266438343,
+              "median_px": 2.9587469073904655,
+              "rmse_px": 6.59518131408529,
+              "p95_px": 13.293316307470052,
+              "max_px": 56.96712900884169
             },
             "eligible_fold_count": 866,
             "possible_fold_count": 1785,
@@ -2714,11 +2714,11 @@
             "marker_id": 3,
             "summary_px": {
               "count": 3384,
-              "min_px": 0.09114964998629922,
-              "median_px": 3.3981889809701267,
-              "rmse_px": 7.070037438870143,
-              "p95_px": 13.077539164998774,
-              "max_px": 74.66615135794694
+              "min_px": 0.07966614478111377,
+              "median_px": 3.2805256435831875,
+              "rmse_px": 6.78225328261166,
+              "p95_px": 12.35532814167896,
+              "max_px": 47.699191300860186
             },
             "eligible_fold_count": 852,
             "possible_fold_count": 1907,
@@ -2729,11 +2729,11 @@
             "marker_id": 4,
             "summary_px": {
               "count": 2336,
-              "min_px": 0.07142036009044982,
-              "median_px": 3.5638944930891165,
-              "rmse_px": 7.458928877498537,
-              "p95_px": 16.725776221217345,
-              "max_px": 44.08375196513895
+              "min_px": 0.07142125617711033,
+              "median_px": 3.5696057740483758,
+              "rmse_px": 7.726899856760016,
+              "p95_px": 16.301180372395915,
+              "max_px": 49.34614612435079
             },
             "eligible_fold_count": 584,
             "possible_fold_count": 868,
@@ -2895,27 +2895,27 @@
           {
             "visible_marker_count": 3,
             "summary_px": {
-              "count": 6760,
-              "min_px": 0.021254158791582333,
-              "median_px": 4.329308489136542,
-              "rmse_px": 8.436490880695438,
-              "p95_px": 14.862713062525627,
-              "max_px": 151.95389958141686
+              "count": 6780,
+              "min_px": 0.02124684266438343,
+              "median_px": 4.096712128604482,
+              "rmse_px": 7.9896560165263955,
+              "p95_px": 14.637169636109446,
+              "max_px": 151.95398512627014
             },
             "eligible_fold_count": 1701,
             "possible_fold_count": 1701,
-            "solve_failure_count": 11,
+            "solve_failure_count": 6,
             "ineligible_fold_count": 0
           },
           {
             "visible_marker_count": 4,
             "summary_px": {
               "count": 6016,
-              "min_px": 0.0623381053842343,
-              "median_px": 2.8166235618148665,
-              "rmse_px": 6.101842646437626,
-              "p95_px": 12.796512380632466,
-              "max_px": 47.69930080324251
+              "min_px": 0.06233392403479076,
+              "median_px": 2.8344736318770725,
+              "rmse_px": 6.258325213004168,
+              "p95_px": 12.840040264266614,
+              "max_px": 47.699191300860186
             },
             "eligible_fold_count": 1504,
             "possible_fold_count": 1504,
@@ -2927,27 +2927,27 @@
           {
             "source_video": "data/playground_test_01.mov",
             "summary_px": {
-              "count": 3128,
-              "min_px": 0.029918061146385913,
-              "median_px": 4.34786741864481,
-              "rmse_px": 9.436229338438002,
-              "p95_px": 17.166275853096614,
-              "max_px": 151.95389958141686
+              "count": 3148,
+              "min_px": 0.029914513079375094,
+              "median_px": 4.102980036649612,
+              "rmse_px": 8.854696552988957,
+              "p95_px": 16.347851195596135,
+              "max_px": 151.95398512627014
             },
             "eligible_fold_count": 793,
             "possible_fold_count": 2905,
-            "solve_failure_count": 11,
+            "solve_failure_count": 6,
             "ineligible_fold_count": 2112
           },
           {
             "source_video": "data/playground_test_02.mov",
             "summary_px": {
               "count": 9648,
-              "min_px": 0.021254158791582333,
-              "median_px": 3.3251713729011105,
-              "rmse_px": 6.649579446921778,
-              "p95_px": 13.343825476678314,
-              "max_px": 74.66615135794694
+              "min_px": 0.02124684266438343,
+              "median_px": 3.2601431624104387,
+              "rmse_px": 6.6104916673371426,
+              "p95_px": 13.0893797113668,
+              "max_px": 56.96712900884169
             },
             "eligible_fold_count": 2412,
             "possible_fold_count": 3919,
@@ -2976,15 +2976,15 @@
     "detection_held_out_p95_px": [
       {
         "candidate_name": "calibration_03",
-        "metric_value": 14.213949629316005
+        "metric_value": 14.007783358431062
       },
       {
         "candidate_name": "calibration_01",
-        "metric_value": 14.625778366291357
+        "metric_value": 14.478891437273607
       },
       {
         "candidate_name": "calibration_02",
-        "metric_value": 16.001371352942108
+        "metric_value": 15.790209731654151
       }
     ]
   },

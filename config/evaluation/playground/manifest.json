@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "cad_model": "config/Model/CAD/nexplayground_sim.glb",
-  "object_model": "config/Model/playground/object_model.json",
+  "object_model": "config/Model/playground/calibration_01/object_model.json",
   "intrinsics": "config/Camera/logi_hd_1080p/intrinsic.json",
   "detector": {
     "dictionary": "36h11",
@@ -14,7 +14,7 @@
   "candidates": [
     {
       "name": "calibration_01",
-      "marker_model": "config/Model/playground/marker_model_calibration_01.json",
+      "marker_model": "config/Model/playground/calibration_01/marker_model.json",
       "capture_session": "calibration_01",
       "solver_variant": "sharpest_10hz",
       "calibration_source": {
@@ -23,7 +23,7 @@
     },
     {
       "name": "calibration_02",
-      "marker_model": "config/Model/playground/marker_model_calibration_02.json",
+      "marker_model": "config/Model/playground/calibration_02/marker_model.json",
       "capture_session": "calibration_02",
       "solver_variant": "sharpest_10hz",
       "calibration_source": {
@@ -32,7 +32,7 @@
     },
     {
       "name": "calibration_03",
-      "marker_model": "config/Model/playground/marker_model_calibration_03.json",
+      "marker_model": "config/Model/playground/calibration_03/marker_model.json",
       "capture_session": "calibration_03",
       "solver_variant": "sharpest_10hz",
       "calibration_source": {

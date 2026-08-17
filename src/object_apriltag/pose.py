@@ -7,7 +7,6 @@ import numpy as np
 
 from object_apriltag.layout import (
     MarkerLayout,
-    OBJECT_AXIS_FLIP,
     layout_point_to_camera,
     layout_point_to_object_frame,
     object_reference_origin,
@@ -322,7 +321,7 @@ def object_pose_from_marker_pose(
     marker_rotation, _ = cv2.Rodrigues(rvec)
     marker_rotation = marker_rotation.astype(np.float64)
     transform = layout.transforms[marker_id]
-    object_rotation = marker_rotation @ transform.rotation @ OBJECT_AXIS_FLIP
+    object_rotation = marker_rotation @ transform.rotation
     if np.linalg.det(object_rotation) < 0.0:
         raise RuntimeError(f"Object rotation for marker {marker_id} is improper.")
     object_origin = marker_rotation @ transform.offset + tvec.reshape(3)

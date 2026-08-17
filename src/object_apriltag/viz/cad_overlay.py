@@ -10,10 +10,8 @@ import numpy as np
 from object_apriltag.cad import CadModel, CadRegistration
 from object_apriltag.detector import ObjectPose
 from object_apriltag.layout import (
-    OBJECT_AXIS_FLIP,
     MarkerLayout,
-    object_reference_origin,
-    object_reference_orientation,
+    layout_point_to_camera,
 )
 
 _CAMERA_NEAR_M = 1e-4
@@ -81,11 +79,13 @@ def layout_points_to_camera(
         Camera-frame points as ``(N, 3)`` array.
     """
     layout = np.asarray(points_layout, dtype=np.float64).reshape(-1, 3)
-    origin = object_reference_origin(marker_model)
-    orientation = object_reference_orientation(marker_model)
-    points_object = (OBJECT_AXIS_FLIP @ orientation.T @ (layout - origin).T).T
-    camera_points = (pose.rotation @ points_object.T).T + pose.origin.reshape(1, 3)
-    return camera_points
+    return np.stack(
+        [
+            layout_point_to_camera(point, pose.rotation, pose.origin, marker_model)
+            for point in layout
+        ],
+        axis=0,
+    )
 
 
 def project_camera_points(

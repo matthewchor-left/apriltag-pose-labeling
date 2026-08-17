@@ -1,12 +1,13 @@
 """Load marker sticker layout on the object and derive marker-to-object transforms.
 
-Layout coordinate frame (matches OpenCV camera axes when marker 0 faces the camera):
-  +X: right in the image
+Layout coordinate frame (marker model / object model / ``coordinate_frame: marker_model``):
+  +X: right in the image when the reference marker faces the camera
   +Y: down in the image
   +Z: into the scene (away from the camera)
 
-Marker 0 (front rubber) lies on the z = 0 plane. The back marker and edge markers
-use positive Z because they are farther into the scene.
+``marker_model.json``, ``object_model.json``, and eraser geometry all store 3D points
+in this frame. ``ObjectPose`` maps reference-marker-centered coordinates into the
+camera frame without an extra axis flip.
 """
 
 from __future__ import annotations
@@ -32,10 +33,6 @@ CORNER_LABELS = {
     "bottom_right": "br",
     "bottom_left": "bl",
 }
-
-# Maps layout-frame axes (OpenCV-style when marker 0 faces the camera) to the public
-# object pose frame used by ObjectPose and object_model.json.
-OBJECT_AXIS_FLIP = np.diag([-1.0, 1.0, -1.0])
 
 
 from object_apriltag.calibration import DEFAULT_MARKER_MODEL_PATH
@@ -836,18 +833,19 @@ def object_reference_orientation(layout: MarkerLayout) -> np.ndarray:
 
 
 def layout_point_to_object_frame(point_layout: np.ndarray, layout: MarkerLayout) -> np.ndarray:
-    """Transform a layout point into the public object frame.
+    """Transform a layout point into reference-marker-centered coordinates.
 
     Args:
-        point_layout: ``(3,)`` point in layout coordinates.
+        point_layout: ``(3,)`` point in marker model layout coordinates.
         layout: Marker layout defining the reference frame.
 
     Returns:
-        ``(3,)`` point in the object frame used by ``ObjectPose``.
+        ``(3,)`` point expressed in the reference marker sticker frame (origin at
+        reference center, axes from the reference footprint orientation).
     """
     origin = object_reference_origin(layout)
     orientation = object_reference_orientation(layout)
-    return OBJECT_AXIS_FLIP @ orientation.T @ (point_layout - origin)
+    return orientation.T @ (np.asarray(point_layout, dtype=np.float64).reshape(3) - origin)
 
 
 def layout_point_to_camera(
@@ -892,32 +890,14 @@ def camera_point_to_layout_point(
     point_object = object_rotation.T @ (point - object_origin)
     orientation = object_reference_orientation(layout)
     origin = object_reference_origin(layout)
-    return origin + orientation @ (OBJECT_AXIS_FLIP @ point_object)
+    return origin + orientation @ point_object
 
 
 def marker_color(marker_id: int, reference_marker_id: int) -> str:
-    """Return the hex color used to visualize a marker in layout UIs.
-
-    Args:
-        marker_id: Marker ID to color.
-        reference_marker_id: Reference marker ID highlighted in red.
-
-    Returns:
-        Hex color string for the marker.
-    """
     return REFERENCE_MARKER_COLOR if marker_id == reference_marker_id else DEFAULT_MARKER_COLOR
 
 
 def marker_color_bgr(marker_id: int, reference_marker_id: int) -> tuple[int, int, int]:
-    """Return the BGR color tuple used to draw a marker overlay.
-
-    Args:
-        marker_id: Marker ID to color.
-        reference_marker_id: Reference marker ID highlighted in red.
-
-    Returns:
-        ``(B, G, R)`` tuple for OpenCV drawing calls.
-    """
     return (
         REFERENCE_MARKER_COLOR_BGR
         if marker_id == reference_marker_id

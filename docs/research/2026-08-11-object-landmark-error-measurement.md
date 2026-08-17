@@ -38,7 +38,7 @@ The current path is:
 1. [`ObjectDetector.find_markers`](../../src/object_apriltag/detector.py) calls OpenCV `ArucoDetector.detectMarkers` on grayscale frames and retains IDs in the marker model.
 2. [`build_detector_parameters`](../../src/object_apriltag/apriltag.py) uses OpenCV AprilTag dictionaries; the relaxed/aggressive presets enable `CORNER_REFINE_APRILTAG`. OpenCV describes this mode as tag and corner detection based on the AprilTag 2 approach ([OpenCV ArUco API](https://docs.opencv.org/4.11.0/de/d67/group__objdetect__aruco.html)); the primary AprilTag 2 paper evaluates detection rate, false positives, and speed, but does not certify this repository's corner uncertainty ([Wang and Olson 2016](https://april.eecs.umich.edu/pdfs/wang2016iros.pdf)).
 3. [`estimate_marker_pose`](../../src/object_apriltag/pose.py) calls `cv2.solvePnP(..., SOLVEPNP_IPPE)` independently for each four-corner planar tag. OpenCV specifies that IPPE requires coplanar points and that `solvePnPGeneric`—not the single-result `solvePnP` wrapper—exposes all possible IPPE solutions ([OpenCV solvePnP guide](https://docs.opencv.org/4.13.0/d5/d1f/calib3d_solvePnP.html)).
-4. [`object_pose_from_marker_pose`](../../src/object_apriltag/pose.py) applies per-marker transforms derived from [`marker_model.json`](../../config/Model/remote1/marker_model.json) and `OBJECT_AXIS_FLIP`.
+4. [`object_pose_from_marker_pose`](../../src/object_apriltag/pose.py) applies per-marker transforms derived from [`marker_model.json`](../../config/Model/remote1/marker_model.json).
 5. [`estimate_fused_pose`](../../src/object_apriltag/pose.py) takes an unweighted arithmetic mean of per-marker origins and a normalized arithmetic mean of sign-aligned quaternions; it is not a joint all-corner PnP or covariance-weighted estimator.
 6. [`object_world_points_from_pose`](../../src/object_apriltag/viz/skeleton.py) turns object-model landmarks into camera-frame points for display.
 
@@ -218,7 +218,7 @@ Verify frame algebra with independently surveyed poses:
 {}^C T_O = {}^C T_M\,{}^M T_O.
 \]
 
-For every marker, compare the implementation's transformed basis and origin against this equation, including the bottom-center marker origin and `OBJECT_AXIS_FLIP` in [`pose.py`](../../src/object_apriltag/pose.py) and [`layout.py`](../../src/object_apriltag/layout.py). A convention/sign/order bug can look like a geometry error and will not be repaired by lower corner noise.
+For every marker, compare the implementation's transformed basis and origin against this equation in [`pose.py`](../../src/object_apriltag/pose.py) and [`layout.py`](../../src/object_apriltag/layout.py). A convention/sign/order bug can look like a geometry error and will not be repaired by lower corner noise.
 
 ### 5. Temporal, rolling-shutter, and hardware effects
 

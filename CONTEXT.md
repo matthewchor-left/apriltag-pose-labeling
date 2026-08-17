@@ -13,7 +13,7 @@ JSON file describing object skeleton keypoints and bone edges (`object_model.jso
 _Avoid_: skeleton file, object skeleton JSON (when meaning the file)
 
 **Object Model Keypoint**:
-A named 3D point in an Object Model, expressed in the Model Frame relative to the Reference Marker Center.
+A named 3D point in an Object Model, expressed as absolute coordinates in the Model Frame (same convention as `marker_model.json` corner positions).
 _Avoid_: skeleton node, landmark entry
 
 **Eraser Model**:
@@ -33,11 +33,11 @@ The 3D coordinate system used in Marker Model, Eraser Model, and Object Model: +
 _Avoid_: layout frame, OpenCV frame, camera frame
 
 **Eraser Plane Corner**:
-A `[dx, dy, dz]` offset from the Reference Marker Center, expressed in the Model Frame.
+A named 3D point defining an eraser quadrilateral, expressed as absolute coordinates in the Model Frame.
 _Avoid_: layout coordinate, absolute corner
 
 **Fused Object Pose**:
-The object origin and rotation in the camera frame, estimated by combining all visible marker detections.
+The reference-marker-centered object origin and rotation in the camera frame, estimated from all visible marker detections via global layout PnP.
 _Avoid_: fused pose, object pose (when meaning a single marker solve)
 
 **Background Plate**:

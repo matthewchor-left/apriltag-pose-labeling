@@ -135,14 +135,17 @@ class MarkerLayoutDerivationTests(unittest.TestCase):
                 self.assertAlmostEqual(value, layout.marker_size_m, places=6)
 
     def test_layout_point_to_object_frame_uses_reference_orientation(self) -> None:
-        layout = load_marker_model(DEFAULT_MARKER_MODEL_PATH)
+        footprint = footprint_from_dict(0, _square_payload(0.024))
+        layout = build_marker_layout(
+            reference_marker_id=0,
+            marker_size_m=0.048,
+            footprints={0: footprint},
+        )
         origin = object_reference_origin(layout)
         np.testing.assert_allclose(layout_point_to_object_frame(origin, layout), np.zeros(3), atol=1e-9)
-        top_left = layout.footprints[0].top_left
-        point_object = layout_point_to_object_frame(top_left, layout)
-        self.assertAlmostEqual(point_object[0], 0.024, places=6)
-        self.assertAlmostEqual(point_object[1], 0.024, places=6)
-        self.assertAlmostEqual(point_object[2], 0.0, places=6)
+        top_left = footprint.top_left
+        expected = footprint.orientation.T @ (top_left - origin)
+        np.testing.assert_allclose(layout_point_to_object_frame(top_left, layout), expected, atol=1e-9)
 
     def test_layout_point_to_camera_matches_marker_pose_for_each_marker(self) -> None:
         import cv2
