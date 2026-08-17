@@ -23,6 +23,7 @@
     },
     "solver": {
       "policy": "best_effort",
+      "discrete_method": "rotation_consistent",
       "anchor_stop_after_expansion": false,
       "partial_output": true,
       "min_inliers_per_edge": 20,

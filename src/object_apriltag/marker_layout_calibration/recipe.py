@@ -27,6 +27,8 @@ INTERACTIVE_PREVIEW_NONE = "none"
 INTERACTIVE_PREVIEW_KEYPOINT_SOURCES = "keypoint_sources"
 SOLVER_POLICY_STRICT = "strict"
 SOLVER_POLICY_BEST_EFFORT = "best_effort"
+DISCRETE_METHOD_PAIR_CONSENSUS = "pair_consensus"
+DISCRETE_METHOD_ROTATION_CONSISTENT = "rotation_consistent"
 
 
 @dataclass(frozen=True)
@@ -446,7 +448,13 @@ def _parse_solver(
             "max_ba_iterations",
         }
     )
-    _require_exact_keys(raw, "solver", required)
+    allowed = required | frozenset({"discrete_method"})
+    unknown = sorted(set(raw.keys()) - allowed)
+    if unknown:
+        raise ValueError(f"solver has unknown fields: {unknown}.")
+    missing = sorted(required - set(raw.keys()))
+    if missing:
+        raise ValueError(f"solver is missing required fields: {missing}.")
 
     policy_raw = raw["policy"]
     if policy_raw not in (SOLVER_POLICY_STRICT, SOLVER_POLICY_BEST_EFFORT):
@@ -469,6 +477,17 @@ def _parse_solver(
     if partial_output and policy != SOLVER_POLICY_BEST_EFFORT:
         raise ValueError("solver.partial_output requires solver.policy 'best_effort'.")
 
+    discrete_method_raw = raw.get("discrete_method", DISCRETE_METHOD_PAIR_CONSENSUS)
+    if discrete_method_raw not in (
+        DISCRETE_METHOD_PAIR_CONSENSUS,
+        DISCRETE_METHOD_ROTATION_CONSISTENT,
+    ):
+        raise ValueError(
+            "solver.discrete_method must be "
+            f"'{DISCRETE_METHOD_PAIR_CONSENSUS}' or "
+            f"'{DISCRETE_METHOD_ROTATION_CONSISTENT}'."
+        )
+
     settings = CalibrationSettings(
         min_inliers_per_edge=_parse_positive_int(raw["min_inliers_per_edge"], "solver.min_inliers_per_edge"),
         reprojection_rms_gate_px=_parse_positive_float(
@@ -486,6 +505,7 @@ def _parse_solver(
         huber_delta_px=_parse_positive_float(raw["huber_delta_px"], "solver.huber_delta_px"),
         corner_outlier_px=_parse_positive_float(raw["corner_outlier_px"], "solver.corner_outlier_px"),
         max_ba_iterations=_parse_positive_int(raw["max_ba_iterations"], "solver.max_ba_iterations"),
+        discrete_method=discrete_method_raw,
     )
     return settings, policy, anchor_stop, partial_output
 

@@ -96,6 +96,14 @@ _Avoid_: marker-to-marker pose, inter-marker offset
 The graph of expected markers connected by relative transforms with sufficient co-visibility support, anchored at the reference marker.
 _Avoid_: marker graph, connectivity graph
 
+**Rotation-Consistent Assignment**:
+Global per-frame IPPE branch selection that requires cross-frame agreement on shared-marker relative rotations before Pair Consensus is derived.
+_Avoid_: clique assignment, PCM assignment
+
+**Greedy Pair Consensus**:
+Per-pair seed-and-expand selection of a single relative-transform cluster from IPPE cross-product hypotheses.
+_Avoid_: pair voting, independent pair mean
+
 **Anchor Core**:
 A small explicit subset of markers (including the reference marker) used to bootstrap IPPE assignment with `2^k` exhaustive search, then expand the remaining markers hierarchically from conditioned pose hypotheses before final corner bundle adjustment.
 _Avoid_: anchor set, bootstrap markers

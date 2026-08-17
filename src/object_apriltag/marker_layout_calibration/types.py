@@ -13,6 +13,8 @@ if TYPE_CHECKING:
 
 MarkerPair = tuple[int, int]
 
+DiscreteAssignmentMethod = Literal["pair_consensus", "rotation_consistent"]
+
 
 @dataclass(frozen=True)
 class FrameObservation:
@@ -33,6 +35,7 @@ class CalibrationSettings:
     huber_delta_px: float = 1.0
     corner_outlier_px: float = 3.0
     max_ba_iterations: int = 50
+    discrete_method: DiscreteAssignmentMethod = "pair_consensus"
 
 
 @dataclass(frozen=True)

@@ -229,6 +229,23 @@ class CalibrationRecipeTests(unittest.TestCase):
             load_calibration_recipe(self._write_config(payload))
         self.assertIn("unknown fields", str(ctx.exception))
 
+    def test_defaults_discrete_method_to_pair_consensus(self) -> None:
+        recipe = load_calibration_recipe(self._write_config(_base_recipe_payload()))
+        self.assertEqual(recipe.settings.discrete_method, "pair_consensus")
+
+    def test_parses_rotation_consistent_discrete_method(self) -> None:
+        payload = _base_recipe_payload()
+        payload["solver"]["discrete_method"] = "rotation_consistent"
+        recipe = load_calibration_recipe(self._write_config(payload))
+        self.assertEqual(recipe.settings.discrete_method, "rotation_consistent")
+
+    def test_rejects_unknown_discrete_method(self) -> None:
+        payload = _base_recipe_payload()
+        payload["solver"]["discrete_method"] = "clique_pcm"
+        with self.assertRaises(ValueError) as ctx:
+            load_calibration_recipe(self._write_config(payload))
+        self.assertIn("discrete_method", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

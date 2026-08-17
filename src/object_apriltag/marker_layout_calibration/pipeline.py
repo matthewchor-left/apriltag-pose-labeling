@@ -12,6 +12,7 @@ from object_apriltag.pose import marker_corner_object_points
 
 from object_apriltag.marker_layout_calibration.anchor_core import (
     assign_and_initialize_anchor_core,
+    collect_assignment_pair_hypotheses,
     freeze_assigned_frame_candidates,
     pair_consensus_from_assignment_hypotheses,
 )
@@ -56,6 +57,9 @@ from object_apriltag.marker_layout_calibration.input import (
     validate_observations,
     validate_settings,
 )
+from object_apriltag.marker_layout_calibration.rotation_consistent_assignment import (
+    assign_frames_rotation_consistent,
+)
 from object_apriltag.marker_layout_calibration.pose_initialization import (
     build_corner_observations,
     initialize_frame_poses,
@@ -68,6 +72,8 @@ from object_apriltag.marker_layout_calibration.pose_initialization import (
 )
 from object_apriltag.marker_layout_calibration.solve_primitives import (
     CalibrationSolveDiagnostics,
+    MarkerCandidate,
+    PairConsensus,
     connected_marker_ids,
     covisible_frame_count,
     mask_corner_observations_for_frames,
@@ -88,6 +94,8 @@ from object_apriltag.marker_layout_calibration.types import (
     AnchorCoreDiagnostics,
     CalibrationResult,
     CalibrationSettings,
+    FrameAssignmentRejection,
+    FrameFallbackAssignment,
     FrameObservation,
     RestoredPairEdge,
 )
@@ -329,18 +337,41 @@ def calibrate_marker_layout(
     use_legacy_assignment = anchor_ids is None or set(anchor_ids) == set(expected_ids)
     anchor_core_diagnostics: AnchorCoreDiagnostics | None = None
     preinitialized_marker_poses: dict[int, tuple[np.ndarray, np.ndarray]] | None = None
+    rotation_consistent_assignments: dict[int, dict[int, MarkerCandidate]] | None = None
 
     if use_legacy_assignment:
-        with timed_solve_stage(solve_diagnostics, "initial_pair_consensus"):
-            pair_consensus, pair_failure, dropped_pair_edges = estimate_pair_consensus(
-                pair_hypotheses,
-                expected_ids,
-                reference_marker_id,
-                marker_sizes_m,
-                settings,
-                best_effort=best_effort,
-                restored_pair_edges=restored_pair_edges,
+        if settings.discrete_method == "rotation_consistent":
+            with timed_solve_stage(solve_diagnostics, "rotation_consistent_assignment"):
+                rotation_result = assign_frames_rotation_consistent(
+                    frame_candidates,
+                    reference_marker_id,
+                    settings,
+                )
+            rotation_consistent_assignments = rotation_result.assigned
+            assignment_pair_hypotheses = collect_assignment_pair_hypotheses(
+                rotation_consistent_assignments,
+                frozenset(expected_ids),
             )
+            with timed_solve_stage(solve_diagnostics, "initial_pair_consensus"):
+                pair_consensus, pair_failure, dropped_pair_edges = estimate_pair_consensus(
+                    assignment_pair_hypotheses,
+                    expected_ids,
+                    reference_marker_id,
+                    marker_sizes_m,
+                    settings,
+                    best_effort=False,
+                )
+        else:
+            with timed_solve_stage(solve_diagnostics, "initial_pair_consensus"):
+                pair_consensus, pair_failure, dropped_pair_edges = estimate_pair_consensus(
+                    pair_hypotheses,
+                    expected_ids,
+                    reference_marker_id,
+                    marker_sizes_m,
+                    settings,
+                    best_effort=best_effort,
+                    restored_pair_edges=restored_pair_edges,
+                )
     else:
         assert anchor_ids is not None
         (
@@ -684,13 +715,14 @@ def calibrate_marker_layout(
         )
 
     assigned_candidates, rejected_frames, assignment_rejections, fallback_assignments = (
-        assign_ippe_candidates(
-            frame_candidates,
-            pair_consensus,
-            settings,
-            marker_sizes_m,
+        _resolve_legacy_frame_assignments(
+            frame_candidates=frame_candidates,
+            pair_consensus=pair_consensus,
+            settings=settings,
+            marker_sizes_m=marker_sizes_m,
             best_effort=best_effort,
             solve_diagnostics=solve_diagnostics,
+            rotation_consistent_assignments=rotation_consistent_assignments,
         )
     )
     assignment_rejection_records = build_assignment_rejection_records(
@@ -886,6 +918,45 @@ def calibrate_marker_layout(
         input_frame_count=input_frame_count,
         rejected_frame_count=rejected_frame_count,
         accepted_frame_count=accepted_frame_count,
+    )
+
+
+def _resolve_legacy_frame_assignments(
+    *,
+    frame_candidates: list[tuple[int, dict[int, list[MarkerCandidate]]]],
+    pair_consensus: dict[tuple[int, int], PairConsensus],
+    settings: CalibrationSettings,
+    marker_sizes_m: Mapping[int, float],
+    best_effort: bool,
+    solve_diagnostics: CalibrationSolveDiagnostics | None,
+    rotation_consistent_assignments: dict[int, dict[int, MarkerCandidate]] | None,
+) -> tuple[
+    dict[int, dict[int, MarkerCandidate]],
+    tuple[int, ...],
+    tuple[FrameAssignmentRejection, ...],
+    tuple[FrameFallbackAssignment, ...],
+]:
+    """Resolve per-frame IPPE assignments for the legacy calibration path."""
+    if rotation_consistent_assignments is not None:
+        assigned = rotation_consistent_assignments
+        rejected_frames = tuple(
+            frame_index
+            for frame_index, _ in frame_candidates
+            if frame_index not in assigned
+        )
+        rejections = tuple(
+            FrameAssignmentRejection(reason="rotation_inconsistent")
+            for _ in rejected_frames
+        )
+        return assigned, rejected_frames, rejections, ()
+
+    return assign_ippe_candidates(
+        frame_candidates,
+        pair_consensus,
+        settings,
+        marker_sizes_m,
+        best_effort=best_effort,
+        solve_diagnostics=solve_diagnostics,
     )
 
 
