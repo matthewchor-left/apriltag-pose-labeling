@@ -13,6 +13,11 @@ from object_apriltag.viz import render_marker_model_plot
 
 
 def main() -> None:
+    """Print marker-model geometry and optionally open a static diagram window.
+
+    Raises:
+        RuntimeError: ``--marker-model`` file is missing or unreadable.
+    """
     parser = argparse.ArgumentParser(
         description="Inspect marker model transforms.",
         epilog=(

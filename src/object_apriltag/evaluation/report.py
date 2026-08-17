@@ -33,6 +33,18 @@ MARKER_MODEL_EVALUATION_REPORT_VERSION = 1
 
 @dataclass(frozen=True)
 class CandidateEvaluationResult:
+    """Per-candidate CAD geometry and detection-consistency results.
+
+    Attributes:
+        name: Candidate name from the evaluation manifest.
+        capture_session: Capture session label for grouping.
+        solver_variant: Solver variant label for grouping.
+        marker_model_path: Path to the candidate marker layout JSON.
+        calibration_source_video: Optional calibration video provenance.
+        cad_geometry: CAD geometry evaluation metrics.
+        detection: Detection-consistency evaluation metrics.
+    """
+
     name: str
     capture_session: str
     solver_variant: str
@@ -44,12 +56,27 @@ class CandidateEvaluationResult:
 
 @dataclass(frozen=True)
 class CandidateRankingEntry:
+    """One entry in a candidate ranking table.
+
+    Attributes:
+        candidate_name: Ranked candidate name.
+        metric_value: Metric value used for ordering (lower is better).
+    """
+
     candidate_name: str
     metric_value: float
 
 
 @dataclass(frozen=True)
 class SameSessionSolverGroup:
+    """Candidates from the same capture session for solver comparison.
+
+    Attributes:
+        capture_session: Shared capture session label.
+        candidate_names: Candidate names in the group.
+        solver_variants: Distinct solver variants present in the group.
+    """
+
     capture_session: str
     candidate_names: tuple[str, ...]
     solver_variants: tuple[str, ...]
@@ -57,6 +84,14 @@ class SameSessionSolverGroup:
 
 @dataclass(frozen=True)
 class CrossSessionSameVariantGroup:
+    """Candidates sharing a solver variant across capture sessions.
+
+    Attributes:
+        solver_variant: Shared solver variant label.
+        capture_sessions: Distinct capture sessions in the group.
+        candidate_names: Candidate names in the group.
+    """
+
     solver_variant: str
     capture_sessions: tuple[str, ...]
     candidate_names: tuple[str, ...]
@@ -64,6 +99,14 @@ class CrossSessionSameVariantGroup:
 
 @dataclass(frozen=True)
 class CandidateGroupingReport:
+    """Repeatability grouping metadata for manifest candidates.
+
+    Attributes:
+        same_session_solver_groups: Groups with multiple candidates per session.
+        cross_session_same_variant_groups: Groups with one variant across sessions.
+        notes: Human-readable notes when grouping is insufficient.
+    """
+
     same_session_solver_groups: tuple[SameSessionSolverGroup, ...]
     cross_session_same_variant_groups: tuple[CrossSessionSameVariantGroup, ...]
     notes: tuple[str, ...]
@@ -71,6 +114,20 @@ class CandidateGroupingReport:
 
 @dataclass(frozen=True)
 class MarkerModelEvaluationReport:
+    """Complete marker-model evaluation report.
+
+    Attributes:
+        version: Report schema version.
+        manifest_path: Absolute path to the source evaluation manifest.
+        inputs: Serialized manifest inputs with file hashes.
+        correspondence: Landmark and marker ID correspondence metadata.
+        held_out_declaration: User-provided held-out video declaration.
+        normalization: Per-video detection normalization diagnostics.
+        candidates: Per-candidate evaluation results.
+        rankings: Separate CAD and detection metric rankings.
+        grouping: Repeatability grouping metadata.
+    """
+
     version: int
     manifest_path: Path
     inputs: dict[str, Any]
@@ -93,6 +150,21 @@ def build_marker_model_evaluation_report(
     candidate_results: tuple[CandidateEvaluationResult, ...],
     normalization_summaries: tuple[VideoNormalizationSummary, ...],
 ) -> MarkerModelEvaluationReport:
+    """Assemble a structured marker-model evaluation report.
+
+    Args:
+        manifest: Source evaluation manifest.
+        landmark_names: Ordered landmark names from object-model correspondence.
+        expected_marker_ids: Marker IDs shared by all candidate layouts.
+        calibration_width: Intrinsics calibration image width.
+        calibration_height: Intrinsics calibration image height.
+        calibration_source: Optional intrinsics calibration provenance string.
+        candidate_results: Per-candidate CAD and detection metrics.
+        normalization_summaries: Per-video detection normalization diagnostics.
+
+    Returns:
+        Structured report with rankings and grouping metadata.
+    """
     inputs = _build_inputs_section(
         manifest=manifest,
         calibration_width=calibration_width,
@@ -136,6 +208,14 @@ def build_marker_model_evaluation_report(
 
 
 def build_marker_model_evaluation_document(report: MarkerModelEvaluationReport) -> dict[str, Any]:
+    """Serialize a marker-model evaluation report to a JSON-ready dict.
+
+    Args:
+        report: Structured evaluation report.
+
+    Returns:
+        JSON-serializable document with interpretation notes.
+    """
     return {
         "version": report.version,
         "manifest_path": _repo_relative_path(report.manifest_path),
@@ -171,6 +251,14 @@ def build_marker_model_evaluation_document(report: MarkerModelEvaluationReport) 
 
 
 def serialize_marker_model_evaluation_document(document: dict[str, Any]) -> str:
+    """Serialize an evaluation document dict to indented JSON text.
+
+    Args:
+        document: JSON-ready evaluation document.
+
+    Returns:
+        Indented JSON string with trailing newline.
+    """
     return json.dumps(document, indent=2, allow_nan=False) + "\n"
 
 
@@ -178,6 +266,18 @@ def save_marker_model_evaluation_report(
     path: str | Path,
     report: MarkerModelEvaluationReport,
 ) -> Path:
+    """Atomically write a marker-model evaluation report JSON file.
+
+    Args:
+        path: Destination file path.
+        report: Structured evaluation report.
+
+    Returns:
+        Resolved destination path.
+
+    Raises:
+        RuntimeError: If the report cannot be written.
+    """
     path = Path(path)
     document = build_marker_model_evaluation_document(report)
     text = serialize_marker_model_evaluation_document(document)
@@ -198,6 +298,14 @@ def save_marker_model_evaluation_report(
 
 
 def format_marker_model_evaluation_console_summary(report: MarkerModelEvaluationReport) -> str:
+    """Format a human-readable console summary of evaluation rankings.
+
+    Args:
+        report: Structured evaluation report.
+
+    Returns:
+        Multi-line text summary with CAD and detection rankings.
+    """
     lines = [
         f"Marker model evaluation report v{report.version}",
         f"Manifest: {_repo_relative_path(report.manifest_path)}",
@@ -235,6 +343,17 @@ def _build_inputs_section(
     calibration_height: int,
     calibration_source: str | None,
 ) -> dict[str, Any]:
+    """Build the report ``inputs`` section with file hashes.
+
+    Args:
+        manifest: Source evaluation manifest.
+        calibration_width: Intrinsics calibration image width.
+        calibration_height: Intrinsics calibration image height.
+        calibration_source: Optional intrinsics calibration provenance string.
+
+    Returns:
+        Serialized inputs section.
+    """
     return {
         "cad_model": _file_input(manifest.cad_model),
         "object_model": _file_input(manifest.object_model),
@@ -269,6 +388,14 @@ def _build_inputs_section(
 def _build_rankings(
     candidate_results: tuple[CandidateEvaluationResult, ...],
 ) -> dict[str, tuple[CandidateRankingEntry, ...]]:
+    """Build separate CAD and detection metric rankings for compatible candidates.
+
+    Args:
+        candidate_results: Per-candidate evaluation results.
+
+    Returns:
+        Rankings keyed by metric name.
+    """
     compatible = [candidate for candidate in candidate_results if candidate.detection.compatible]
     cad_ranked = sorted(
         compatible,
@@ -300,6 +427,15 @@ def _build_grouping(
     manifest: EvaluationManifest,
     candidate_results: tuple[CandidateEvaluationResult, ...],
 ) -> CandidateGroupingReport:
+    """Derive repeatability grouping metadata from manifest candidate labels.
+
+    Args:
+        manifest: Source evaluation manifest.
+        candidate_results: Per-candidate evaluation results (unused; kept for API symmetry).
+
+    Returns:
+        Grouping report with same-session and cross-session groups.
+    """
     by_session: dict[str, list[str]] = defaultdict(list)
     by_variant: dict[str, list[tuple[str, str]]] = defaultdict(list)
     for candidate in manifest.candidates:
@@ -358,6 +494,14 @@ def _build_grouping(
 def _aggregate_normalization_totals(
     summaries: tuple[VideoNormalizationSummary, ...],
 ) -> dict[str, int]:
+    """Sum per-video normalization counters across all held-out videos.
+
+    Args:
+        summaries: Per-video normalization diagnostics.
+
+    Returns:
+        Aggregate counter dict.
+    """
     return {
         "unknown_marker_ids": sum(summary.unknown_marker_ids for summary in summaries),
         "duplicate_marker_skips": sum(summary.duplicate_marker_skips for summary in summaries),
@@ -367,6 +511,14 @@ def _aggregate_normalization_totals(
 
 
 def _file_input(path: Path | None) -> dict[str, Any]:
+    """Serialize one input file path with SHA-256 hash.
+
+    Args:
+        path: Input file path, or ``None``.
+
+    Returns:
+        Dict with repo-relative path and hash, or null path/hash when missing.
+    """
     if path is None:
         return {"path": None, "sha256": None}
     resolved = path.resolve()
@@ -377,6 +529,14 @@ def _file_input(path: Path | None) -> dict[str, Any]:
 
 
 def _sha256_file(path: Path) -> str:
+    """Compute the SHA-256 hex digest of a file.
+
+    Args:
+        path: File to hash.
+
+    Returns:
+        Lowercase hex digest string.
+    """
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(65536), b""):
@@ -385,10 +545,26 @@ def _sha256_file(path: Path) -> str:
 
 
 def _repo_relative_path(path: Path) -> str:
+    """Convert a path to repo-relative POSIX form.
+
+    Args:
+        path: Absolute or relative path.
+
+    Returns:
+        Repo-relative POSIX path string.
+    """
     return repo_relative_path(path)
 
 
 def _candidate_result_to_dict(candidate: CandidateEvaluationResult) -> dict[str, Any]:
+    """Serialize one candidate evaluation result.
+
+    Args:
+        candidate: Per-candidate evaluation result.
+
+    Returns:
+        JSON-ready candidate result dict.
+    """
     return {
         "name": candidate.name,
         "capture_session": candidate.capture_session,
@@ -403,6 +579,14 @@ def _candidate_result_to_dict(candidate: CandidateEvaluationResult) -> dict[str,
 
 
 def _cad_geometry_to_dict(evaluation: CadGeometryEvaluation) -> dict[str, Any]:
+    """Serialize CAD geometry evaluation metrics.
+
+    Args:
+        evaluation: CAD geometry evaluation result.
+
+    Returns:
+        JSON-ready CAD geometry dict.
+    """
     return {
         "landmark_names": list(evaluation.landmark_names),
         "cad_landmarks_m": evaluation.cad_landmarks_m,
@@ -415,6 +599,14 @@ def _cad_geometry_to_dict(evaluation: CadGeometryEvaluation) -> dict[str, Any]:
 
 
 def _rigid_fit_to_dict(fit: RigidCadFit) -> dict[str, Any]:
+    """Serialize rigid CAD fit metrics.
+
+    Args:
+        fit: Rigid CAD alignment result.
+
+    Returns:
+        JSON-ready rigid fit dict.
+    """
     return {
         "rotation": fit.rotation,
         "translation_m": fit.translation_m,
@@ -432,6 +624,14 @@ def _rigid_fit_to_dict(fit: RigidCadFit) -> dict[str, Any]:
 
 
 def _rotation_validation_to_dict(validation: RigidRotationValidation) -> dict[str, Any]:
+    """Serialize rotation validation checks.
+
+    Args:
+        validation: Rotation matrix validation record.
+
+    Returns:
+        JSON-ready validation dict.
+    """
     return {
         "determinant": validation.determinant,
         "orthonormality_frobenius_error": validation.orthonormality_frobenius_error,
@@ -440,6 +640,14 @@ def _rotation_validation_to_dict(validation: RigidRotationValidation) -> dict[st
 
 
 def _distance_report_to_dict(report: DistanceCadDisagreementReport) -> dict[str, Any]:
+    """Serialize a distance disagreement report.
+
+    Args:
+        report: Pairwise distance disagreement report.
+
+    Returns:
+        JSON-ready distance report dict.
+    """
     return {
         "distances": [
             {
@@ -456,6 +664,14 @@ def _distance_report_to_dict(report: DistanceCadDisagreementReport) -> dict[str,
 
 
 def _leave_one_marker_cad_to_dict(prediction: LeaveOneMarkerCadPrediction) -> dict[str, Any]:
+    """Serialize leave-one-marker-out CAD prediction metrics.
+
+    Args:
+        prediction: Leave-one-marker-out CAD prediction result.
+
+    Returns:
+        JSON-ready prediction dict.
+    """
     return {
         "folds": [_leave_one_marker_cad_fold_to_dict(fold) for fold in prediction.folds],
         "eligible_fold_count": prediction.eligible_fold_count,
@@ -465,6 +681,14 @@ def _leave_one_marker_cad_to_dict(prediction: LeaveOneMarkerCadPrediction) -> di
 
 
 def _leave_one_marker_cad_fold_to_dict(fold: LeaveOneMarkerCadPredictionFold) -> dict[str, Any]:
+    """Serialize one leave-one-marker-out CAD prediction fold.
+
+    Args:
+        fold: Single CAD prediction fold.
+
+    Returns:
+        JSON-ready fold dict.
+    """
     return {
         "held_out_marker_id": fold.held_out_marker_id,
         "eligible": fold.eligible,
@@ -479,6 +703,14 @@ def _leave_one_marker_cad_fold_to_dict(fold: LeaveOneMarkerCadPredictionFold) ->
 
 
 def _detection_candidate_to_dict(result: DetectionConsistencyCandidateResult) -> dict[str, Any]:
+    """Serialize detection-consistency results for one candidate.
+
+    Args:
+        result: Per-candidate detection-consistency result.
+
+    Returns:
+        JSON-ready detection result dict.
+    """
     return {
         "candidate_name": result.candidate_name,
         "compatible": result.compatible,
@@ -498,6 +730,14 @@ def _detection_candidate_to_dict(result: DetectionConsistencyCandidateResult) ->
 
 
 def _per_marker_detection_to_dict(entry: PerMarkerDetectionSummary) -> dict[str, Any]:
+    """Serialize per-marker detection summary.
+
+    Args:
+        entry: Per-marker detection summary.
+
+    Returns:
+        JSON-ready per-marker dict.
+    """
     return {
         "marker_id": entry.marker_id,
         "summary_px": _metric_summary_px_to_dict(entry.summary_px),
@@ -509,6 +749,14 @@ def _per_marker_detection_to_dict(entry: PerMarkerDetectionSummary) -> dict[str,
 
 
 def _visible_marker_count_stratum_to_dict(entry: VisibleMarkerCountStratum) -> dict[str, Any]:
+    """Serialize visible-marker-count stratum summary.
+
+    Args:
+        entry: Stratum-level detection summary.
+
+    Returns:
+        JSON-ready stratum dict.
+    """
     return {
         "visible_marker_count": entry.visible_marker_count,
         "summary_px": _metric_summary_px_to_dict(entry.summary_px),
@@ -520,6 +768,14 @@ def _visible_marker_count_stratum_to_dict(entry: VisibleMarkerCountStratum) -> d
 
 
 def _source_video_detection_to_dict(entry: SourceVideoDetectionSummary) -> dict[str, Any]:
+    """Serialize per-video detection summary.
+
+    Args:
+        entry: Per-video detection summary.
+
+    Returns:
+        JSON-ready per-video dict.
+    """
     return {
         "source_video": entry.source_video,
         "summary_px": _metric_summary_px_to_dict(entry.summary_px),
@@ -531,6 +787,14 @@ def _source_video_detection_to_dict(entry: SourceVideoDetectionSummary) -> dict[
 
 
 def _metric_summary_mm_to_dict(summary: MetricSummaryMm | None) -> dict[str, Any] | None:
+    """Serialize a millimeter metric summary.
+
+    Args:
+        summary: Metric summary, or ``None``.
+
+    Returns:
+        JSON-ready summary dict, or ``None``.
+    """
     if summary is None:
         return None
     return {
@@ -544,6 +808,14 @@ def _metric_summary_mm_to_dict(summary: MetricSummaryMm | None) -> dict[str, Any
 
 
 def _metric_summary_px_to_dict(summary: MetricSummaryPx) -> dict[str, Any]:
+    """Serialize a pixel metric summary.
+
+    Args:
+        summary: Pixel metric summary.
+
+    Returns:
+        JSON-ready summary dict.
+    """
     return {
         "count": summary.count,
         "min_px": summary.min_px,
@@ -555,6 +827,14 @@ def _metric_summary_px_to_dict(summary: MetricSummaryPx) -> dict[str, Any]:
 
 
 def _ranking_entry_to_dict(entry: CandidateRankingEntry) -> dict[str, Any]:
+    """Serialize one ranking table entry.
+
+    Args:
+        entry: Candidate ranking entry.
+
+    Returns:
+        JSON-ready ranking entry dict.
+    """
     return {
         "candidate_name": entry.candidate_name,
         "metric_value": entry.metric_value,
@@ -562,6 +842,14 @@ def _ranking_entry_to_dict(entry: CandidateRankingEntry) -> dict[str, Any]:
 
 
 def _grouping_to_dict(grouping: CandidateGroupingReport) -> dict[str, Any]:
+    """Serialize candidate grouping metadata.
+
+    Args:
+        grouping: Repeatability grouping report.
+
+    Returns:
+        JSON-ready grouping dict.
+    """
     return {
         "same_session_solver_groups": [
             {
@@ -584,6 +872,14 @@ def _grouping_to_dict(grouping: CandidateGroupingReport) -> dict[str, Any]:
 
 
 def _video_normalization_to_dict(summary: VideoNormalizationSummary) -> dict[str, Any]:
+    """Serialize per-video normalization diagnostics.
+
+    Args:
+        summary: Per-video normalization summary.
+
+    Returns:
+        JSON-ready normalization dict.
+    """
     return {
         "source_video": summary.source_video,
         "frame_count": summary.frame_count,

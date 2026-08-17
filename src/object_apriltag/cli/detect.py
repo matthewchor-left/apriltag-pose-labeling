@@ -36,6 +36,15 @@ from object_apriltag.viz import (
 
 
 def main() -> None:
+    """Run live AprilTag detection, pose fusion, and optional visualization.
+
+    Parses CLI flags, opens the configured frame source, and loops until the user
+    presses ``q``. Draws detection outlines, HUD metrics, pose overlays, and
+    optional CAD or skeleton side panes when enabled.
+
+    Raises:
+        RuntimeError: Invalid flag combinations, missing model files, or frame read failure.
+    """
     parser = argparse.ArgumentParser(
         description="Detect AprilTag markers and estimate fused object pose.",
         epilog=(

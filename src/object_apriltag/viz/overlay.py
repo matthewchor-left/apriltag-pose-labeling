@@ -36,6 +36,18 @@ def _layout_point_image_xy(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> tuple[int, int] | None:
+    """Project one layout-frame point to an OpenCV-safe image coordinate.
+
+    Args:
+        point_layout: Point in marker_model/layout coordinates.
+        pose: Fused object pose in the camera frame.
+        marker_model: Marker layout defining the object frame.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Distortion coefficients.
+
+    Returns:
+        Integer pixel coordinate, or ``None`` when projection is unusable.
+    """
     camera_point = layout_point_to_camera(
         point_layout, pose.rotation, pose.origin, marker_model
     )
@@ -48,6 +60,13 @@ def _draw_axis_triad(
     origin_xy: tuple[int, int],
     axis_tips: tuple[tuple[tuple[int, int], tuple[int, int, int], str], ...],
 ) -> None:
+    """Draw a labeled RGB axis triad on a BGR frame.
+
+    Args:
+        frame: BGR image to draw on.
+        origin_xy: Axis origin in pixel coordinates.
+        axis_tips: Tuple of ``(tip_xy, color_bgr, label)`` for each axis.
+    """
     cv2.circle(frame, origin_xy, 5, (255, 255, 255), -1, lineType=cv2.LINE_AA)
     cv2.circle(frame, origin_xy, 5, (0, 0, 0), 1, lineType=cv2.LINE_AA)
     for tip, color, label in axis_tips:
@@ -82,6 +101,14 @@ def draw_racket_keypoints(
     *,
     draw_point_labels: bool = True,
 ) -> None:
+    """Draw object skeleton edges and keypoints on a BGR frame.
+
+    Args:
+        frame: BGR image to draw on.
+        image_points: Keypoint image coordinates in ``model.keypoint_names`` order.
+        model: Object skeleton model.
+        draw_point_labels: Whether to draw text labels beside keypoints.
+    """
     points_by_name = {name: image_points[index] for index, name in enumerate(model.keypoint_names)}
 
     for start_name, end_name in model.skeleton_edges:
@@ -122,6 +149,20 @@ def draw_object_origin(
     color: tuple[int, int, int] = (0, 255, 0),
     label: str = "object origin",
 ) -> tuple[int, int] | None:
+    """Draw the fused object origin on a BGR frame.
+
+    Args:
+        frame: BGR image to draw on.
+        object_origin_camera: Object origin in camera frame.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Distortion coefficients.
+        radius: Circle radius in pixels.
+        color: BGR fill color.
+        label: Text label beside the origin.
+
+    Returns:
+        Integer pixel coordinate when drawn, or ``None`` when off-screen or invalid.
+    """
     point = project_camera_point(object_origin_camera, camera_matrix, dist_coeffs)
     if not np.all(np.isfinite(point)):
         return None
@@ -144,7 +185,15 @@ def draw_object_orientation(
     dist_coeffs: np.ndarray,
     axis_length_m: float,
 ) -> None:
-    """Draw fused object X/Y/Z axes in the camera image (OpenCV camera frame)."""
+    """Draw fused object X/Y/Z axes in the camera image.
+
+    Args:
+        frame: BGR image to draw on.
+        pose: Fused object pose in the camera frame.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Distortion coefficients.
+        axis_length_m: Axis length in meters.
+    """
     try:
         origin_xy, x_end, y_end, z_end = object_axis_image_points(
             pose.rotation,
@@ -174,7 +223,15 @@ def draw_reference_marker_orientation(
     dist_coeffs: np.ndarray,
     marker_model: MarkerLayout,
 ) -> None:
-    """Draw reference-marker X/Y/Z axes from the calibrated layout footprint."""
+    """Draw reference-marker X/Y/Z axes from the calibrated layout footprint.
+
+    Args:
+        frame: BGR image to draw on.
+        pose: Fused object pose in the camera frame.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Distortion coefficients.
+        marker_model: Marker layout with reference marker geometry.
+    """
     origin_layout = object_reference_origin(marker_model)
     orientation = object_reference_orientation(marker_model)
     axis_length = marker_model.marker_size_for(marker_model.reference_marker_id) * 0.5
@@ -209,6 +266,18 @@ def draw_object_pose(
     *,
     draw_point_labels: bool = True,
 ) -> None:
+    """Draw fused object origin, axes, and skeleton keypoints on a BGR frame.
+
+    Args:
+        frame: BGR image to draw on.
+        pose: Fused object pose in the camera frame.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Distortion coefficients.
+        marker_size_m: Unused; retained for API compatibility.
+        model: Object skeleton model.
+        marker_model: Marker layout defining the object frame.
+        draw_point_labels: Whether to draw text labels beside keypoints.
+    """
     del marker_size_m
     axis_length_m = marker_model.marker_size_for(marker_model.reference_marker_id) * 0.5
     draw_object_origin(frame, pose.origin, camera_matrix, dist_coeffs, label="object origin")
@@ -249,6 +318,16 @@ def draw_marker_model_footprints(
     *,
     draw_point_labels: bool = True,
 ) -> None:
+    """Draw projected marker footprints and reference-marker axes on a BGR frame.
+
+    Args:
+        frame: BGR image to draw on.
+        pose: Fused object pose in the camera frame.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Distortion coefficients.
+        marker_model: Marker layout with footprint geometry.
+        draw_point_labels: Whether to draw marker and corner labels.
+    """
     height, width = frame.shape[:2]
     for marker_id in sorted(marker_model.footprints):
         footprint = marker_model.footprints[marker_id]
@@ -308,6 +387,21 @@ def draw_marker_annotations(
     *,
     draw: bool = True,
 ) -> bool:
+    """Draw a detected marker outline and ID label on a BGR frame.
+
+    Args:
+        frame: BGR image to draw on.
+        corners: Detected marker corners.
+        marker_id: AprilTag marker ID.
+        marker_size_m: Unused; retained for API compatibility.
+        camera_matrix: Unused; retained for API compatibility.
+        dist_coeffs: Unused; retained for API compatibility.
+        layout: Marker layout used to choose marker color.
+        draw: When false, skip drawing and return success.
+
+    Returns:
+        ``True`` when annotations were drawn or skipped intentionally.
+    """
     del marker_size_m, camera_matrix, dist_coeffs
     if not draw:
         return True
@@ -330,6 +424,12 @@ def draw_marker_annotations(
 
 
 def draw_eraser_planes(frame: np.ndarray, polygons: list[np.ndarray]) -> None:
+    """Draw eraser-plane polygons on a BGR frame.
+
+    Args:
+        frame: BGR image to draw on.
+        polygons: Polygon vertex arrays in image coordinates.
+    """
     for polygon in polygons:
         points = np.round(polygon).astype(np.int32)
         cv2.polylines(
@@ -350,6 +450,12 @@ STATUS_HUD_FIRST_LINE_Y = 24
 
 
 def draw_status_hud_panel(frame: np.ndarray, lines: list[str]) -> None:
+    """Draw a semi-opaque status HUD panel in the top-left corner.
+
+    Args:
+        frame: BGR image to draw on.
+        lines: Text lines to render inside the panel.
+    """
     if not lines:
         return
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -382,6 +488,15 @@ def format_reference_marker_camera_line(
     reference_marker_id: int,
     camera_point_m: np.ndarray | None,
 ) -> str:
+    """Format a HUD line with the reference marker camera-frame position.
+
+    Args:
+        reference_marker_id: Reference marker ID.
+        camera_point_m: Reference marker position in camera frame, or ``None``.
+
+    Returns:
+        Single-line HUD text with coordinates or placeholders.
+    """
     if camera_point_m is None:
         return f"ref {reference_marker_id} cam xyz (m): --"
     point = np.asarray(camera_point_m, dtype=np.float64).reshape(3)
@@ -400,6 +515,16 @@ def draw_live_hud(
     reference_marker_id: int | None = None,
     reference_marker_camera_m: np.ndarray | None = None,
 ) -> None:
+    """Draw live FPS, layout reprojection, and optional reference-marker HUD lines.
+
+    Args:
+        frame: BGR image to draw on.
+        fps: Smoothed frames-per-second estimate.
+        layout_reproj_avg: Rolling mean layout reprojection error in pixels.
+        layout_reproj_max: Rolling max layout reprojection error in pixels.
+        reference_marker_id: Optional reference marker ID for the extra HUD line.
+        reference_marker_camera_m: Optional reference marker camera position in meters.
+    """
     lines = [f"FPS: {fps:.1f}"]
     lines.append(
         f"layout reproj avg: {layout_reproj_avg:.1f}px"

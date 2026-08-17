@@ -27,6 +27,19 @@ def erase_with_mask(
     plate: np.ndarray,
     mask: np.ndarray,
 ) -> np.ndarray:
+    """Replace masked pixels in ``frame`` with values from ``plate``.
+
+    Args:
+        frame: Input BGR image.
+        plate: Background plate with the same shape as ``frame``.
+        mask: Single-channel mask; pixels with value > 0 are replaced.
+
+    Returns:
+        Copy of ``frame`` with masked pixels taken from ``plate``.
+
+    Raises:
+        ValueError: ``plate`` shape does not match ``frame``.
+    """
     if plate.shape != frame.shape:
         raise ValueError("Background plate must match the frame shape.")
     output = frame.copy()
@@ -38,6 +51,15 @@ def build_eraser_mask(
     frame_shape: tuple[int, int],
     polygons: list[np.ndarray],
 ) -> np.ndarray:
+    """Rasterize projected eraser polygons into a binary mask.
+
+    Args:
+        frame_shape: ``(height, width)`` of the target image.
+        polygons: Projected eraser quads as ``(N, 2)`` float image points.
+
+    Returns:
+        ``uint8`` mask with 255 inside filled polygons and 0 elsewhere.
+    """
     mask = np.zeros(frame_shape, dtype=np.uint8)
     for polygon in polygons:
         points = np.round(polygon).astype(np.int32).reshape(-1, 1, 2)
@@ -50,6 +72,17 @@ def erase_with_planes(
     plate: np.ndarray,
     polygons: list[np.ndarray],
 ) -> np.ndarray:
+    """Erase projected eraser regions by compositing ``plate`` through a polygon mask.
+
+    Args:
+        frame: Input BGR image.
+        plate: Background plate captured before the object entered the scene.
+        polygons: Projected eraser quads as ``(N, 2)`` float image points.
+
+    Returns:
+        Copy of ``frame`` with eraser regions replaced by ``plate`` pixels, or
+        an unchanged copy when ``polygons`` is empty.
+    """
     if not polygons:
         return frame.copy()
     mask = build_eraser_mask(frame.shape[:2], polygons)
@@ -57,6 +90,13 @@ def erase_with_planes(
 
 
 def draw_status_hud(frame: np.ndarray, *, plate_captured: bool, plane_count: int) -> None:
+    """Draw capture status and keyboard hints on ``frame`` in place.
+
+    Args:
+        frame: Preview image to annotate.
+        plate_captured: Whether a background plate has been captured.
+        plane_count: Number of eraser planes in the loaded eraser model.
+    """
     status = "plate: captured (erasing)" if plate_captured else "plate: none (press C to capture)"
     cv2.putText(
         frame,
@@ -99,6 +139,20 @@ def erase_eraser_planes(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> tuple[np.ndarray, list[np.ndarray]]:
+    """Project eraser planes from ``pose`` and composite ``plate`` over those regions.
+
+    Args:
+        frame: Input BGR image.
+        plate: Background plate for masked replacement.
+        pose: Fused object pose in marker-model coordinates.
+        eraser_model: Eraser plane definitions relative to the object frame.
+        marker_model: Marker layout used for pose projection.
+        camera_matrix: Camera intrinsics matrix.
+        dist_coeffs: Distortion coefficients.
+
+    Returns:
+        Tuple of the erased image copy and the projected eraser polygons.
+    """
     height, width = frame.shape[:2]
     polygons = project_eraser_planes(
         eraser_model,
@@ -114,6 +168,11 @@ def erase_eraser_planes(
 
 
 def main() -> None:
+    """Run the live eraser CLI: capture a plate, then mask projected eraser planes.
+
+    Raises:
+        RuntimeError: Missing required model files, invalid flag combinations, or frame read failure.
+    """
     parser = argparse.ArgumentParser(
         description="Erase AprilTag marker regions using projected eraser planes.",
         epilog=(

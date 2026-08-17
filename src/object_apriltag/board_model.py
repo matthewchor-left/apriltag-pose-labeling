@@ -32,6 +32,15 @@ BOARD_GEOMETRY_CLI_FLAGS = (
 
 @dataclass(frozen=True)
 class BoardReferenceFrame:
+    """Board coordinate axes expressed in layout metadata.
+
+    Attributes:
+        origin: Named origin of the board frame (must be ``outer_top_left``).
+        x_axis: Positive X direction name (must be ``right``).
+        y_axis: Positive Y direction name (must be ``out_of_printed_face``).
+        z_axis: Positive Z direction name (must be ``down``).
+    """
+
     origin: str
     x_axis: str
     y_axis: str
@@ -40,6 +49,19 @@ class BoardReferenceFrame:
 
 @dataclass(frozen=True)
 class BoardModel:
+    """Validated ChArUco board geometry loaded from JSON.
+
+    Attributes:
+        board_type: Board kind identifier (must be ``charuco_board``).
+        units: Length unit string (must be ``meters``).
+        layout_height: Number of chessboard rows.
+        layout_width: Number of chessboard columns.
+        square_size: Square edge length in ``units``.
+        marker_size: ArUco marker edge length in ``units``.
+        dictionary: OpenCV ArUco dictionary name.
+        reference_frame: Board coordinate frame metadata.
+    """
+
     board_type: str
     units: str
     layout_height: int
@@ -51,10 +73,22 @@ class BoardModel:
 
     @property
     def total_charuco_intersections(self) -> int:
+        """Count interior chessboard corners used by ChArUco."""
         return (self.layout_height - 1) * (self.layout_width - 1)
 
 
 def _validate_reference_frame(payload: dict[str, Any]) -> BoardReferenceFrame:
+    """Parse and validate the board ``reference_frame`` object.
+
+    Args:
+        payload: Parsed board-model JSON root object.
+
+    Returns:
+        Validated reference-frame metadata.
+
+    Raises:
+        ValueError: If ``reference_frame`` is missing or uses unsupported axis names.
+    """
     reference = payload.get("reference_frame")
     if not isinstance(reference, dict):
         raise ValueError("board_model must include a 'reference_frame' object.")
@@ -75,6 +109,18 @@ def _validate_reference_frame(payload: dict[str, Any]) -> BoardReferenceFrame:
 
 
 def load_board_model(path: str | Path) -> BoardModel:
+    """Load and validate a ChArUco board model JSON file.
+
+    Args:
+        path: Path to a ``board_model.json`` file.
+
+    Returns:
+        Parsed and validated board geometry.
+
+    Raises:
+        FileNotFoundError: If ``path`` does not exist.
+        ValueError: If required fields are missing or violate board constraints.
+    """
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Board model file not found: {path}")
@@ -129,6 +175,22 @@ def build_charuco_board_from_geometry(
     marker_size: float,
     dictionary_name: str,
 ) -> cv2.aruco.CharucoBoard:
+    """Construct an OpenCV ``CharucoBoard`` from scalar geometry fields.
+
+    Args:
+        layout_width: Number of chessboard columns.
+        layout_height: Number of chessboard rows.
+        square_size: Square edge length in meters.
+        marker_size: ArUco marker edge length in meters.
+        dictionary_name: Key in ``ARUCO_DICTIONARIES``.
+
+    Returns:
+        OpenCV ChArUco board instance.
+
+    Raises:
+        ValueError: If ``marker_size`` is not strictly smaller than ``square_size``.
+        KeyError: If ``dictionary_name`` is not a supported dictionary key.
+    """
     if marker_size >= square_size:
         raise ValueError("marker_size must be smaller than square_size for charuco_board.")
     dictionary = cv2.aruco.getPredefinedDictionary(ARUCO_DICTIONARIES[dictionary_name])
@@ -141,6 +203,17 @@ def build_charuco_board_from_geometry(
 
 
 def build_charuco_board(model: BoardModel) -> cv2.aruco.CharucoBoard:
+    """Construct an OpenCV ``CharucoBoard`` from a validated ``BoardModel``.
+
+    Args:
+        model: Loaded board geometry.
+
+    Returns:
+        OpenCV ChArUco board instance.
+
+    Raises:
+        ValueError: If ``model.board_type`` is not ``charuco_board``.
+    """
     if model.board_type != "charuco_board":
         raise ValueError("Only charuco_board models are supported.")
     return build_charuco_board_from_geometry(
@@ -153,6 +226,14 @@ def build_charuco_board(model: BoardModel) -> cv2.aruco.CharucoBoard:
 
 
 def board_model_geometry_flags_provided(args: Any) -> list[str]:
+    """List CLI board-geometry flags explicitly set on ``args``.
+
+    Args:
+        args: Parsed argparse namespace.
+
+    Returns:
+        Names of geometry flags that differ from their implicit defaults.
+    """
     provided: list[str] = []
     if getattr(args, "board_type", None) not in (None, "charuco_board"):
         provided.append("--board-type")
@@ -168,6 +249,14 @@ def board_model_geometry_flags_provided(args: Any) -> list[str]:
 
 
 def reject_mixed_board_model_args(args: Any) -> None:
+    """Reject CLI usage that mixes ``--board-model`` with per-field geometry flags.
+
+    Args:
+        args: Parsed argparse namespace.
+
+    Raises:
+        RuntimeError: If ``--board-model`` is set together with conflicting geometry flags.
+    """
     if getattr(args, "board_model", None) is None:
         return
     conflicts = board_model_geometry_flags_provided(args)

@@ -10,7 +10,14 @@ INT32_MAX = 2**31 - 1
 
 
 def opencv_image_point(point_xy: np.ndarray | tuple[float, float]) -> tuple[int, int] | None:
-    """Return an OpenCV-safe integer pixel, or None if projection is unusable."""
+    """Convert a projected point to an OpenCV-safe integer pixel coordinate.
+
+    Args:
+        point_xy: Image coordinates as ``(x, y)``.
+
+    Returns:
+        Rounded integer pixel coordinate, or ``None`` when unusable.
+    """
     xy = np.asarray(point_xy, dtype=np.float64).reshape(2)
     if not (np.isfinite(xy[0]) and np.isfinite(xy[1])):
         return None
@@ -22,6 +29,17 @@ def opencv_image_point(point_xy: np.ndarray | tuple[float, float]) -> tuple[int,
 
 
 def _require_opencv_image_point(point_xy: np.ndarray | tuple[float, float]) -> tuple[int, int]:
+    """Require an OpenCV-safe integer pixel coordinate.
+
+    Args:
+        point_xy: Image coordinates as ``(x, y)``.
+
+    Returns:
+        Rounded integer pixel coordinate.
+
+    Raises:
+        ValueError: If the point is non-finite or outside int32 range.
+    """
     point = opencv_image_point(point_xy)
     if point is None:
         raise ValueError("projected image point is not OpenCV-safe")
@@ -33,6 +51,16 @@ def project_camera_point(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> np.ndarray:
+    """Project one camera-frame 3D point to image coordinates.
+
+    Args:
+        point_camera: 3D point in the camera frame.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Distortion coefficients.
+
+    Returns:
+        Image coordinates as ``(2,)`` float array.
+    """
     point = np.asarray(point_camera, dtype=np.float64).reshape(1, 1, 3)
     projected, _ = cv2.projectPoints(
         point,
@@ -51,6 +79,21 @@ def object_axis_image_points(
     dist_coeffs: np.ndarray,
     axis_length_m: float,
 ) -> tuple[tuple[int, int], tuple[int, int], tuple[int, int], tuple[int, int]]:
+    """Project fused object X/Y/Z axis tips and origin to image coordinates.
+
+    Args:
+        object_rotation: Object rotation in camera frame.
+        object_origin: Object origin in camera frame.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Distortion coefficients.
+        axis_length_m: Axis length in meters.
+
+    Returns:
+        Tuple of origin, X-tip, Y-tip, and Z-tip integer pixel coordinates.
+
+    Raises:
+        ValueError: If any projected point is not OpenCV-safe.
+    """
     axis_points = np.array(
         [
             object_origin + object_rotation @ np.array([axis_length_m, 0.0, 0.0]),
@@ -78,6 +121,21 @@ def marker_axis_image_points(
     dist_coeffs: np.ndarray,
     axis_length_m: float | None = None,
 ) -> tuple[tuple[int, int], tuple[int, int], tuple[int, int]]:
+    """Project marker-local X/Y axes from detected corners to image coordinates.
+
+    Args:
+        corners: Detected marker corners.
+        marker_size_m: Physical marker edge length in meters.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Distortion coefficients.
+        axis_length_m: Axis length in meters; defaults to ``0.35 * marker_size_m``.
+
+    Returns:
+        Tuple of origin, Y-tip, and X-tip integer pixel coordinates.
+
+    Raises:
+        ValueError: If any projected point is not OpenCV-safe.
+    """
     from object_apriltag.pose import estimate_marker_pose
 
     if axis_length_m is None:
@@ -102,6 +160,21 @@ def object_origin_image_coords(
     dist_coeffs: np.ndarray,
     layout,
 ) -> tuple[int, int]:
+    """Project the fused object origin inferred from one marker to image coordinates.
+
+    Args:
+        corners: Detected marker corners.
+        marker_id: Marker ID used to infer object pose.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Distortion coefficients.
+        layout: Marker layout.
+
+    Returns:
+        Object origin as integer pixel coordinates.
+
+    Raises:
+        ValueError: If the projected origin is not OpenCV-safe.
+    """
     from object_apriltag.pose import object_pose_from_marker
 
     object_rotation, object_origin = object_pose_from_marker(

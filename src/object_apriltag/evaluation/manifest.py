@@ -16,23 +16,53 @@ EVALUATION_MANIFEST_VERSION = 1
 
 @dataclass(frozen=True)
 class DetectorConfig:
+    """AprilTag detector settings from the evaluation manifest.
+
+    Attributes:
+        dictionary: OpenCV ArUco dictionary name.
+        sensitivity: Detector sensitivity preset.
+    """
+
     dictionary: str
     sensitivity: str
 
 
 @dataclass(frozen=True)
 class HeldOutVideo:
+    """Held-out evaluation video declared in the manifest.
+
+    Attributes:
+        path: Absolute path to the video file.
+        held_out: Whether the video is declared held out from calibration.
+    """
+
     path: Path
     held_out: bool
 
 
 @dataclass(frozen=True)
 class CalibrationSource:
+    """Optional calibration video provenance for a candidate.
+
+    Attributes:
+        video: Path to the calibration video, or ``None`` when unspecified.
+    """
+
     video: Path | None
 
 
 @dataclass(frozen=True)
 class EvaluationCandidate:
+    """One marker-model candidate declared in the evaluation manifest.
+
+    Attributes:
+        name: Unique candidate identifier.
+        marker_model_path: Path to the candidate marker layout JSON.
+        capture_session: Capture session label for grouping.
+        solver_variant: Solver variant label for grouping.
+        calibration_source: Optional calibration video provenance.
+    """
+
     name: str
     marker_model_path: Path
     capture_session: str
@@ -42,6 +72,19 @@ class EvaluationCandidate:
 
 @dataclass(frozen=True)
 class EvaluationManifest:
+    """Parsed and validated evaluation manifest.
+
+    Attributes:
+        manifest_path: Absolute path to the manifest JSON file.
+        version: Manifest schema version.
+        cad_model: Path to the CAD landmark model.
+        object_model: Path to the object model with ``keypoint_sources``.
+        intrinsics: Path to camera intrinsics JSON.
+        detector: AprilTag detector configuration.
+        held_out_videos: Videos declared held out from calibration.
+        candidates: Marker-model candidates to evaluate.
+    """
+
     manifest_path: Path
     version: int
     cad_model: Path
@@ -53,10 +96,24 @@ class EvaluationManifest:
 
 
 def repo_root() -> Path:
+    """Return the repository root directory.
+
+    Returns:
+        Absolute path to the repository root (parent of the config directory).
+    """
     return config_dir().parent
 
 
 def repo_relative_path(path: Path) -> str:
+    """Convert an absolute path to a repo-relative POSIX path when possible.
+
+    Args:
+        path: Path to relativize.
+
+    Returns:
+        Repo-relative POSIX path, or the resolved absolute POSIX path when the
+        input lies outside the repository.
+    """
     resolved = path.resolve()
     root = repo_root().resolve()
     try:
@@ -66,7 +123,16 @@ def repo_relative_path(path: Path) -> str:
 
 
 def resolve_manifest_path(path: str | Path, *, manifest_path: Path) -> Path:
-    """Resolve manifest paths relative to the repository root."""
+    """Resolve manifest paths relative to the repository root.
+
+    Args:
+        path: Relative or absolute path from the manifest.
+        manifest_path: Absolute path to the manifest file (unused; kept for API
+            symmetry with callers).
+
+    Returns:
+        Resolved absolute path.
+    """
     candidate = Path(path)
     if candidate.is_absolute():
         return candidate.resolve()
@@ -75,6 +141,18 @@ def resolve_manifest_path(path: str | Path, *, manifest_path: Path) -> Path:
 
 
 def load_evaluation_manifest(path: str | Path) -> EvaluationManifest:
+    """Load and validate an evaluation manifest JSON file.
+
+    Args:
+        path: Path to the manifest JSON file.
+
+    Returns:
+        Parsed ``EvaluationManifest``.
+
+    Raises:
+        FileNotFoundError: If the manifest file does not exist.
+        ValueError: If the manifest is malformed or uses an unsupported version.
+    """
     manifest_path = Path(path).resolve()
     if not manifest_path.is_file():
         raise FileNotFoundError(f"Evaluation manifest not found: {manifest_path}")
@@ -115,6 +193,19 @@ def load_evaluation_manifest(path: str | Path) -> EvaluationManifest:
 def load_candidate_layouts(
     manifest: EvaluationManifest,
 ) -> tuple[dict[str, MarkerLayout], frozenset[int]]:
+    """Load marker layouts for all manifest candidates and verify marker ID parity.
+
+    Args:
+        manifest: Evaluation manifest with candidate marker model paths.
+
+    Returns:
+        Tuple of layouts keyed by candidate name and the shared expected marker
+        ID set.
+
+    Raises:
+        FileNotFoundError: If a candidate marker model file is missing.
+        ValueError: If candidate layouts disagree on marker IDs.
+    """
     layouts: dict[str, MarkerLayout] = {}
     marker_id_sets: list[frozenset[int]] = []
     for candidate in manifest.candidates:
@@ -140,6 +231,18 @@ def validate_object_model_correspondence(
     object_model_document: dict[str, Any],
     expected_marker_ids: frozenset[int],
 ) -> tuple[tuple[str, ...], tuple[int, ...]]:
+    """Verify object-model keypoint sources align with candidate marker layouts.
+
+    Args:
+        object_model_document: Parsed object model JSON.
+        expected_marker_ids: Marker IDs present in all candidate layouts.
+
+    Returns:
+        Tuple of sorted landmark names and sorted expected marker IDs.
+
+    Raises:
+        ValueError: If ``keypoint_sources`` reference marker IDs missing from layouts.
+    """
     sources = parse_keypoint_sources(object_model_document)
     landmark_names = tuple(sorted(sources))
     referenced_marker_ids = frozenset(marker_id for marker_id, _, _ in sources.values())
@@ -153,6 +256,17 @@ def validate_object_model_correspondence(
 
 
 def _parse_detector(raw: Any) -> DetectorConfig:
+    """Parse the manifest ``detector`` object.
+
+    Args:
+        raw: Raw JSON value for ``detector``.
+
+    Returns:
+        Parsed detector configuration.
+
+    Raises:
+        ValueError: If ``raw`` is not a valid detector object.
+    """
     if not isinstance(raw, dict):
         raise ValueError("manifest.detector must be an object with dictionary and sensitivity.")
     dictionary = _require_non_empty_string(raw, "dictionary")
@@ -161,6 +275,18 @@ def _parse_detector(raw: Any) -> DetectorConfig:
 
 
 def _parse_held_out_videos(raw: Any, *, manifest_path: Path) -> tuple[HeldOutVideo, ...]:
+    """Parse the manifest ``held_out_videos`` array.
+
+    Args:
+        raw: Raw JSON value for ``held_out_videos``.
+        manifest_path: Absolute path to the manifest for relative path resolution.
+
+    Returns:
+        Tuple of held-out video entries.
+
+    Raises:
+        ValueError: If the array is empty or entries are malformed.
+    """
     if not isinstance(raw, list) or not raw:
         raise ValueError("manifest.held_out_videos must be a non-empty array.")
     videos: list[HeldOutVideo] = []
@@ -179,6 +305,18 @@ def _parse_held_out_videos(raw: Any, *, manifest_path: Path) -> tuple[HeldOutVid
 
 
 def _parse_candidates(raw: Any, *, manifest_path: Path) -> tuple[EvaluationCandidate, ...]:
+    """Parse the manifest ``candidates`` array.
+
+    Args:
+        raw: Raw JSON value for ``candidates``.
+        manifest_path: Absolute path to the manifest for relative path resolution.
+
+    Returns:
+        Tuple of evaluation candidates.
+
+    Raises:
+        ValueError: If the array is empty, entries are malformed, or names duplicate.
+    """
     if not isinstance(raw, list) or not raw:
         raise ValueError("manifest.candidates must be a non-empty array.")
     names: set[str] = set()
@@ -219,6 +357,19 @@ def _parse_calibration_source(
     index: int,
     manifest_path: Path,
 ) -> CalibrationSource:
+    """Parse one candidate's ``calibration_source`` object.
+
+    Args:
+        raw: Raw JSON value for ``calibration_source``, or ``None``.
+        index: Candidate index for error messages.
+        manifest_path: Absolute path to the manifest for relative path resolution.
+
+    Returns:
+        Parsed calibration source.
+
+    Raises:
+        ValueError: If ``raw`` is present but not a valid object.
+    """
     if raw is None:
         return CalibrationSource(video=None)
     if not isinstance(raw, dict):
@@ -234,6 +385,18 @@ def _parse_calibration_source(
 
 
 def _require_path(payload: dict[str, Any], field: str) -> str:
+    """Require a non-empty path string field from a manifest object.
+
+    Args:
+        payload: Parent JSON object.
+        field: Field name to read.
+
+    Returns:
+        Trimmed path string.
+
+    Raises:
+        ValueError: If the field is missing or not a non-empty string.
+    """
     value = payload.get(field)
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"manifest.{field} must be a non-empty path string.")
@@ -241,6 +404,18 @@ def _require_path(payload: dict[str, Any], field: str) -> str:
 
 
 def _require_non_empty_string(payload: dict[str, Any], field: str) -> str:
+    """Require a non-empty string field from a manifest object.
+
+    Args:
+        payload: Parent JSON object.
+        field: Field name to read.
+
+    Returns:
+        Trimmed string value.
+
+    Raises:
+        ValueError: If the field is missing or not a non-empty string.
+    """
     value = payload.get(field)
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field} must be a non-empty string.")

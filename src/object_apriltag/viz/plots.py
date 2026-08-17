@@ -22,6 +22,15 @@ KEYPOINT_COLORS = {
 
 
 def is_sane_world_point(point: list[float], max_abs_m: float = 10.0) -> bool:
+    """Return whether a world point is finite and within a magnitude bound.
+
+    Args:
+        point: Candidate 3D point as ``[x, y, z]``.
+        max_abs_m: Maximum absolute coordinate magnitude in meters.
+
+    Returns:
+        ``True`` when the point is finite 3D and within bounds.
+    """
     values = np.asarray(point, dtype=np.float64)
     return values.shape == (3,) and np.all(np.isfinite(values)) and np.max(np.abs(values)) <= max_abs_m
 
@@ -31,6 +40,16 @@ def filter_sane_world_points(
     model: ObjectModel,
     max_abs_m: float = 10.0,
 ) -> dict[str, list[float]]:
+    """Filter world points to model keypoints that pass sanity checks.
+
+    Args:
+        world_points: World points keyed by keypoint name.
+        model: Object skeleton model defining keypoint names.
+        max_abs_m: Maximum absolute coordinate magnitude in meters.
+
+    Returns:
+        Subset of ``world_points`` that are sane for known model keypoints.
+    """
     return {
         name: world_points[name]
         for name in model.keypoint_names
@@ -39,6 +58,12 @@ def filter_sane_world_points(
 
 
 def set_xy_axis_limits(ax, axis_limits: tuple[float, float, float, float, float, float]) -> None:
+    """Configure a matplotlib axis for an object-frame X-Y projection.
+
+    Args:
+        ax: Matplotlib axis to configure.
+        axis_limits: Tuple of ``(xmin, xmax, ymin, ymax, zmin, zmax)`` in meters.
+    """
     xmin, xmax, ymin, ymax, _, _ = axis_limits
     ax.set_xlim(xmin, xmax)
     ax.set_ylim(ymax, ymin)
@@ -47,6 +72,12 @@ def set_xy_axis_limits(ax, axis_limits: tuple[float, float, float, float, float,
 
 
 def set_yz_axis_limits(ax, axis_limits: tuple[float, float, float, float, float, float]) -> None:
+    """Configure a matplotlib axis for an object-frame Y-Z projection.
+
+    Args:
+        ax: Matplotlib axis to configure.
+        axis_limits: Tuple of ``(xmin, xmax, ymin, ymax, zmin, zmax)`` in meters.
+    """
     _, _, ymin, ymax, zmin, zmax = axis_limits
     ax.set_xlim(ymax, ymin)
     ax.set_ylim(zmin, zmax)
@@ -55,6 +86,15 @@ def set_yz_axis_limits(ax, axis_limits: tuple[float, float, float, float, float,
 
 
 def _draw_skeleton_2d(ax, sane_points: dict[str, list[float]], model: ObjectModel, horiz_index: int, vert_index: int) -> None:
+    """Draw skeleton edges and keypoints on a 2D axis projection.
+
+    Args:
+        ax: Matplotlib axis to draw on.
+        sane_points: Filtered world points keyed by keypoint name.
+        model: Object skeleton model.
+        horiz_index: Index of the horizontal world coordinate (0=X, 1=Y, 2=Z).
+        vert_index: Index of the vertical world coordinate.
+    """
     for start_name, end_name in model.skeleton_edges:
         if start_name not in sane_points or end_name not in sane_points:
             continue
@@ -69,6 +109,14 @@ def _draw_skeleton_2d(ax, sane_points: dict[str, list[float]], model: ObjectMode
 
 
 def _draw_marker_layout_footprints_2d(ax, layout: MarkerLayout, horiz_index: int, vert_index: int) -> None:
+    """Draw marker footprints and corner markers on a 2D axis projection.
+
+    Args:
+        ax: Matplotlib axis to draw on.
+        layout: Marker layout with footprint geometry.
+        horiz_index: Index of the horizontal layout coordinate.
+        vert_index: Index of the vertical layout coordinate.
+    """
     for marker_id in sorted(layout.footprints):
         footprint = layout.footprints[marker_id]
         color = marker_color(marker_id, layout.reference_marker_id)
@@ -92,6 +140,16 @@ def render_marker_model_plot(
     figsize: tuple[float, float] = (10.0, 5.0),
     dpi: int = 100,
 ) -> np.ndarray:
+    """Render a side-by-side X-Y and Y-Z marker layout plot as a BGR image.
+
+    Args:
+        marker_model: Marker layout to visualize.
+        figsize: Matplotlib figure size in inches.
+        dpi: Render resolution in dots per inch.
+
+    Returns:
+        BGR image array suitable for OpenCV display.
+    """
     import matplotlib.pyplot as plt
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
@@ -131,6 +189,19 @@ def render_pose_plots(
     figsize: tuple[float, float] = (10.0, 5.0),
     dpi: int = 100,
 ) -> np.ndarray:
+    """Render object landmark pose plots in camera frame as a BGR image.
+
+    Args:
+        world_points: Landmark positions in camera frame keyed by name.
+        model: Object skeleton model.
+        axis_limits: Axis limits for X-Y and Y-Z projections.
+        max_abs_m: Maximum absolute coordinate magnitude for sanity filtering.
+        figsize: Matplotlib figure size in inches.
+        dpi: Render resolution in dots per inch.
+
+    Returns:
+        BGR image array suitable for OpenCV display.
+    """
     import matplotlib.pyplot as plt
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
@@ -162,7 +233,21 @@ def render_pose_plots(
 
 
 class LiveHud:
+    """Rolling FPS and reprojection statistics for live visualization.
+
+    Attributes:
+        _prev_time: Timestamp of the previous ``tick`` call.
+        _fps: Exponentially smoothed frames-per-second estimate.
+        _reproj_means: Rolling window of mean reprojection errors.
+        _reproj_maxes: Rolling window of max reprojection errors.
+    """
+
     def __init__(self, reproj_window: int = 30) -> None:
+        """Initialize HUD state.
+
+        Args:
+            reproj_window: Number of recent reprojection samples to average.
+        """
         self._prev_time = time.perf_counter()
         self._fps = 0.0
         self._reproj_means: deque[float] = deque(maxlen=reproj_window)
@@ -173,6 +258,15 @@ class LiveHud:
         reproj_mean: float | None = None,
         reproj_max: float | None = None,
     ) -> tuple[float, float | None, float | None]:
+        """Advance HUD timing and optionally record reprojection statistics.
+
+        Args:
+            reproj_mean: Mean layout reprojection error for the current frame, in pixels.
+            reproj_max: Max layout reprojection error for the current frame, in pixels.
+
+        Returns:
+            Tuple of smoothed FPS, rolling mean reprojection, and rolling max reprojection.
+        """
         now = time.perf_counter()
         dt = now - self._prev_time
         self._prev_time = now
@@ -190,6 +284,16 @@ class LiveHud:
 
 
 def make_side_by_side(frame_bgr: np.ndarray, plot_bgr: np.ndarray, target_height: int) -> np.ndarray:
+    """Horizontally stack a camera frame and plot image at a common height.
+
+    Args:
+        frame_bgr: Camera frame as BGR image.
+        plot_bgr: Plot image as BGR array.
+        target_height: Common output height in pixels.
+
+    Returns:
+        Horizontally concatenated BGR image.
+    """
     frame_h, frame_w = frame_bgr.shape[:2]
     frame_scale = target_height / frame_h
     frame_resized = cv2.resize(frame_bgr, (int(frame_w * frame_scale), target_height))

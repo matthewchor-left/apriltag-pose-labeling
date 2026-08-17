@@ -40,22 +40,50 @@ _MIN_TRAINING_MARKERS = 2
 
 @dataclass(frozen=True)
 class FrozenFrameDetections:
+    """Immutable detections for one video frame.
+
+    Attributes:
+        detections: Tuple of ``(corners, marker_id)`` detection pairs.
+    """
+
     detections: tuple[Detection, ...]
 
 
 @dataclass(frozen=True)
 class FrozenVideoDetections:
+    """Immutable detections for an entire held-out video.
+
+    Attributes:
+        source_video: Repo-relative path of the source video.
+        frames: Per-frame frozen detections.
+    """
+
     source_video: str
     frames: tuple[FrozenFrameDetections, ...]
 
 
 @dataclass(frozen=True)
 class DetectionCandidate:
+    """One candidate layout for detection-consistency evaluation.
+
+    Attributes:
+        name: Candidate name from the evaluation manifest.
+        layout: Marker layout to evaluate.
+    """
+
     name: str
     layout: MarkerLayout
 
 
 def metric_summary_px(values_px: Sequence[float] | np.ndarray) -> MetricSummaryPx:
+    """Summarize pixel error samples.
+
+    Args:
+        values_px: Scalar error samples in pixels.
+
+    Returns:
+        Min, median, RMSE, P95, and max over samples; zeroed summary when empty.
+    """
     array = np.asarray(values_px, dtype=np.float64).reshape(-1)
     if array.size == 0:
         return MetricSummaryPx(
@@ -81,7 +109,20 @@ def normalize_frame_detections(
     *,
     expected_marker_ids: frozenset[int],
 ) -> tuple[dict[int, np.ndarray], int, int, int]:
-    """Return usable corners by marker ID, duplicate skips, unknown IDs, malformed skips."""
+    """Normalize raw detections into at-most-one corner set per expected marker ID.
+
+    Args:
+        detections: Raw per-frame detections as ``(corners, marker_id)`` pairs.
+        expected_marker_ids: Marker IDs to retain.
+
+    Returns:
+        Tuple of usable corners by marker ID, duplicate skips, unknown-ID count,
+        and malformed-detection skips.
+
+    Notes:
+        Duplicate marker IDs in one frame cause the marker to be dropped entirely
+        so scoring never depends on detector ordering.
+    """
     corners_by_id: dict[int, np.ndarray] = {}
     duplicate_dropped: set[int] = set()
     duplicate_skips = 0
@@ -119,6 +160,22 @@ def evaluate_detection_consistency(
     videos: Sequence[FrozenVideoDetections],
     candidates: Sequence[DetectionCandidate],
 ) -> DetectionConsistencyEvaluation:
+    """Evaluate held-out marker corner prediction from other visible markers.
+
+    For each frame and each visible expected marker, pose is solved from all
+    other visible expected markers only. Held-out footprint corners are
+    projected and compared to observed corners in pixels.
+
+    Args:
+        expected_marker_ids: Marker IDs required by the evaluation manifest.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Distortion coefficients.
+        videos: Frozen held-out video detections.
+        candidates: Candidate layouts to evaluate.
+
+    Returns:
+        Detection-consistency evaluation with per-candidate results.
+    """
     expected = frozenset(expected_marker_ids)
     candidate_results = tuple(
         _evaluate_candidate(
@@ -144,6 +201,18 @@ def _evaluate_candidate(
     dist_coeffs: np.ndarray,
     videos: Sequence[FrozenVideoDetections],
 ) -> DetectionConsistencyCandidateResult:
+    """Run leave-one-marker-out detection folds for one candidate layout.
+
+    Args:
+        candidate: Candidate layout to evaluate.
+        expected_marker_ids: Marker IDs required by the evaluation manifest.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Distortion coefficients.
+        videos: Frozen held-out video detections.
+
+    Returns:
+        Aggregated detection-consistency result for the candidate.
+    """
     layout_ids = candidate.layout.marker_ids
     if layout_ids != set(expected_marker_ids):
         extra = sorted(layout_ids - expected_marker_ids)
@@ -286,6 +355,20 @@ def _held_out_corner_errors_px(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> list[float]:
+    """Project held-out marker corners and compute per-corner pixel errors.
+
+    Args:
+        observed_corners: Observed image corners as ``(4, 2)`` array.
+        held_out_marker_id: Marker ID excluded from pose solve.
+        layout: Marker layout with footprint geometry.
+        object_rotation: Fused object rotation in camera frame.
+        object_origin: Fused object origin in camera frame.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Distortion coefficients.
+
+    Returns:
+        Per-corner Euclidean errors in pixels, or an empty list on projection failure.
+    """
     footprint = layout.footprints[held_out_marker_id]
     observed = np.asarray(observed_corners, dtype=np.float64).reshape(4, 2)
     zero_rvec = np.zeros(3, dtype=np.float64)
@@ -317,6 +400,16 @@ def _aggregate_candidate_result(
     folds: Sequence[LeaveOneMarkerDetectionFold],
     expected_marker_ids: frozenset[int],
 ) -> DetectionConsistencyCandidateResult:
+    """Aggregate per-fold results into a candidate-level summary.
+
+    Args:
+        candidate_name: Candidate name from the evaluation manifest.
+        folds: All leave-one-marker detection folds for the candidate.
+        expected_marker_ids: Marker IDs required by the evaluation manifest.
+
+    Returns:
+        Aggregated detection-consistency result with per-marker and per-video breakdowns.
+    """
     all_corner_errors: list[float] = []
     for fold in folds:
         if fold.eligible and not fold.solve_failed and fold.corner_errors_px is not None:
@@ -360,6 +453,15 @@ def _per_marker_summary(
     marker_id: int,
     folds: Sequence[LeaveOneMarkerDetectionFold],
 ) -> PerMarkerDetectionSummary:
+    """Summarize detection folds for one held-out marker ID.
+
+    Args:
+        marker_id: Marker ID to aggregate.
+        folds: All leave-one-marker detection folds.
+
+    Returns:
+        Per-marker detection summary.
+    """
     marker_folds = [fold for fold in folds if fold.held_out_marker_id == marker_id]
     return _summarize_fold_group(marker_id, marker_folds)
 
@@ -368,6 +470,15 @@ def _visible_marker_count_stratum(
     visible_marker_count: int,
     folds: Sequence[LeaveOneMarkerDetectionFold],
 ) -> VisibleMarkerCountStratum:
+    """Summarize detection folds for one visible-marker-count stratum.
+
+    Args:
+        visible_marker_count: Number of expected markers visible in the frame.
+        folds: All leave-one-marker detection folds.
+
+    Returns:
+        Stratum-level detection summary.
+    """
     stratum_folds = [
         fold for fold in folds if fold.visible_marker_count == visible_marker_count
     ]
@@ -386,6 +497,15 @@ def _source_video_summary(
     source_video: str,
     folds: Sequence[LeaveOneMarkerDetectionFold],
 ) -> SourceVideoDetectionSummary:
+    """Summarize detection folds for one held-out video.
+
+    Args:
+        source_video: Repo-relative path of the source video.
+        folds: All leave-one-marker detection folds.
+
+    Returns:
+        Per-video detection summary.
+    """
     video_folds = [fold for fold in folds if fold.source_video == source_video]
     summary = _summarize_fold_group(None, video_folds)
     return SourceVideoDetectionSummary(
@@ -402,6 +522,15 @@ def _summarize_fold_group(
     marker_id: int | None,
     folds: Sequence[LeaveOneMarkerDetectionFold],
 ) -> PerMarkerDetectionSummary:
+    """Summarize a subset of detection folds.
+
+    Args:
+        marker_id: Marker ID for per-marker summaries, or ``None`` for grouped summaries.
+        folds: Detection folds to aggregate.
+
+    Returns:
+        Fold-group summary using ``marker_id=-1`` when ``marker_id`` is ``None``.
+    """
     corner_errors: list[float] = []
     for fold in folds:
         if fold.eligible and not fold.solve_failed and fold.corner_errors_px is not None:
@@ -423,6 +552,15 @@ def _incompatible_candidate_result(
     *,
     reason: str,
 ) -> DetectionConsistencyCandidateResult:
+    """Build a refused result for a layout with incompatible marker IDs.
+
+    Args:
+        candidate_name: Candidate name from the evaluation manifest.
+        reason: Human-readable incompatibility explanation.
+
+    Returns:
+        Zeroed detection-consistency result with ``compatible=False``.
+    """
     empty_summary = metric_summary_px([])
     return DetectionConsistencyCandidateResult(
         candidate_name=candidate_name,

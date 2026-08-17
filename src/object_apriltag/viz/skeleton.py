@@ -18,6 +18,16 @@ MODEL_FRAME_NAME = "marker_model"
 
 @dataclass(frozen=True)
 class ObjectModel:
+    """Parsed object skeleton model for visualization.
+
+    Attributes:
+        units: Length units declared in the object model JSON.
+        keypoint_names: Ordered keypoint names.
+        keypoints: Keypoint positions in marker_model coordinates.
+        skeleton_edges: Undirected skeleton edges as name pairs.
+        object_points: Stacked keypoint positions as ``(N, 3)`` float32 array.
+    """
+
     units: str
     keypoint_names: tuple[str, ...]
     keypoints: dict[str, np.ndarray]
@@ -26,6 +36,18 @@ class ObjectModel:
 
 
 def _as_point3(value: Any, field_name: str) -> np.ndarray:
+    """Parse a JSON keypoint value into a 3D point.
+
+    Args:
+        value: JSON value as ``[x, y]`` or ``[x, y, z]``.
+        field_name: Field name for error messages.
+
+    Returns:
+        3D point as float64 array.
+
+    Raises:
+        ValueError: If the value is not 2D or 3D coordinates.
+    """
     array = np.asarray(value, dtype=np.float64).reshape(-1)
     if array.shape == (2,):
         return np.array([array[0], array[1], 0.0], dtype=np.float64)
@@ -35,6 +57,17 @@ def _as_point3(value: Any, field_name: str) -> np.ndarray:
 
 
 def object_model_from_data(data: dict[str, Any]) -> ObjectModel:
+    """Parse an object model JSON dict into an ``ObjectModel``.
+
+    Args:
+        data: Parsed object model JSON.
+
+    Returns:
+        Visualization object model.
+
+    Raises:
+        ValueError: If required fields are missing or malformed.
+    """
     units = str(data.get("units", "meters"))
     coordinate_frame = data.get("coordinate_frame", MODEL_FRAME_NAME)
     if coordinate_frame != MODEL_FRAME_NAME:
@@ -76,6 +109,18 @@ def object_model_from_data(data: dict[str, Any]) -> ObjectModel:
 
 
 def load_object_model(path: str | Path) -> ObjectModel:
+    """Load an object model JSON file for visualization.
+
+    Args:
+        path: Path to the object model JSON file.
+
+    Returns:
+        Parsed visualization object model.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        ValueError: If the JSON is malformed.
+    """
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Object model file not found: {path}")
@@ -88,6 +133,17 @@ def object_world_points_from_pose(
     model: ObjectModel,
     marker_model: MarkerLayout,
 ) -> dict[str, list[float]]:
+    """Transform object-model keypoints into camera-frame world points.
+
+    Args:
+        object_rotation: Fused object rotation in camera frame.
+        object_origin: Fused object origin in camera frame.
+        model: Object skeleton model.
+        marker_model: Marker layout defining the object frame.
+
+    Returns:
+        Keypoint positions in camera frame keyed by name.
+    """
     return {
         name: layout_point_to_camera(
             model.keypoints[name],

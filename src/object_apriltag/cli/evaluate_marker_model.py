@@ -14,6 +14,14 @@ from object_apriltag.evaluation.runner import evaluate_marker_models_from_manife
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse CLI flags for manifest-driven marker-model evaluation.
+
+    Args:
+        argv: Optional argument vector; defaults to ``sys.argv[1:]`` when omitted.
+
+    Returns:
+        Parsed argument namespace with manifest and output paths.
+    """
     parser = argparse.ArgumentParser(
         description=(
             "Compare marker-model candidates against CAD landmark geometry and "
@@ -43,6 +51,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Evaluate marker-model candidates from a manifest and write a report.
+
+    Args:
+        argv: Optional argument vector passed to :func:`parse_args`.
+
+    Returns:
+        Process exit code ``0`` on success.
+    """
     args = parse_args(argv)
     report = evaluate_marker_models_from_manifest(args.manifest)
     save_marker_model_evaluation_report(args.output, report)

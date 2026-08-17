@@ -15,6 +15,18 @@ DEFAULT_APRILTAG_DICTIONARY = "36h11"
 
 
 def build_detector_parameters(sensitivity: str = "relaxed") -> cv2.aruco.DetectorParameters:
+    """Build OpenCV ArUco detector parameters for an AprilTag sensitivity preset.
+
+    Args:
+        sensitivity: Preset name: ``"default"``, ``"relaxed"``, or
+            ``"aggressive"``.
+
+    Returns:
+        Configured ``cv2.aruco.DetectorParameters`` instance.
+
+    Raises:
+        ValueError: If ``sensitivity`` is not a recognized preset name.
+    """
     params = cv2.aruco.DetectorParameters()
     if sensitivity == "default":
         return params
@@ -70,6 +82,19 @@ def build_apriltag_detector(
     dictionary: str = DEFAULT_APRILTAG_DICTIONARY,
     sensitivity: str = "relaxed",
 ) -> cv2.aruco.ArucoDetector:
+    """Create an OpenCV ArUco detector for the requested AprilTag dictionary.
+
+    Args:
+        dictionary: Dictionary name (for example ``"36h11"``).
+        sensitivity: Detector parameter preset passed to
+            ``build_detector_parameters``.
+
+    Returns:
+        Configured ``cv2.aruco.ArucoDetector`` instance.
+
+    Raises:
+        ValueError: If ``dictionary`` is not supported.
+    """
     if dictionary not in APRILTAG_DICTS:
         raise ValueError(f"Unknown dictionary {dictionary!r}.")
     apriltag_dict = cv2.aruco.getPredefinedDictionary(APRILTAG_DICTS[dictionary])

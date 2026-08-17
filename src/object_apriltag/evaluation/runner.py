@@ -30,11 +30,31 @@ from object_apriltag.object_model_edit import load_object_model_document
 def evaluate_marker_models_from_manifest(
     manifest_path: str | Path,
 ) -> MarkerModelEvaluationReport:
+    """Run marker-model evaluation from a manifest file path.
+
+    Args:
+        manifest_path: Path to the evaluation manifest JSON file.
+
+    Returns:
+        Complete marker-model evaluation report.
+    """
     manifest = load_evaluation_manifest(manifest_path)
     return evaluate_marker_models(manifest)
 
 
 def evaluate_marker_models(manifest: EvaluationManifest) -> MarkerModelEvaluationReport:
+    """Run CAD geometry and detection-consistency evaluation for all candidates.
+
+    Args:
+        manifest: Parsed and validated evaluation manifest.
+
+    Returns:
+        Complete marker-model evaluation report with per-candidate metrics,
+        rankings, and grouping.
+
+    Raises:
+        FileNotFoundError: If manifest input files or held-out videos are missing.
+    """
     _validate_manifest_inputs(manifest)
 
     _, object_model_document = load_object_model_document(manifest.object_model)
@@ -119,6 +139,14 @@ def evaluate_marker_models(manifest: EvaluationManifest) -> MarkerModelEvaluatio
 
 
 def _validate_manifest_inputs(manifest: EvaluationManifest) -> None:
+    """Verify that manifest input files exist on disk.
+
+    Args:
+        manifest: Evaluation manifest to validate.
+
+    Raises:
+        FileNotFoundError: If a required input path does not exist.
+    """
     for path, label in (
         (manifest.cad_model, "cad_model"),
         (manifest.object_model, "object_model"),

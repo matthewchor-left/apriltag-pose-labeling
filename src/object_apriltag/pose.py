@@ -24,10 +24,17 @@ GLOBAL_PNP_CONFIDENCE = 0.99
 
 
 def marker_corner_object_points(marker_size_m: float) -> np.ndarray:
-    """3D corners in marker frame: origin at bottom-center, +X marker-right, +Y toward tag top.
+    """Return 3D marker corner points in the marker frame.
 
-    Row order matches OpenCV/AprilTag detection order: top-left, top-right, bottom-right,
-    bottom-left.
+    Origin is at bottom-center; +X is marker-right; +Y points toward the tag top.
+    Row order matches OpenCV/AprilTag detection order: top-left, top-right,
+    bottom-right, bottom-left.
+
+    Args:
+        marker_size_m: Physical edge length of the square marker in meters.
+
+    Returns:
+        ``(4, 3)`` float32 array of corner coordinates.
     """
     half = marker_size_m / 2.0
     return np.array(
@@ -47,6 +54,20 @@ def estimate_marker_pose(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
+    """Estimate marker pose from detected image corners via IPPE.
+
+    Args:
+        corners: Detected marker corners, shape ``(1, 4, 2)`` or ``(4, 2)``.
+        marker_size_m: Physical marker edge length in meters.
+        camera_matrix: ``(3, 3)`` camera intrinsics matrix.
+        dist_coeffs: Distortion coefficients for the camera model.
+
+    Returns:
+        Tuple ``(rvec, tvec)`` giving marker pose in the OpenCV camera frame.
+
+    Raises:
+        RuntimeError: If ``cv2.solvePnP`` fails.
+    """
     object_points = marker_corner_object_points(marker_size_m)
     image_points = corners.reshape(4, 2).astype(np.float32)
     ok, rvec, tvec = cv2.solvePnP(
@@ -67,6 +88,20 @@ def marker_reprojection_error(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> float:
+    """Compute mean pixel reprojection error for a single marker detection.
+
+    Args:
+        corners: Detected marker corners, shape ``(1, 4, 2)`` or ``(4, 2)``.
+        marker_size_m: Physical marker edge length in meters.
+        camera_matrix: ``(3, 3)`` camera intrinsics matrix.
+        dist_coeffs: Distortion coefficients for the camera model.
+
+    Returns:
+        Mean Euclidean distance in pixels between projected and detected corners.
+
+    Raises:
+        RuntimeError: If marker pose estimation fails.
+    """
     rvec, tvec = estimate_marker_pose(corners, marker_size_m, camera_matrix, dist_coeffs)
     object_points = marker_corner_object_points(marker_size_m)
     image_points = corners.reshape(4, 2).astype(np.float32)
@@ -80,6 +115,20 @@ def mean_reprojection_error(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> float | None:
+    """Average per-marker reprojection error across a detection set.
+
+    Markers that fail pose estimation or are absent from the layout are skipped.
+
+    Args:
+        detections: List of ``(corners, marker_id)`` detections.
+        layout: Marker layout with per-marker physical sizes.
+        camera_matrix: ``(3, 3)`` camera intrinsics matrix.
+        dist_coeffs: Distortion coefficients for the camera model.
+
+    Returns:
+        Mean pixel error over successful markers, or ``None`` when no marker
+        could be evaluated.
+    """
     errors: list[float] = []
     for corners, marker_id in detections:
         try:
@@ -98,7 +147,23 @@ def layout_reprojection_errors(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> tuple[float, float] | None:
-    """Per-frame layout reprojection mean and max pixel error across detected known markers."""
+    """Measure layout-consistency reprojection error for detected markers.
+
+    Projects layout footprint corners through the supplied object pose and
+    compares them to detected image corners.
+
+    Args:
+        detections: List of ``(corners, marker_id)`` detections.
+        object_rotation: ``(3, 3)`` object rotation in the camera frame.
+        object_origin: Object origin in the camera frame, meters.
+        layout: Marker layout with footprint geometry.
+        camera_matrix: ``(3, 3)`` camera intrinsics matrix.
+        dist_coeffs: Distortion coefficients for the camera model.
+
+    Returns:
+        Tuple ``(mean_error_px, max_error_px)``, or ``None`` when no valid
+        corner correspondences exist.
+    """
     errors: list[float] = []
     zero_rvec = np.zeros(3, dtype=np.float64)
     zero_tvec = np.zeros(3, dtype=np.float64)
@@ -132,7 +197,16 @@ def reference_marker_camera_position(
     object_origin: np.ndarray,
     layout: MarkerLayout,
 ) -> np.ndarray:
-    """Reference marker center in the OpenCV camera frame (meters)."""
+    """Return the reference marker center in the OpenCV camera frame.
+
+    Args:
+        object_rotation: ``(3, 3)`` object rotation in the camera frame.
+        object_origin: Object origin in the camera frame, meters.
+        layout: Marker layout defining the reference marker footprint.
+
+    Returns:
+        ``(3,)`` camera-frame position of the reference marker center in meters.
+    """
     return layout_point_to_camera(
         object_reference_origin(layout),
         object_rotation,
@@ -142,6 +216,14 @@ def reference_marker_camera_position(
 
 
 def _rotation_matrix_to_quaternion(rotation: np.ndarray) -> np.ndarray:
+    """Convert a rotation matrix to a unit quaternion.
+
+    Args:
+        rotation: ``(3, 3)`` rotation matrix.
+
+    Returns:
+        ``(4,)`` quaternion in ``(w, x, y, z)`` order.
+    """
     trace = float(np.trace(rotation))
     if trace > 0.0:
         s = np.sqrt(trace + 1.0) * 2.0
@@ -173,6 +255,14 @@ def _rotation_matrix_to_quaternion(rotation: np.ndarray) -> np.ndarray:
 
 
 def _quaternion_to_rotation_matrix(quaternion: np.ndarray) -> np.ndarray:
+    """Convert a unit quaternion to a rotation matrix.
+
+    Args:
+        quaternion: ``(4,)`` quaternion in ``(w, x, y, z)`` order.
+
+    Returns:
+        ``(3, 3)`` rotation matrix.
+    """
     w, x, y, z = quaternion
     return np.array(
         [
@@ -185,6 +275,15 @@ def _quaternion_to_rotation_matrix(quaternion: np.ndarray) -> np.ndarray:
 
 
 def fuse_rotations(rotations: list[np.ndarray]) -> np.ndarray | None:
+    """Fuse multiple rotation matrices by quaternion averaging.
+
+    Args:
+        rotations: List of ``(3, 3)`` rotation matrices.
+
+    Returns:
+        Fused ``(3, 3)`` rotation matrix, or ``None`` when input is empty or
+        averaging degenerates.
+    """
     if not rotations:
         return None
     if len(rotations) == 1:
@@ -206,6 +305,20 @@ def object_pose_from_marker_pose(
     marker_id: int,
     layout: MarkerLayout,
 ) -> tuple[np.ndarray, np.ndarray]:
+    """Convert a single-marker camera pose into object-frame pose.
+
+    Args:
+        rvec: Marker rotation as a Rodrigues vector.
+        tvec: Marker translation in the camera frame, meters.
+        marker_id: ID of the observed marker in the layout.
+        layout: Marker layout with per-marker transforms.
+
+    Returns:
+        Tuple ``(object_rotation, object_origin)`` in the OpenCV camera frame.
+
+    Raises:
+        RuntimeError: If the derived object rotation is improper (det < 0).
+    """
     marker_rotation, _ = cv2.Rodrigues(rvec)
     marker_rotation = marker_rotation.astype(np.float64)
     transform = layout.transforms[marker_id]
@@ -223,6 +336,21 @@ def object_pose_from_marker(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
+    """Estimate object pose from one detected marker.
+
+    Args:
+        corners: Detected marker corners, shape ``(1, 4, 2)`` or ``(4, 2)``.
+        marker_id: ID of the observed marker in the layout.
+        layout: Marker layout with per-marker sizes and transforms.
+        camera_matrix: ``(3, 3)`` camera intrinsics matrix.
+        dist_coeffs: Distortion coefficients for the camera model.
+
+    Returns:
+        Tuple ``(object_rotation, object_origin)`` in the OpenCV camera frame.
+
+    Raises:
+        RuntimeError: If marker pose estimation fails or object rotation is improper.
+    """
     marker_size_m = layout.marker_size_for(marker_id)
     rvec, tvec = estimate_marker_pose(corners, marker_size_m, camera_matrix, dist_coeffs)
     return object_pose_from_marker_pose(rvec, tvec, marker_id, layout)
@@ -232,6 +360,17 @@ def _global_pose_correspondences(
     detections: list[Detection],
     layout: MarkerLayout,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Build 3D-2D correspondences for global layout pose estimation.
+
+    Args:
+        detections: List of ``(corners, marker_id)`` detections.
+        layout: Marker layout with footprint geometry.
+
+    Returns:
+        Tuple ``(object_points, image_points, marker_ids)`` where
+        ``object_points`` is ``(N, 3)``, ``image_points`` is ``(N, 2)``, and
+        ``marker_ids`` records the source marker for each correspondence.
+    """
     object_points: list[np.ndarray] = []
     image_points: list[np.ndarray] = []
     marker_ids: list[int] = []
@@ -261,6 +400,17 @@ def _has_multiple_ippe_solutions(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> bool:
+    """Return whether IPPE yields multiple pose hypotheses for the correspondences.
+
+    Args:
+        object_points: ``(N, 3)`` 3D points in the object frame.
+        image_points: ``(N, 2)`` corresponding image points.
+        camera_matrix: ``(3, 3)`` camera intrinsics matrix.
+        dist_coeffs: Distortion coefficients for the camera model.
+
+    Returns:
+        ``True`` when ``cv2.solvePnPGeneric`` reports more than one IPPE solution.
+    """
     if object_points.shape[0] < 4:
         return False
     try:
@@ -284,7 +434,22 @@ def estimate_global_layout_pose(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> PoseTuple | None:
-    """Estimate layout-wide object pose from multi-marker RANSAC/LM."""
+    """Estimate layout-wide object pose from multi-marker RANSAC and LM refinement.
+
+    Requires at least two distinct markers with inlier correspondences after
+    RANSAC. Returns ``None`` when ambiguity, insufficient markers, or invalid
+    geometry is detected.
+
+    Args:
+        detections: List of ``(corners, marker_id)`` detections.
+        layout: Marker layout with footprint geometry.
+        camera_matrix: ``(3, 3)`` camera intrinsics matrix.
+        dist_coeffs: Distortion coefficients for the camera model.
+
+    Returns:
+        Tuple ``(object_origin, object_rotation)`` in the OpenCV camera frame,
+        or ``None`` when pose cannot be estimated reliably.
+    """
     object_points, image_points, marker_ids = _global_pose_correspondences(
         detections, layout
     )

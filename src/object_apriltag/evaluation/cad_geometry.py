@@ -34,7 +34,20 @@ def fit_cad_registration(
     object_model_document: dict[str, Any],
     marker_layout: MarkerLayout,
 ) -> CadRegistration:
-    """Fit an in-memory CAD-to-marker_model registration from named landmarks."""
+    """Fit an in-memory CAD-to-marker_model registration from named landmarks.
+
+    Args:
+        cad_landmarks: CAD landmark positions keyed by name.
+        object_model_document: Object model JSON with ``keypoint_sources``.
+        marker_layout: Marker layout used to derive marker-frame landmarks.
+
+    Returns:
+        ``CadRegistration`` mapping CAD coordinates into marker_model frame.
+
+    Raises:
+        ValueError: If too few landmarks are available, names are missing, values
+            are non-finite, or point sets are degenerate.
+    """
     cad_by_name = (
         dict(cad_landmarks.landmarks)
         if isinstance(cad_landmarks, CadLandmarks)
@@ -87,7 +100,18 @@ def derive_marker_derived_landmarks(
     object_model_document: dict[str, Any],
     marker_layout: MarkerLayout,
 ) -> dict[str, np.ndarray]:
-    """Compute marker-derived landmark positions from keypoint_sources and layout."""
+    """Compute marker-derived landmark positions from keypoint_sources and layout.
+
+    Args:
+        object_model_document: Object model JSON with ``keypoint_sources``.
+        marker_layout: Marker layout with footprint geometry.
+
+    Returns:
+        Landmark positions in marker_model coordinates keyed by name.
+
+    Raises:
+        ValueError: If a ``keypoint_sources`` entry references a missing marker ID.
+    """
     sources = parse_keypoint_sources(object_model_document)
     landmarks: dict[str, np.ndarray] = {}
     for landmark_name, (marker_id, corner, padding_m) in sources.items():
@@ -109,7 +133,22 @@ def evaluate_cad_geometry(
     min_retained_landmarks: int = _MIN_RETAINED_LANDMARKS,
     degeneracy_eigenvalue_ratio: float = _DEGENERACY_EIGENVALUE_RATIO,
 ) -> CadGeometryEvaluation:
-    """Compare CAD landmarks to marker-derived landmarks across geometry metrics."""
+    """Compare CAD landmarks to marker-derived landmarks across geometry metrics.
+
+    Args:
+        cad_landmarks: CAD landmark positions keyed by name.
+        object_model_document: Object model JSON with ``keypoint_sources``.
+        marker_layout: Marker layout used to derive marker-frame landmarks.
+        min_retained_landmarks: Minimum landmarks required for leave-one-out folds.
+        degeneracy_eigenvalue_ratio: Eigenvalue ratio threshold for degeneracy checks.
+
+    Returns:
+        Full CAD geometry evaluation including rigid fit, distance disagreements,
+        and leave-one-marker-out prediction.
+
+    Raises:
+        ValueError: If required landmark names are missing or values are non-finite.
+    """
     cad_by_name = (
         dict(cad_landmarks.landmarks)
         if isinstance(cad_landmarks, CadLandmarks)
@@ -162,6 +201,14 @@ def evaluate_cad_geometry(
 
 
 def metric_summary_mm(values_mm: Sequence[float] | np.ndarray) -> MetricSummaryMm:
+    """Summarize millimeter error samples.
+
+    Args:
+        values_mm: Scalar error samples in millimeters.
+
+    Returns:
+        Min, median, RMSE, P95, and max over samples; zeroed summary when empty.
+    """
     array = np.asarray(values_mm, dtype=np.float64).reshape(-1)
     if array.size == 0:
         return MetricSummaryMm(
@@ -187,6 +234,16 @@ def _evaluate_rigid_fit(
     marker_points: np.ndarray,
     landmark_names: tuple[str, ...],
 ) -> RigidCadFit:
+    """Fit and score a global rigid alignment between CAD and marker points.
+
+    Args:
+        cad_points: CAD landmark positions as ``(N, 3)`` array.
+        marker_points: Marker-derived positions as ``(N, 3)`` array.
+        landmark_names: Landmark names in row order.
+
+    Returns:
+        Rigid fit with per-landmark and aggregate disagreement in millimeters.
+    """
     rotation, translation = kabsch_rigid_transform(cad_points, marker_points)
     transformed = apply_rigid_transform(cad_points, rotation, translation)
     errors_m = transformed - marker_points
@@ -215,6 +272,16 @@ def _evaluate_distance_disagreements(
     marker_derived_by_name: Mapping[str, np.ndarray],
     edges: Sequence[tuple[str, str]],
 ) -> DistanceCadDisagreementReport:
+    """Compare pairwise edge lengths between CAD and marker-derived landmarks.
+
+    Args:
+        cad_by_name: CAD landmark positions keyed by name.
+        marker_derived_by_name: Marker-derived positions keyed by name.
+        edges: Landmark name pairs defining edges to compare.
+
+    Returns:
+        Per-edge distance disagreements with aggregate summary in millimeters.
+    """
     disagreements: list[DistanceCadDisagreement] = []
     for start_name, end_name in edges:
         cad_distance_mm = float(
@@ -248,6 +315,18 @@ def _evaluate_leave_one_marker_out(
     min_retained_landmarks: int,
     degeneracy_eigenvalue_ratio: float,
 ) -> LeaveOneMarkerCadPrediction:
+    """Run leave-one-marker-out CAD prediction folds.
+
+    Args:
+        cad_by_name: CAD landmark positions keyed by name.
+        marker_derived_by_name: Marker-derived positions keyed by name.
+        sources: Parsed ``keypoint_sources`` mapping names to marker metadata.
+        min_retained_landmarks: Minimum landmarks required to attempt a fold.
+        degeneracy_eigenvalue_ratio: Eigenvalue ratio threshold for degeneracy checks.
+
+    Returns:
+        Leave-one-marker-out prediction metrics across all marker IDs.
+    """
     marker_ids = sorted({marker_id for marker_id, _, _ in sources.values()})
     folds: list[LeaveOneMarkerCadPredictionFold] = []
     all_excluded_errors_mm: list[float] = []
@@ -316,6 +395,19 @@ def _is_degenerate_point_set(
     *,
     degeneracy_eigenvalue_ratio: float,
 ) -> bool:
+    """Return whether a 3D point set is too degenerate for Kabsch alignment.
+
+    Args:
+        points: Point set as ``(N, 3)`` array.
+        degeneracy_eigenvalue_ratio: Minimum eigenvalue ratio for a non-degenerate axis.
+
+    Returns:
+        ``True`` when fewer than two principal spread axes are present.
+
+    Notes:
+        Three coplanar points are acceptable; Kabsch needs two non-degenerate
+        principal directions.
+    """
     points_array = np.asarray(points, dtype=np.float64).reshape(-1, 3)
     if points_array.shape[0] < 3:
         return True
@@ -336,6 +428,18 @@ def _parse_skeleton_edges(
     object_model_document: dict[str, Any],
     landmark_names: set[str],
 ) -> tuple[tuple[str, str], ...]:
+    """Parse skeleton edges that reference known landmark names.
+
+    Args:
+        object_model_document: Object model JSON with optional ``skeleton`` list.
+        landmark_names: Landmark names present in the evaluation.
+
+    Returns:
+        Skeleton edges whose endpoints are both in ``landmark_names``.
+
+    Raises:
+        ValueError: If a skeleton entry is not a two-element name list.
+    """
     raw = object_model_document.get("skeleton")
     if not isinstance(raw, list) or not raw:
         return tuple()
@@ -351,6 +455,14 @@ def _parse_skeleton_edges(
 
 
 def _all_pairs(names: Sequence[str]) -> tuple[tuple[str, str], ...]:
+    """Enumerate all unordered landmark name pairs.
+
+    Args:
+        names: Landmark names to pair.
+
+    Returns:
+        Tuple of ``(left, right)`` pairs with ``left`` before ``right`` in input order.
+    """
     ordered = list(names)
     pairs: list[tuple[str, str]] = []
     for left_index, left_name in enumerate(ordered):
@@ -365,6 +477,16 @@ def _require_finite_landmarks(
     label: str,
     names: Sequence[str],
 ) -> None:
+    """Require that named landmarks are finite 3D positions.
+
+    Args:
+        points_by_name: Landmark positions keyed by name.
+        label: Label prefix for error messages.
+        names: Landmark names to validate.
+
+    Raises:
+        ValueError: If any named landmark is not a finite 3D position.
+    """
     for name in names:
         point = np.asarray(points_by_name[name], dtype=np.float64)
         if point.shape != (3,) or not np.all(np.isfinite(point)):
@@ -375,6 +497,15 @@ def _points_to_tuple_dict(
     points_by_name: Mapping[str, np.ndarray],
     names: Sequence[str],
 ) -> dict[str, tuple[float, float, float]]:
+    """Convert named ndarray landmarks to JSON-serializable float tuples.
+
+    Args:
+        points_by_name: Landmark positions keyed by name.
+        names: Landmark names to export.
+
+    Returns:
+        Positions keyed by name as ``(x, y, z)`` float tuples.
+    """
     return {
         name: tuple(float(value) for value in points_by_name[name])
         for name in names
@@ -386,5 +517,13 @@ def _matrix_to_tuple(matrix: np.ndarray) -> tuple[
     tuple[float, float, float],
     tuple[float, float, float],
 ]:
+    """Convert a 3x3 ndarray to nested float tuples.
+
+    Args:
+        matrix: Rotation or other 3x3 matrix.
+
+    Returns:
+        Matrix as nested ``(row, col)`` float tuples.
+    """
     array = np.asarray(matrix, dtype=np.float64).reshape(3, 3)
     return tuple(tuple(float(value) for value in row) for row in array)

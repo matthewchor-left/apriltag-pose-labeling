@@ -20,6 +20,16 @@ def _project_camera_point(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> np.ndarray:
+    """Project a single 3D camera-frame point to distorted image coordinates.
+
+    Args:
+        point_camera: 3D point in the camera frame.
+        camera_matrix: ``3x3`` intrinsic matrix.
+        dist_coeffs: Distortion coefficients passed to ``cv2.projectPoints``.
+
+    Returns:
+        ``(2,)`` image coordinates in pixels.
+    """
     point = np.asarray(point_camera, dtype=np.float64).reshape(1, 1, 3)
     projected, _ = cv2.projectPoints(
         point,
@@ -33,6 +43,16 @@ def _project_camera_point(
 
 @dataclass(frozen=True)
 class EraserPlane:
+    """Rectangular eraser mask plane defined by corner offsets from the reference marker.
+
+    Attributes:
+        plane_id: Optional identifier for the plane.
+        top_left: ``[dx, dy, dz]`` offset from the reference marker center.
+        top_right: ``[dx, dy, dz]`` offset from the reference marker center.
+        bottom_right: ``[dx, dy, dz]`` offset from the reference marker center.
+        bottom_left: ``[dx, dy, dz]`` offset from the reference marker center.
+    """
+
     plane_id: str | None
     top_left: np.ndarray
     top_right: np.ndarray
@@ -40,17 +60,38 @@ class EraserPlane:
     bottom_left: np.ndarray
 
     def corners(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Return the four corner offsets in top-left, clockwise order."""
         return self.top_left, self.top_right, self.bottom_right, self.bottom_left
 
 
 @dataclass(frozen=True)
 class EraserModel:
+    """Collection of eraser mask planes loaded from JSON.
+
+    Attributes:
+        units: Length unit string (typically ``meters``).
+        origin: Coordinate origin name (must be ``reference_marker_center``).
+        planes: Eraser planes to project and mask in the image.
+    """
+
     units: str
     origin: str
     planes: tuple[EraserPlane, ...]
 
 
 def _as_offset3(value: Any, field_name: str) -> np.ndarray:
+    """Parse a JSON value into a length-3 offset vector.
+
+    Args:
+        value: Raw JSON array value.
+        field_name: Dotted field path used in error messages.
+
+    Returns:
+        ``(3,)`` float64 offset vector.
+
+    Raises:
+        ValueError: If ``value`` is not a length-3 numeric array.
+    """
     array = np.asarray(value, dtype=np.float64).reshape(-1)
     if array.shape != (3,):
         raise ValueError(f"{field_name} must be [dx, dy, dz] offsets.")
@@ -58,6 +99,18 @@ def _as_offset3(value: Any, field_name: str) -> np.ndarray:
 
 
 def plane_from_dict(payload: dict[str, Any], index: int) -> EraserPlane:
+    """Parse one eraser plane object from JSON.
+
+    Args:
+        payload: Plane object containing four named corners.
+        index: Zero-based plane index used in validation errors.
+
+    Returns:
+        Parsed ``EraserPlane``.
+
+    Raises:
+        ValueError: If required corners or offset shapes are missing or invalid.
+    """
     missing = [name for name in CORNER_NAMES if name not in payload]
     if missing:
         raise ValueError(
@@ -79,6 +132,18 @@ def plane_from_dict(payload: dict[str, Any], index: int) -> EraserPlane:
 
 
 def load_eraser_model(path: str | Path) -> EraserModel:
+    """Load and validate an eraser model JSON file.
+
+    Args:
+        path: Path to an eraser model JSON file.
+
+    Returns:
+        Parsed eraser geometry.
+
+    Raises:
+        FileNotFoundError: If ``path`` does not exist.
+        ValueError: If required fields are missing or use unsupported values.
+    """
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Eraser model file not found: {path}")
@@ -101,7 +166,17 @@ def load_eraser_model(path: str | Path) -> EraserModel:
 
 
 def clip_polygon_to_rect(polygon: np.ndarray, width: int, height: int) -> np.ndarray | None:
-    """Clip a polygon to the image rectangle [0, width] x [0, height]."""
+    """Clip a polygon to the image rectangle ``[0, width] x [0, height]``.
+
+    Args:
+        polygon: ``(N, 2)`` polygon vertices in image coordinates.
+        width: Image width in pixels.
+        height: Image height in pixels.
+
+    Returns:
+        Clipped polygon with at least three vertices, or ``None`` when clipping
+        removes too many points.
+    """
     if len(polygon) < 3:
         return None
 
@@ -151,6 +226,15 @@ def clip_polygon_to_rect(polygon: np.ndarray, width: int, height: int) -> np.nda
 
 
 def eraser_offset_to_model_point(offset: np.ndarray, marker_model: MarkerModel) -> np.ndarray:
+    """Convert an eraser offset from the reference marker center to model coordinates.
+
+    Args:
+        offset: ``(3,)`` offset from the reference marker center.
+        marker_model: Marker layout model supplying the reference origin.
+
+    Returns:
+        3D point in the object model frame.
+    """
     return object_reference_origin(marker_model) + offset
 
 
@@ -165,6 +249,22 @@ def project_eraser_plane(
     image_width: int,
     image_height: int,
 ) -> np.ndarray | None:
+    """Project one eraser plane into a clipped image-space polygon.
+
+    Args:
+        plane_corners: Four model-frame corner offsets in clockwise order.
+        object_rotation: ``3x3`` object rotation in the camera frame.
+        object_origin: Object origin in the camera frame.
+        marker_model: Marker layout model for reference-frame conversion.
+        camera_matrix: ``3x3`` intrinsic matrix.
+        dist_coeffs: Distortion coefficients passed to ``cv2.projectPoints``.
+        image_width: Image width in pixels.
+        image_height: Image height in pixels.
+
+    Returns:
+        Clipped ``(N, 2)`` polygon in image coordinates, or ``None`` when fewer than
+        three corners project in front of the camera.
+    """
     image_points: list[np.ndarray] = []
     for offset in plane_corners:
         model_point = eraser_offset_to_model_point(offset, marker_model)
@@ -194,6 +294,21 @@ def project_eraser_planes(
     image_width: int,
     image_height: int,
 ) -> list[np.ndarray]:
+    """Project all eraser planes that are visible into image-space polygons.
+
+    Args:
+        eraser_model: Loaded eraser geometry.
+        object_rotation: ``3x3`` object rotation in the camera frame.
+        object_origin: Object origin in the camera frame.
+        marker_model: Marker layout model for reference-frame conversion.
+        camera_matrix: ``3x3`` intrinsic matrix.
+        dist_coeffs: Distortion coefficients passed to ``cv2.projectPoints``.
+        image_width: Image width in pixels.
+        image_height: Image height in pixels.
+
+    Returns:
+        List of clipped polygons; planes that fail projection are omitted.
+    """
     polygons: list[np.ndarray] = []
     for plane in eraser_model.planes:
         polygon = project_eraser_plane(

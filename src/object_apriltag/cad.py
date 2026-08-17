@@ -41,6 +41,15 @@ _DEFAULT_MATERIAL_COLOR_BGR = (255, 255, 255)
 
 @dataclass(frozen=True)
 class CadMeshPart:
+    """Triangle mesh primitive extracted from a glTF scene node.
+
+    Attributes:
+        name: Part or node name from the GLB file.
+        vertices: ``(N, 3)`` world-space vertex positions in meters.
+        triangles: ``(M, 3)`` triangle index array.
+        material_color_bgr: BGR fill color derived from glTF base color factor.
+    """
+
     name: str
     vertices: np.ndarray
     triangles: np.ndarray
@@ -49,16 +58,37 @@ class CadMeshPart:
 
 @dataclass(frozen=True)
 class CadModel:
+    """Renderable CAD mesh parts loaded from a binary glTF file.
+
+    Attributes:
+        parts: Triangle mesh primitives in world space.
+    """
+
     parts: tuple[CadMeshPart, ...]
 
 
 @dataclass(frozen=True)
 class CadLandmarks:
+    """Named meshless scene nodes used as CAD landmark positions.
+
+    Attributes:
+        landmarks: Map from node name to ``(3,)`` world-space position in meters.
+    """
+
     landmarks: dict[str, np.ndarray]
 
 
 @dataclass(frozen=True)
 class CadRegistration:
+    """Rigid transform aligning CAD coordinates to the marker model frame.
+
+    Attributes:
+        units: Length unit string (must be ``meters``).
+        source_frame: Source frame name (must be ``cad``).
+        target_frame: Target frame name (must be ``marker_model``).
+        transform_4x4: ``4x4`` homogeneous transform from CAD to marker model.
+    """
+
     units: str
     source_frame: str
     target_frame: str
@@ -66,7 +96,17 @@ class CadRegistration:
 
 
 def load_cad_model(path: Path | str) -> CadModel:
-    """Load mesh parts from a binary glTF 2.0 (.glb) file."""
+    """Load mesh parts from a binary glTF 2.0 (``.glb``) file.
+
+    Args:
+        path: Path to an embedded single-buffer GLB file.
+
+    Returns:
+        World-space triangle mesh parts from the default scene.
+
+    Raises:
+        ValueError: If the GLB structure or mesh data is unsupported or invalid.
+    """
     data = Path(path).read_bytes()
     gltf, bin_chunk = _parse_glb(data)
     return _build_cad_model(gltf, bin_chunk)
@@ -76,7 +116,18 @@ def load_cad_landmarks(
     path: Path | str,
     required_names: Sequence[str] | None = None,
 ) -> CadLandmarks:
-    """Load named meshless scene nodes as world-space CAD landmark positions."""
+    """Load named meshless scene nodes as world-space CAD landmark positions.
+
+    Args:
+        path: Path to an embedded single-buffer GLB file.
+        required_names: Optional landmark names that must be present.
+
+    Returns:
+        Named landmark positions extracted from meshless scene nodes.
+
+    Raises:
+        ValueError: If the GLB structure is invalid or required landmarks are missing.
+    """
     data = Path(path).read_bytes()
     gltf, _bin_chunk = _parse_glb(data)
     landmarks = _build_cad_landmarks(gltf)
@@ -90,7 +141,17 @@ def load_cad_landmarks(
 
 
 def load_cad_registration(path: Path | str) -> CadRegistration:
-    """Load a CAD-to-marker_model registration JSON file."""
+    """Load a CAD-to-marker_model registration JSON file.
+
+    Args:
+        path: Path to a registration JSON file.
+
+    Returns:
+        Parsed rigid registration metadata and transform.
+
+    Raises:
+        ValueError: If required fields are missing or use unsupported values.
+    """
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("CAD registration JSON must be an object.")
@@ -122,6 +183,18 @@ def load_cad_registration(path: Path | str) -> CadRegistration:
 
 
 def _require_string(payload: dict[str, Any], field_name: str) -> str:
+    """Read a required non-empty string field from a JSON object.
+
+    Args:
+        payload: Parsed JSON object.
+        field_name: Key to read.
+
+    Returns:
+        Non-empty string value.
+
+    Raises:
+        ValueError: If the field is missing or not a non-empty string.
+    """
     value = payload.get(field_name)
     if not isinstance(value, str) or not value:
         raise ValueError(f"CAD registration {field_name} must be a non-empty string.")
@@ -129,6 +202,17 @@ def _require_string(payload: dict[str, Any], field_name: str) -> str:
 
 
 def _parse_glb(data: bytes) -> tuple[dict[str, Any], bytes]:
+    """Parse a binary glTF 2.0 container into JSON and BIN chunks.
+
+    Args:
+        data: Raw GLB file bytes.
+
+    Returns:
+        Tuple of parsed glTF JSON root object and embedded BIN chunk bytes.
+
+    Raises:
+        ValueError: If the header, chunks, or JSON payload are invalid.
+    """
     if len(data) < 12:
         raise ValueError("GLB file is too small to contain a header.")
 
@@ -176,6 +260,18 @@ def _parse_glb(data: bytes) -> tuple[dict[str, Any], bytes]:
 
 
 def _build_cad_model(gltf: dict[str, Any], bin_chunk: bytes) -> CadModel:
+    """Traverse the default scene and collect renderable mesh parts.
+
+    Args:
+        gltf: Parsed glTF JSON root object.
+        bin_chunk: Embedded BIN chunk bytes.
+
+    Returns:
+        CAD model containing all triangle mesh primitives in world space.
+
+    Raises:
+        ValueError: If the GLB scene graph or mesh data is unsupported.
+    """
     buffers = gltf.get("buffers")
     if not isinstance(buffers, list) or len(buffers) != 1:
         raise ValueError("Only single-buffer embedded GLB files are supported.")
@@ -218,6 +314,17 @@ def _build_cad_model(gltf: dict[str, Any], bin_chunk: bytes) -> CadModel:
 
 
 def _build_cad_landmarks(gltf: dict[str, Any]) -> dict[str, np.ndarray]:
+    """Traverse the default scene and collect meshless named node positions.
+
+    Args:
+        gltf: Parsed glTF JSON root object.
+
+    Returns:
+        Map from node name to world-space position.
+
+    Raises:
+        ValueError: If the scene graph is invalid or landmark names duplicate.
+    """
     scenes = gltf.get("scenes")
     nodes = gltf.get("nodes")
     if not isinstance(scenes, list) or not scenes:
@@ -251,6 +358,17 @@ def _collect_node_landmarks(
     parent_transform: np.ndarray,
     landmarks: dict[str, np.ndarray],
 ) -> None:
+    """Recursively collect meshless named nodes as CAD landmarks.
+
+    Args:
+        node_index: glTF node index to visit.
+        nodes: glTF nodes array.
+        parent_transform: Accumulated parent-to-world transform.
+        landmarks: Output map mutated in place with discovered landmarks.
+
+    Raises:
+        ValueError: If node indices, children, or landmark names are invalid.
+    """
     if node_index < 0 or node_index >= len(nodes):
         raise ValueError(f"GLB node index {node_index} is out of range.")
 
@@ -293,6 +411,20 @@ def _collect_node_parts(
     parent_transform: np.ndarray,
     parts: list[CadMeshPart],
 ) -> None:
+    """Recursively collect mesh primitives from scene nodes into ``parts``.
+
+    Args:
+        node_index: glTF node index to visit.
+        nodes: glTF nodes array.
+        meshes: glTF meshes array.
+        gltf: Parsed glTF JSON root object.
+        bin_chunk: Embedded BIN chunk bytes.
+        parent_transform: Accumulated parent-to-world transform.
+        parts: Output list mutated in place with discovered mesh parts.
+
+    Raises:
+        ValueError: If node indices, mesh references, or children are invalid.
+    """
     if node_index < 0 or node_index >= len(nodes):
         raise ValueError(f"GLB node index {node_index} is out of range.")
 
@@ -345,6 +477,22 @@ def _mesh_primitives_as_parts(
     gltf: dict[str, Any],
     bin_chunk: bytes,
 ) -> list[CadMeshPart]:
+    """Convert one glTF mesh into triangle ``CadMeshPart`` instances.
+
+    Args:
+        mesh: glTF mesh object.
+        mesh_index: Mesh index used in validation errors.
+        part_name: Base name for generated parts.
+        world_transform: Node world transform applied to vertex positions.
+        gltf: Parsed glTF JSON root object.
+        bin_chunk: Embedded BIN chunk bytes.
+
+    Returns:
+        One part per supported triangle primitive.
+
+    Raises:
+        ValueError: If primitives, attributes, or indices are unsupported.
+    """
     primitives = mesh.get("primitives")
     if not isinstance(primitives, list) or not primitives:
         raise ValueError(f"GLB mesh {mesh_index} must define at least one primitive.")
@@ -399,6 +547,20 @@ def _primitive_material_color_bgr(
     mesh_index: int,
     primitive_index: int,
 ) -> tuple[int, int, int]:
+    """Resolve a primitive's material base color as an OpenCV BGR tuple.
+
+    Args:
+        gltf: Parsed glTF JSON root object.
+        primitive: glTF mesh primitive object.
+        mesh_index: Mesh index used in validation errors.
+        primitive_index: Primitive index used in validation errors.
+
+    Returns:
+        BGR color tuple in ``[0, 255]``.
+
+    Raises:
+        ValueError: If material references or color factors are invalid.
+    """
     material_index = primitive.get("material")
     if material_index is None:
         return _DEFAULT_MATERIAL_COLOR_BGR
@@ -436,6 +598,18 @@ def _base_color_factor_to_bgr(
     *,
     material_index: int | None = None,
 ) -> tuple[int, int, int]:
+    """Convert a glTF linear RGBA base color factor to an 8-bit BGR tuple.
+
+    Args:
+        base_color_factor: Four-element linear RGBA color array.
+        material_index: Optional material index used in validation errors.
+
+    Returns:
+        BGR color tuple in ``[0, 255]``.
+
+    Raises:
+        ValueError: If the color factor is not a finite length-4 array.
+    """
     prefix = (
         f"GLB material {material_index} "
         if material_index is not None
@@ -467,6 +641,17 @@ def _base_color_factor_to_bgr(
 
 
 def _node_local_transform(node: dict[str, Any]) -> np.ndarray:
+    """Build a ``4x4`` local transform from glTF TRS fields or a matrix.
+
+    Args:
+        node: glTF node object.
+
+    Returns:
+        Column-major ``4x4`` homogeneous transform.
+
+    Raises:
+        ValueError: If matrix, translation, rotation, or scale values are invalid.
+    """
     if "matrix" in node:
         matrix = np.asarray(node["matrix"], dtype=np.float64)
         if matrix.shape != (16,):
@@ -490,6 +675,17 @@ def _node_local_transform(node: dict[str, Any]) -> np.ndarray:
 
 
 def _quaternion_to_matrix(quaternion_xyzw: np.ndarray) -> np.ndarray:
+    """Convert a normalized XYZW quaternion to a ``3x3`` rotation matrix.
+
+    Args:
+        quaternion_xyzw: ``(4,)`` quaternion in XYZW order.
+
+    Returns:
+        ``3x3`` rotation matrix.
+
+    Raises:
+        ValueError: If the quaternion is non-finite or zero-length.
+    """
     x, y, z, w = quaternion_xyzw
     if not np.all(np.isfinite(quaternion_xyzw)):
         raise ValueError("GLB node rotation quaternion must contain only finite values.")
@@ -508,6 +704,18 @@ def _quaternion_to_matrix(quaternion_xyzw: np.ndarray) -> np.ndarray:
 
 
 def _transform_points(points: np.ndarray, transform: np.ndarray) -> np.ndarray:
+    """Apply a ``4x4`` homogeneous transform to 3D points.
+
+    Args:
+        points: ``(N, 3)`` input points.
+        transform: ``4x4`` homogeneous transform.
+
+    Returns:
+        Transformed ``(N, 3)`` points.
+
+    Raises:
+        ValueError: If any transformed coordinate is non-finite.
+    """
     points = np.asarray(points, dtype=np.float64).reshape(-1, 3)
     ones = np.ones((len(points), 1), dtype=np.float64)
     homogeneous = np.hstack([points, ones])
@@ -518,6 +726,19 @@ def _transform_points(points: np.ndarray, transform: np.ndarray) -> np.ndarray:
 
 
 def _read_accessor_vec3(gltf: dict[str, Any], bin_chunk: bytes, accessor_index: int) -> np.ndarray:
+    """Read a glTF accessor as ``(N, 3)`` float positions.
+
+    Args:
+        gltf: Parsed glTF JSON root object.
+        bin_chunk: Embedded BIN chunk bytes.
+        accessor_index: Accessor index to read.
+
+    Returns:
+        ``(N, 3)`` float64 positions.
+
+    Raises:
+        ValueError: If accessor type, component type, or values are invalid.
+    """
     accessor = _accessor(gltf, accessor_index)
     if accessor["type"] != "VEC3":
         raise ValueError(f"Accessor {accessor_index} must have type VEC3.")
@@ -531,6 +752,19 @@ def _read_accessor_vec3(gltf: dict[str, Any], bin_chunk: bytes, accessor_index: 
 
 
 def _read_accessor_indices(gltf: dict[str, Any], bin_chunk: bytes, accessor_index: int) -> np.ndarray:
+    """Read a glTF index accessor as ``(M, 3)`` triangle indices.
+
+    Args:
+        gltf: Parsed glTF JSON root object.
+        bin_chunk: Embedded BIN chunk bytes.
+        accessor_index: Accessor index to read.
+
+    Returns:
+        ``(M, 3)`` int32 triangle index array.
+
+    Raises:
+        ValueError: If accessor type, component type, or index values are invalid.
+    """
     accessor = _accessor(gltf, accessor_index)
     if accessor["type"] != "SCALAR":
         raise ValueError(f"Accessor {accessor_index} must have type SCALAR.")
@@ -549,6 +783,18 @@ def _read_accessor_indices(gltf: dict[str, Any], bin_chunk: bytes, accessor_inde
 
 
 def _accessor(gltf: dict[str, Any], accessor_index: int) -> dict[str, Any]:
+    """Fetch and validate one glTF accessor object by index.
+
+    Args:
+        gltf: Parsed glTF JSON root object.
+        accessor_index: Accessor index to fetch.
+
+    Returns:
+        Accessor object dict.
+
+    Raises:
+        ValueError: If accessors are missing or the index is out of range.
+    """
     accessors = gltf.get("accessors")
     if not isinstance(accessors, list):
         raise ValueError("GLB file must define an accessors array.")
@@ -565,6 +811,19 @@ def _read_accessor_raw(
     bin_chunk: bytes,
     accessor: dict[str, Any],
 ) -> np.ndarray:
+    """Read tightly packed accessor bytes from the embedded BIN chunk.
+
+    Args:
+        gltf: Parsed glTF JSON root object.
+        bin_chunk: Embedded BIN chunk bytes.
+        accessor: Accessor object dict.
+
+    Returns:
+        Raw 1-D numpy array of accessor elements.
+
+    Raises:
+        ValueError: If buffer views, strides, or byte ranges are unsupported.
+    """
     buffer_views = gltf.get("bufferViews")
     if not isinstance(buffer_views, list):
         raise ValueError("GLB file must define a bufferViews array.")

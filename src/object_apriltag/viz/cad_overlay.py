@@ -31,13 +31,31 @@ _PART_COLORS_BGR: tuple[tuple[int, int, int], ...] = (
 
 
 def part_color_bgr(part_name: str) -> tuple[int, int, int]:
-    """Return a stable BGR color for a CAD mesh part name."""
+    """Return a stable BGR color for a CAD mesh part name.
+
+    Args:
+        part_name: CAD part or mesh name.
+
+    Returns:
+        BGR color tuple.
+    """
     index = zlib.crc32(part_name.encode("utf-8")) % len(_PART_COLORS_BGR)
     return _PART_COLORS_BGR[index]
 
 
 def cad_points_to_layout(points_cad: np.ndarray, registration: CadRegistration) -> np.ndarray:
-    """Map CAD-frame points into marker_model/layout coordinates."""
+    """Map CAD-frame points into marker_model/layout coordinates.
+
+    Args:
+        points_cad: CAD-frame points as ``(N, 3)`` array.
+        registration: CAD-to-marker_model registration transform.
+
+    Returns:
+        Layout-frame points as ``(N, 3)`` array.
+
+    Raises:
+        ValueError: If the registration produces non-finite coordinates.
+    """
     points = np.asarray(points_cad, dtype=np.float64).reshape(-1, 3)
     ones = np.ones((len(points), 1), dtype=np.float64)
     homogeneous = np.hstack([points, ones])
@@ -52,7 +70,16 @@ def layout_points_to_camera(
     pose: ObjectPose,
     marker_model: MarkerLayout,
 ) -> np.ndarray:
-    """Map layout-frame points into the fused object camera frame."""
+    """Map layout-frame points into the fused object camera frame.
+
+    Args:
+        points_layout: Layout-frame points as ``(N, 3)`` array.
+        pose: Fused object pose in the camera frame.
+        marker_model: Marker layout defining the object reference frame.
+
+    Returns:
+        Camera-frame points as ``(N, 3)`` array.
+    """
     layout = np.asarray(points_layout, dtype=np.float64).reshape(-1, 3)
     origin = object_reference_origin(marker_model)
     orientation = object_reference_orientation(marker_model)
@@ -66,7 +93,16 @@ def project_camera_points(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> np.ndarray:
-    """Project camera-frame points through intrinsics and distortion."""
+    """Project camera-frame points through intrinsics and distortion.
+
+    Args:
+        points_camera: Camera-frame points as ``(N, 3)`` array.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Distortion coefficients.
+
+    Returns:
+        Image coordinates as ``(N, 2)`` array.
+    """
     points = np.asarray(points_camera, dtype=np.float64).reshape(-1, 1, 3)
     projected, _ = cv2.projectPoints(
         points,
@@ -89,8 +125,22 @@ def render_cad_model_view(
 ) -> np.ndarray:
     """Render an opaque CAD silhouette on a pure-black background.
 
-    Part-level painter ordering is used; exact inter-part occlusion would require
-    a z-buffer. Material colors come from each part's glTF baseColorFactor.
+    Args:
+        frame_shape: Output frame shape as ``(height, width)`` or ``(H, W, 3)``.
+        pose: Fused object pose in the camera frame.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Distortion coefficients.
+        marker_model: Marker layout defining the object reference frame.
+        cad_model: CAD mesh model to render.
+        registration: CAD-to-marker_model registration transform.
+
+    Returns:
+        BGR image with opaque CAD part silhouettes on black.
+
+    Notes:
+        Part-level painter ordering is used; exact inter-part occlusion would
+        require a z-buffer. Material colors come from each part's glTF
+        ``baseColorFactor``.
     """
     height, width = _frame_shape_hw(frame_shape)
     frame = np.zeros((height, width, 3), dtype=np.uint8)
@@ -111,6 +161,17 @@ def render_cad_model_view(
 
 
 def _frame_shape_hw(frame_shape: tuple[int, ...]) -> tuple[int, int]:
+    """Extract height and width from a frame shape tuple.
+
+    Args:
+        frame_shape: Shape as ``(height, width)`` or ``(H, W, channels)``.
+
+    Returns:
+        Tuple of ``(height, width)``.
+
+    Raises:
+        ValueError: If the shape does not contain at least two dimensions.
+    """
     if len(frame_shape) == 2:
         return int(frame_shape[0]), int(frame_shape[1])
     if len(frame_shape) >= 2:
@@ -129,7 +190,21 @@ def draw_cad_model_overlay(
     *,
     alpha: float = 0.35,
 ) -> None:
-    """Draw a semi-transparent colored CAD silhouette onto ``frame`` in place."""
+    """Draw a semi-transparent colored CAD silhouette onto ``frame`` in place.
+
+    Args:
+        frame: BGR image to draw on.
+        pose: Fused object pose in the camera frame.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Distortion coefficients.
+        marker_model: Marker layout defining the object reference frame.
+        cad_model: CAD mesh model to render.
+        registration: CAD-to-marker_model registration transform.
+        alpha: Overlay opacity in ``(0, 1]``.
+
+    Raises:
+        ValueError: If ``frame`` is not a BGR image or ``alpha`` is invalid.
+    """
     if frame.ndim != 3 or frame.shape[2] != 3:
         raise ValueError("CAD overlay frame must be a BGR image with shape (H, W, 3).")
     if not (0.0 < alpha <= 1.0):
@@ -156,6 +231,17 @@ def _paint_parts_alpha(
     *,
     alpha: float,
 ) -> None:
+    """Alpha-composite visible CAD parts onto a BGR frame.
+
+    Args:
+        frame: BGR image updated in place.
+        parts: List of ``(mean_depth, color_bgr, image_triangles)`` tuples.
+        alpha: Overlay opacity in ``(0, 1]``.
+
+    Notes:
+        Part-level painter ordering keeps this diagnostic overlay cheap. Exact
+        inter-part occlusion would require a z-buffer.
+    """
     # Part-level painter ordering keeps this diagnostic overlay cheap. Exact
     # inter-part occlusion would require a z-buffer.
     parts.sort(key=lambda item: item[0], reverse=True)
@@ -190,6 +276,16 @@ def _paint_parts_opaque(
     frame: np.ndarray,
     parts: list[tuple[float, tuple[int, int, int], np.ndarray]],
 ) -> None:
+    """Paint visible CAD parts opaquely onto a BGR frame.
+
+    Args:
+        frame: BGR image updated in place.
+        parts: List of ``(mean_depth, color_bgr, image_triangles)`` tuples.
+
+    Notes:
+        Part-level painter ordering keeps this side view cheap. Exact inter-part
+        occlusion would require a z-buffer.
+    """
     # Part-level painter ordering keeps this side view cheap. Exact inter-part
     # occlusion would require a z-buffer.
     parts.sort(key=lambda item: item[0], reverse=True)
@@ -226,6 +322,23 @@ def _collect_visible_parts(
     registration: CadRegistration,
     color_mode: str = "debug",
 ) -> list[tuple[float, tuple[int, int, int], np.ndarray]]:
+    """Project visible CAD mesh triangles into image space for painting.
+
+    Args:
+        pose: Fused object pose in the camera frame.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Distortion coefficients.
+        marker_model: Marker layout defining the object reference frame.
+        cad_model: CAD mesh model to render.
+        registration: CAD-to-marker_model registration transform.
+        color_mode: ``debug`` for stable part colors or ``material`` for glTF colors.
+
+    Returns:
+        List of ``(mean_depth, color_bgr, image_triangles)`` for front-facing parts.
+
+    Raises:
+        ValueError: If ``color_mode`` is unsupported.
+    """
     if color_mode not in ("debug", "material"):
         raise ValueError(f"Unsupported CAD part color mode {color_mode!r}.")
 

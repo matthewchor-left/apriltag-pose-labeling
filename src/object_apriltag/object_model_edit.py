@@ -19,12 +19,32 @@ from object_apriltag.viz.skeleton import MODEL_FRAME_NAME, ObjectModel, object_m
 
 
 def load_object_model_document(path: str | Path) -> tuple[ObjectModel, dict[str, Any]]:
+    """Load an object model JSON file into runtime and raw document forms.
+
+    Args:
+        path: Path to an ``object_model.json`` file.
+
+    Returns:
+        Tuple of parsed ``ObjectModel`` and the original JSON document dict.
+    """
     path = Path(path)
     document = json.loads(path.read_text(encoding="utf-8"))
     return object_model_from_data(document), document
 
 
 def _parse_source_marker_id(value: Any, field_name: str) -> int:
+    """Parse a marker ID from JSON into a non-boolean integer.
+
+    Args:
+        value: Raw JSON value for a marker ID field.
+        field_name: Dotted field path used in error messages.
+
+    Returns:
+        Parsed integer marker ID.
+
+    Raises:
+        ValueError: If ``value`` is not a valid integer marker ID.
+    """
     if isinstance(value, bool):
         raise ValueError(f"{field_name} must be an integer marker id, got {value!r}.")
     if isinstance(value, int):
@@ -41,6 +61,18 @@ def _parse_source_marker_id(value: Any, field_name: str) -> int:
 
 
 def _parse_padding_mm(value: Any, field_name: str) -> float:
+    """Parse a non-negative padding distance from millimeters to meters.
+
+    Args:
+        value: Raw JSON value for a padding field.
+        field_name: Dotted field path used in error messages.
+
+    Returns:
+        Padding distance in meters.
+
+    Raises:
+        ValueError: If ``value`` is not a finite non-negative number.
+    """
     if isinstance(value, bool):
         raise ValueError(f"{field_name} must be a number in millimeters, got {value!r}.")
     if not isinstance(value, (int, float)):
@@ -54,6 +86,17 @@ def _parse_padding_mm(value: Any, field_name: str) -> float:
 
 
 def parse_keypoint_sources(document: dict[str, Any]) -> dict[str, tuple[int, str, float]]:
+    """Parse ``keypoint_sources`` entries from an object model document.
+
+    Args:
+        document: Parsed object-model JSON root object.
+
+    Returns:
+        Map from keypoint name to ``(marker_id, corner_name, padding_m)`` tuples.
+
+    Raises:
+        ValueError: If ``keypoint_sources`` is missing, empty, or contains invalid entries.
+    """
     raw = document.get("keypoint_sources")
     if not isinstance(raw, dict) or not raw:
         raise ValueError(
@@ -99,6 +142,19 @@ def apply_keypoint_sources_from_layout(
     document: dict[str, Any],
     layout: MarkerLayout,
 ) -> ObjectModel:
+    """Update keypoint positions from solved marker layout and source metadata.
+
+    Args:
+        model: Current object model to update.
+        document: Parsed object-model JSON containing ``keypoint_sources``.
+        layout: Solved marker layout with footprint geometry.
+
+    Returns:
+        Object model with keypoints moved to layout-derived corner positions.
+
+    Raises:
+        ValueError: If coordinate frame, keypoint names, or marker IDs are inconsistent.
+    """
     coordinate_frame = document.get("coordinate_frame", MODEL_FRAME_NAME)
     if coordinate_frame != MODEL_FRAME_NAME:
         raise ValueError(
@@ -130,6 +186,15 @@ def apply_keypoint_sources_from_layout(
 
 
 def ordered_keypoint_names(document: dict[str, Any], model: ObjectModel) -> tuple[str, ...]:
+    """Return keypoint names in document order, appending any model-only names.
+
+    Args:
+        document: Parsed object-model JSON that may define a ``keypoints`` object.
+        model: Object model supplying the authoritative keypoint set.
+
+    Returns:
+        Keypoint names in stable display/save order.
+    """
     raw = document.get("keypoints")
     ordered: list[str] = []
     if isinstance(raw, dict):
@@ -147,6 +212,17 @@ def object_model_with_keypoint(
     *,
     keypoint_names: tuple[str, ...] | None = None,
 ) -> ObjectModel:
+    """Return a copy of ``model`` with one keypoint position replaced.
+
+    Args:
+        model: Base object model.
+        keypoint_id: Keypoint name to update.
+        point_layout: New 3D position in the object layout frame.
+        keypoint_names: Optional explicit keypoint ordering; defaults to ``model`` order.
+
+    Returns:
+        Updated object model with refreshed ``object_points`` array.
+    """
     keypoints = dict(model.keypoints)
     keypoints[keypoint_id] = np.asarray(point_layout, dtype=np.float64).reshape(3)
     if keypoint_names is None:
@@ -164,6 +240,7 @@ def object_model_with_keypoint(
 
 
 def _layout_point_to_json(point: np.ndarray) -> list[float]:
+    """Serialize a 3D layout point as a JSON-friendly float triple."""
     array = np.asarray(point, dtype=np.float64).reshape(3)
     return [float(array[0]), float(array[1]), float(array[2])]
 
@@ -173,6 +250,17 @@ def save_object_model_keypoints(
     model: ObjectModel,
     document: dict[str, Any],
 ) -> None:
+    """Atomically write updated keypoint coordinates back to an object model JSON file.
+
+    Args:
+        path: Destination ``object_model.json`` path.
+        model: Object model with updated keypoint positions.
+        document: Original JSON document to preserve non-keypoint fields.
+
+    Notes:
+        Uses a temporary file and ``os.replace`` so partial writes do not corrupt
+        the on-disk model.
+    """
     path = Path(path)
     payload = dict(document)
     names = ordered_keypoint_names(document, model)

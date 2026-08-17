@@ -41,10 +41,24 @@ DEFAULT_SAMPLE_RATE_HZ = 10.0
 
 
 def meters_to_pixels(length_m: float, dpi: float) -> int:
+    """Convert a physical length to pixels at a given print DPI.
+
+    Args:
+        length_m: Length in meters.
+        dpi: Dots per inch for print resolution.
+
+    Returns:
+        Rounded pixel count, at least 1.
+    """
     return max(1, int(round(length_m * dpi / METERS_PER_INCH)))
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse CLI flags for ChArUco/checkerboard calibration or board export.
+
+    Returns:
+        Parsed argument namespace with board geometry, source, and output paths.
+    """
     parser = argparse.ArgumentParser(
         description="Calibrate a camera from ChArUco or checkerboard detections.",
         epilog=(
@@ -134,6 +148,16 @@ def parse_args() -> argparse.Namespace:
 
 
 def checkerboard_object_points(layout_width: int, layout_height: int, square_size: float) -> np.ndarray:
+    """Build checkerboard inner-corner object points on the Z=0 plane.
+
+    Args:
+        layout_width: Number of inner corners along X.
+        layout_height: Number of inner corners along Y.
+        square_size: Chess square edge length in meters.
+
+    Returns:
+        ``(layout_width * layout_height, 3)`` float32 object points.
+    """
     grid = np.mgrid[0:layout_width, 0:layout_height].T.reshape(-1, 2)
     points = np.zeros((layout_width * layout_height, 3), dtype=np.float32)
     points[:, :2] = grid.astype(np.float32)
@@ -146,6 +170,13 @@ build_charuco_board = build_charuco_board_from_geometry
 
 
 def save_png_with_dpi(image: np.ndarray, path: Path, dpi: float) -> None:
+    """Write a grayscale or BGR image as a PNG with embedded DPI metadata.
+
+    Args:
+        image: Grayscale or BGR image array.
+        path: Output PNG path; parent directories are created as needed.
+        dpi: Dots per inch stored in PNG metadata.
+    """
     if image.ndim == 2:
         pil_image = Image.fromarray(image)
     else:
@@ -163,6 +194,22 @@ def save_charuco_board_a4(
     square_size: float,
     dpi: float,
 ) -> None:
+    """Render a true-scale ChArUco board centered on an A4 page and save as PNG.
+
+    Args:
+        board: OpenCV ChArUco board to rasterize.
+        path: Output PNG path.
+        layout_width: Board width in chess squares.
+        layout_height: Board height in chess squares.
+        square_size: Physical chess square edge length in meters.
+        dpi: Print resolution for pixel sizing and PNG DPI metadata.
+
+    Raises:
+        ValueError: ``dpi`` is not positive.
+
+    Notes:
+        Emits a warning when the board exceeds A4 dimensions at true scale.
+    """
     if dpi <= 0.0:
         raise ValueError("--print-dpi must be positive.")
 
@@ -218,6 +265,17 @@ def detect_charuco(
     board: cv2.aruco.CharucoBoard,
     detector: cv2.aruco.CharucoDetector,
 ) -> tuple[np.ndarray, np.ndarray] | None:
+    """Detect ChArUco corners and return matched object/image point pairs.
+
+    Args:
+        gray: Grayscale input image.
+        board: ChArUco board definition for 3D corner positions.
+        detector: OpenCV ChArUco detector.
+
+    Returns:
+        Tuple of object points ``(N, 3)`` and image points ``(N, 2)``, or ``None``
+        when detection is incomplete or the view is degenerate.
+    """
     charuco_corners, charuco_ids, _, _ = detector.detectBoard(gray)
     if not charuco_corners_consistent(charuco_corners, charuco_ids):
         return None
@@ -242,6 +300,18 @@ def detect_checkerboard(
     layout_height: int,
     square_size: float,
 ) -> tuple[np.ndarray, np.ndarray] | None:
+    """Detect checkerboard inner corners and return object/image point pairs.
+
+    Args:
+        gray: Grayscale input image.
+        layout_width: Number of inner corners along X.
+        layout_height: Number of inner corners along Y.
+        square_size: Chess square edge length in meters.
+
+    Returns:
+        Tuple of object points ``(N, 3)`` and image points ``(N, 2)``, or ``None``
+        when the pattern is not found.
+    """
     pattern_size = (layout_width, layout_height)
     found, corners = cv2.findChessboardCornersSB(gray, pattern_size)
     if not found:
@@ -261,6 +331,23 @@ def detect_calibration_view(
     charuco_board: cv2.aruco.CharucoBoard | None = None,
     charuco_detector: cv2.aruco.CharucoDetector | None = None,
 ) -> tuple[np.ndarray, np.ndarray] | None:
+    """Detect a calibration board view for either ChArUco or checkerboard targets.
+
+    Args:
+        gray: Grayscale input image.
+        board_type: ``"charuco_board"`` or ``"checkerboard"``.
+        layout_width: Board width in squares or inner corners.
+        layout_height: Board height in squares or inner corners.
+        square_size: Chess square edge length in meters.
+        charuco_board: ChArUco board definition; required for ``charuco_board``.
+        charuco_detector: ChArUco detector; required for ``charuco_board``.
+
+    Returns:
+        Tuple of object points and image points, or ``None`` when detection fails.
+
+    Raises:
+        RuntimeError: ChArUco board or detector is missing for ``charuco_board``.
+    """
     if board_type == "charuco_board":
         if charuco_board is None or charuco_detector is None:
             raise RuntimeError("ChArUco board and detector are required.")
@@ -271,7 +358,15 @@ def detect_calibration_view(
 def planar_calibration_view_usable(
     object_points: np.ndarray, image_points: np.ndarray
 ) -> bool:
-    """True when OpenCV can estimate a 3x3 homography for planar intrinsic init."""
+    """Return whether OpenCV can estimate a 3x3 homography for planar intrinsic init.
+
+    Args:
+        object_points: Planar 3D calibration points ``(N, 3)``.
+        image_points: Corresponding 2D image points ``(N, 2)``.
+
+    Returns:
+        True when at least four matched points yield a valid homography.
+    """
     if len(object_points) < 4 or len(image_points) != len(object_points):
         return False
     homography, _ = cv2.findHomography(
@@ -282,6 +377,14 @@ def planar_calibration_view_usable(
 
 
 def require_positive_sample_rate(sample_rate_hz: float) -> None:
+    """Validate automatic video capture sample rate.
+
+    Args:
+        sample_rate_hz: Requested capture rate in Hz.
+
+    Raises:
+        RuntimeError: Rate is non-finite or not positive.
+    """
     if not math.isfinite(sample_rate_hz) or sample_rate_hz <= 0.0:
         raise RuntimeError("--sample-rate-hz must be finite and positive.")
 
@@ -294,6 +397,19 @@ def mean_reprojection_error(
     rvecs: list[np.ndarray],
     tvecs: list[np.ndarray],
 ) -> float:
+    """Compute mean L2 reprojection error across all calibration views.
+
+    Args:
+        object_points_list: Per-view 3D calibration points.
+        image_points_list: Per-view detected 2D points.
+        camera_matrix: Calibrated camera intrinsics matrix.
+        dist_coeffs: Calibrated distortion coefficients.
+        rvecs: Per-view rotation vectors from calibration.
+        tvecs: Per-view translation vectors from calibration.
+
+    Returns:
+        Mean reprojection error in pixels; ``0.0`` when no points are present.
+    """
     total_error = 0.0
     total_points = 0
     for object_points, image_points, rvec, tvec in zip(
@@ -331,6 +447,23 @@ def write_intrinsics_json(
     marker_size: float | None = None,
     dictionary: str | None = None,
 ) -> None:
+    """Write camera intrinsics and calibration metadata to a JSON file.
+
+    Args:
+        path: Output intrinsics JSON path; parent directories are created.
+        calibration_source: Board type label (``"charuco"`` or ``"checkerboard"``).
+        image_width: Calibrated image width in pixels.
+        image_height: Calibrated image height in pixels.
+        camera_matrix: ``3x3`` camera intrinsics matrix.
+        dist_coeffs: Distortion coefficient vector.
+        mean_reprojection_error_px: Mean reprojection error after calibration.
+        layout_width: Board width in squares or inner corners.
+        layout_height: Board height in squares or inner corners.
+        square_size: Chess square edge length in meters.
+        captured_frames: Number of views used in calibration.
+        marker_size: ArUco marker edge length for ChArUco boards, if applicable.
+        dictionary: ArUco dictionary name for ChArUco boards, if applicable.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     payload: dict[str, object] = {
         "calibration_source": calibration_source,
@@ -358,6 +491,17 @@ def draw_charuco_overlay(
     board: cv2.aruco.CharucoBoard,
     detector: cv2.aruco.CharucoDetector,
 ) -> bool:
+    """Draw detected ArUco markers and ChArUco corners on ``frame`` in place.
+
+    Args:
+        frame: BGR preview image to annotate.
+        gray: Grayscale version of ``frame``.
+        board: ChArUco board definition (unused; kept for API symmetry).
+        detector: OpenCV ChArUco detector.
+
+    Returns:
+        True when at least four ChArUco corners were detected.
+    """
     charuco_corners, charuco_ids, marker_corners, marker_ids = detector.detectBoard(gray)
     if marker_ids is not None and len(marker_ids) > 0:
         cv2.aruco.drawDetectedMarkers(frame, marker_corners, marker_ids)
@@ -374,6 +518,17 @@ def draw_checkerboard_overlay(
     layout_width: int,
     layout_height: int,
 ) -> bool:
+    """Draw detected checkerboard corners on ``frame`` in place.
+
+    Args:
+        frame: BGR preview image to annotate.
+        gray: Grayscale version of ``frame``.
+        layout_width: Number of inner corners along X.
+        layout_height: Number of inner corners along Y.
+
+    Returns:
+        True when the checkerboard pattern was found.
+    """
     pattern_size = (layout_width, layout_height)
     found, corners = cv2.findChessboardCornersSB(gray, pattern_size)
     if found:
@@ -391,6 +546,26 @@ def capture_from_camera(
     charuco_board: cv2.aruco.CharucoBoard | None = None,
     charuco_detector: cv2.aruco.CharucoDetector | None = None,
 ) -> tuple[list[np.ndarray], list[np.ndarray], int, int]:
+    """Capture calibration views interactively from a live camera source.
+
+    Opens a preview window; Space captures a frame when the board is detected,
+    and ``q`` finishes capture.
+
+    Args:
+        source: Camera device index or other frame source.
+        board_type: ``"charuco_board"`` or ``"checkerboard"``.
+        layout_width: Board width in squares or inner corners.
+        layout_height: Board height in squares or inner corners.
+        square_size: Chess square edge length in meters.
+        charuco_board: ChArUco board definition; required for ``charuco_board``.
+        charuco_detector: ChArUco detector; required for ``charuco_board``.
+
+    Returns:
+        Tuple of per-view object-point lists, image-point lists, image width, and height.
+
+    Raises:
+        RuntimeError: Frame read failure or missing ChArUco board/detector.
+    """
     capture = open_frame_source(source)
     source_label = format_frame_source(source)
     object_points_list: list[np.ndarray] = []
@@ -467,6 +642,27 @@ def capture_from_video(
     charuco_board: cv2.aruco.CharucoBoard | None = None,
     charuco_detector: cv2.aruco.CharucoDetector | None = None,
 ) -> tuple[list[np.ndarray], list[np.ndarray], int, int]:
+    """Capture calibration views automatically from a video file at a fixed rate.
+
+    Decodes the full video without preview and samples detections at
+    ``sample_rate_hz`` in video time.
+
+    Args:
+        source: Path to a video file.
+        board_type: ``"charuco_board"`` or ``"checkerboard"``.
+        layout_width: Board width in squares or inner corners.
+        layout_height: Board height in squares or inner corners.
+        square_size: Chess square edge length in meters.
+        sample_rate_hz: Automatic capture rate in Hz.
+        charuco_board: ChArUco board definition; required for ``charuco_board``.
+        charuco_detector: ChArUco detector; required for ``charuco_board``.
+
+    Returns:
+        Tuple of per-view object-point lists, image-point lists, image width, and height.
+
+    Raises:
+        RuntimeError: Invalid sample rate or non-positive video FPS metadata.
+    """
     require_positive_sample_rate(sample_rate_hz)
     capture = open_frame_source(source)
     object_points_list: list[np.ndarray] = []
@@ -538,6 +734,27 @@ def solve_and_write_intrinsics(
     marker_size: float | None,
     dictionary: str | None,
 ) -> None:
+    """Calibrate camera intrinsics from captured views and write the JSON output.
+
+    Drops degenerate views that lack a planar homography before calling OpenCV
+    calibration.
+
+    Args:
+        output: Intrinsics JSON output path.
+        board_type: ``"charuco_board"`` or ``"checkerboard"``.
+        object_points_list: Per-view 3D calibration points.
+        image_points_list: Per-view detected 2D points.
+        image_width: Image width in pixels.
+        image_height: Image height in pixels.
+        layout_width: Board width in squares or inner corners.
+        layout_height: Board height in squares or inner corners.
+        square_size: Chess square edge length in meters.
+        marker_size: ArUco marker edge length for ChArUco boards, if applicable.
+        dictionary: ArUco dictionary name for ChArUco boards, if applicable.
+
+    Raises:
+        RuntimeError: Fewer than three usable captured views remain after filtering.
+    """
     usable = [
         (object_points, image_points)
         for object_points, image_points in zip(
@@ -596,6 +813,11 @@ def solve_and_write_intrinsics(
 
 
 def main() -> None:
+    """CLI entry point: export a printable board or run camera/video calibration.
+
+    Raises:
+        RuntimeError: Missing required flags, invalid board geometry, or capture failure.
+    """
     args = parse_args()
     reject_mixed_board_model_args(args)
 

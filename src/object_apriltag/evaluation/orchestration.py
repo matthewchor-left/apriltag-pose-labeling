@@ -20,6 +20,16 @@ from object_apriltag.pose import Detection
 
 @dataclass(frozen=True)
 class VideoNormalizationSummary:
+    """Per-video detection normalization diagnostics.
+
+    Attributes:
+        source_video: Repo-relative path of the source video.
+        frame_count: Number of frames decoded.
+        unknown_marker_ids: Detections dropped for unexpected marker IDs.
+        duplicate_marker_skips: Extra detections dropped after duplicate marker IDs.
+        malformed_detections: Detections dropped for malformed or non-finite corners.
+    """
+
     source_video: str
     frame_count: int
     unknown_marker_ids: int
@@ -35,6 +45,26 @@ def freeze_held_out_video_detections(
     calibration_height: int,
     expected_marker_ids: frozenset[int],
 ) -> tuple[FrozenVideoDetections, VideoNormalizationSummary]:
+    """Decode a held-out video once and freeze per-frame AprilTag detections.
+
+    Args:
+        video_path: Path to the held-out video file.
+        detector: Configured OpenCV ArUco detector.
+        calibration_width: Expected frame width matching intrinsics calibration.
+        calibration_height: Expected frame height matching intrinsics calibration.
+        expected_marker_ids: Marker IDs to retain during normalization.
+
+    Returns:
+        Tuple of frozen detections and normalization diagnostics.
+
+    Raises:
+        FileNotFoundError: If the video file does not exist.
+        ValueError: If any frame resolution differs from the calibration size.
+
+    Notes:
+        Intrinsics must not be scaled to match a different resolution; frame size
+        mismatches are treated as errors.
+    """
     if not video_path.is_file():
         raise FileNotFoundError(f"Held-out video not found: {video_path}.")
 
@@ -89,6 +119,17 @@ def _detect_frame(
     *,
     expected_marker_ids: frozenset[int],
 ) -> tuple[list[Detection], int, int, int]:
+    """Run AprilTag detection on one frame and normalize results.
+
+    Args:
+        detector: Configured OpenCV ArUco detector.
+        frame: BGR or grayscale image.
+        expected_marker_ids: Marker IDs to retain during normalization.
+
+    Returns:
+        Tuple of normalized detections, unknown-ID count, duplicate skips, and
+        malformed-detection skips.
+    """
     gray = frame if frame.ndim == 2 else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     corners, ids, _ = detector.detectMarkers(gray)
     if ids is None:

@@ -43,6 +43,17 @@ from object_apriltag.calibration import DEFAULT_MARKER_MODEL_PATH
 
 @dataclass(frozen=True)
 class MarkerFootprint:
+    """Physical corner geometry and orientation for one marker sticker.
+
+    Attributes:
+        marker_id: AprilTag ID for this footprint.
+        top_left: Top-left corner in layout coordinates, meters.
+        top_right: Top-right corner in layout coordinates, meters.
+        bottom_right: Bottom-right corner in layout coordinates, meters.
+        bottom_left: Bottom-left corner in layout coordinates, meters.
+        orientation: ``(3, 3)`` rotation matrix whose columns are sticker axes.
+    """
+
     marker_id: int
     top_left: np.ndarray
     top_right: np.ndarray
@@ -64,12 +75,31 @@ class MarkerFootprint:
 
 @dataclass(frozen=True)
 class MarkerToObject:
+    """Rigid transform from a marker frame to the object reference frame.
+
+    Attributes:
+        offset: Translation from marker origin to object origin in marker frame.
+        rotation: ``(3, 3)`` rotation from marker frame to object frame.
+    """
+
     offset: np.ndarray
     rotation: np.ndarray
 
 
 @dataclass(frozen=True)
 class MarkerLayout:
+    """Complete marker sticker layout and derived marker-to-object transforms.
+
+    Attributes:
+        reference_marker_id: Marker ID defining the object reference frame.
+        units: Length unit label stored in the model JSON.
+        marker_size_m: Default physical edge length for markers in meters.
+        marker_sizes_m: Per-marker edge lengths keyed by marker ID.
+        footprints: Footprint geometry keyed by marker ID.
+        transforms: Marker-to-object transforms keyed by marker ID.
+        anchor_marker_ids: Optional subset of markers used as layout anchors.
+    """
+
     reference_marker_id: int
     units: str
     marker_size_m: float
@@ -83,6 +113,14 @@ class MarkerLayout:
         return set(self.footprints)
 
     def marker_size_for(self, marker_id: int) -> float:
+        """Return the physical edge length for a marker ID.
+
+        Args:
+            marker_id: Marker ID to look up.
+
+        Returns:
+            Marker edge length in meters.
+        """
         return self.marker_sizes_m[marker_id]
 
 
@@ -90,6 +128,17 @@ def resolve_anchor_marker_ids_for_layout(
     anchor_marker_ids: Sequence[int] | None,
     marker_ids: Iterable[int],
 ) -> tuple[int, ...]:
+    """Resolve anchor marker IDs against markers present in a layout.
+
+    Args:
+        anchor_marker_ids: Optional explicit anchor list; when ``None``, all
+            present markers are used.
+        marker_ids: Marker IDs available in the current layout.
+
+    Returns:
+        Tuple of anchor marker IDs present in ``marker_ids``, falling back to all
+        present IDs when the explicit list is empty.
+    """
     present = set(marker_ids)
     if anchor_marker_ids is None:
         return tuple(sorted(present))
@@ -98,6 +147,18 @@ def resolve_anchor_marker_ids_for_layout(
 
 
 def _as_point3(value: Any, field_name: str) -> np.ndarray:
+    """Parse a JSON coordinate value into a 3D layout point.
+
+    Args:
+        value: ``[x, y]`` or ``[x, y, z]`` coordinate sequence.
+        field_name: Field name used in validation error messages.
+
+    Returns:
+        ``(3,)`` float64 point; missing Z defaults to ``0.0``.
+
+    Raises:
+        ValueError: If ``value`` is not a 2- or 3-element coordinate.
+    """
     array = np.asarray(value, dtype=np.float64).reshape(-1)
     if array.shape == (2,):
         return np.array([array[0], array[1], 0.0], dtype=np.float64)
@@ -112,6 +173,17 @@ def footprint_edge_lengths(
     bottom_right: np.ndarray,
     bottom_left: np.ndarray,
 ) -> tuple[float, float, float, float]:
+    """Measure the four edge lengths of a marker footprint quadrilateral.
+
+    Args:
+        top_left: Top-left corner in layout coordinates.
+        top_right: Top-right corner in layout coordinates.
+        bottom_right: Bottom-right corner in layout coordinates.
+        bottom_left: Bottom-left corner in layout coordinates.
+
+    Returns:
+        Tuple ``(top, right, bottom, left)`` edge lengths in meters.
+    """
     return (
         float(np.linalg.norm(top_right - top_left)),
         float(np.linalg.norm(bottom_right - top_right)),
@@ -126,6 +198,17 @@ def rectangle_center(
     bottom_right: np.ndarray,
     bottom_left: np.ndarray,
 ) -> np.ndarray:
+    """Return the center of a quadrilateral defined by four corners.
+
+    Args:
+        top_left: Top-left corner in layout coordinates.
+        top_right: Top-right corner in layout coordinates.
+        bottom_right: Bottom-right corner in layout coordinates.
+        bottom_left: Bottom-left corner in layout coordinates.
+
+    Returns:
+        ``(3,)`` centroid of the four corners.
+    """
     return (top_left + top_right + bottom_right + bottom_left) / 4.0
 
 
@@ -134,6 +217,20 @@ def footprint_corner_with_padding(
     corner_name: str,
     padding_m: float,
 ) -> np.ndarray:
+    """Offset a footprint corner inward by a uniform padding distance.
+
+    Args:
+        footprint: Marker footprint geometry.
+        corner_name: Corner name; one of ``CORNER_NAMES``.
+        padding_m: Inward offset distance in meters.
+
+    Returns:
+        Padded corner position in layout coordinates.
+
+    Raises:
+        ValueError: If ``corner_name`` is invalid, ``padding_m`` is negative or
+            non-finite, or the footprint geometry is degenerate.
+    """
     if corner_name not in CORNER_NAMES:
         raise ValueError(
             f"corner must be one of {list(CORNER_NAMES)}, got {corner_name!r}."
@@ -184,6 +281,15 @@ def footprint_corner_with_padding(
 
 
 def marker_origin_on_object(bottom_left: np.ndarray, bottom_right: np.ndarray) -> np.ndarray:
+    """Return the marker origin at the midpoint of the bottom edge.
+
+    Args:
+        bottom_left: Bottom-left corner in layout coordinates.
+        bottom_right: Bottom-right corner in layout coordinates.
+
+    Returns:
+        ``(3,)`` marker origin on the object surface.
+    """
     return (bottom_left + bottom_right) / 2.0
 
 
@@ -193,6 +299,23 @@ def footprint_orientation(
     bottom_left: np.ndarray,
     bottom_right: np.ndarray,
 ) -> np.ndarray:
+    """Build a right-handed orientation matrix from footprint corner geometry.
+
+    X axis follows the bottom edge; Y axis follows the left edge; Z axis is the
+    outward sticker normal.
+
+    Args:
+        top_left: Top-left corner in layout coordinates.
+        top_right: Top-right corner in layout coordinates.
+        bottom_left: Bottom-left corner in layout coordinates.
+        bottom_right: Bottom-right corner in layout coordinates.
+
+    Returns:
+        ``(3, 3)`` orientation matrix with orthonormal columns.
+
+    Raises:
+        ValueError: If any edge is degenerate or the resulting basis is improper.
+    """
     x_axis = bottom_right - bottom_left
     x_norm = np.linalg.norm(x_axis)
     if x_norm <= 0.0:
@@ -221,6 +344,18 @@ def footprint_orientation(
 
 
 def footprint_from_dict(marker_id: int, payload: dict[str, Any]) -> MarkerFootprint:
+    """Parse a marker footprint from a JSON object payload.
+
+    Args:
+        marker_id: Marker ID for error messages and the returned footprint.
+        payload: Dictionary containing all four corner coordinates.
+
+    Returns:
+        Parsed ``MarkerFootprint``.
+
+    Raises:
+        ValueError: If required corners are missing or geometry is degenerate.
+    """
     missing = [name for name in CORNER_NAMES if name not in payload]
     if missing:
         raise ValueError(
@@ -248,6 +383,19 @@ def derive_marker_to_object_transform(
     reference_orientation: np.ndarray,
     object_origin: np.ndarray,
 ) -> MarkerToObject:
+    """Derive the rigid transform from one marker frame to the object frame.
+
+    Args:
+        footprint: Marker footprint geometry.
+        reference_orientation: ``(3, 3)`` orientation of the reference marker.
+        object_origin: Object reference origin in layout coordinates.
+
+    Returns:
+        ``MarkerToObject`` transform for the marker.
+
+    Raises:
+        ValueError: If the derived rotation is improper (det < 0).
+    """
     marker_origin = marker_origin_on_object(footprint.bottom_left, footprint.bottom_right)
     delta_layout = object_origin - marker_origin
     rotation = footprint.orientation.T @ reference_orientation
@@ -261,6 +409,18 @@ def derive_marker_to_object_transforms(
     footprints: dict[int, MarkerFootprint],
     reference_marker_id: int,
 ) -> dict[int, MarkerToObject]:
+    """Derive marker-to-object transforms for all footprints in a layout.
+
+    Args:
+        footprints: Footprint geometry keyed by marker ID.
+        reference_marker_id: Marker ID defining the object reference frame.
+
+    Returns:
+        Marker-to-object transforms keyed by marker ID.
+
+    Raises:
+        KeyError: If ``reference_marker_id`` is not present in ``footprints``.
+    """
     if reference_marker_id not in footprints:
         raise KeyError(f"reference_marker_id {reference_marker_id} is not present in markers.")
 
@@ -278,6 +438,14 @@ def derive_marker_to_object_transforms(
 
 
 def _point_to_json(point: np.ndarray) -> list[float]:
+    """Serialize a layout point to a JSON coordinate list.
+
+    Args:
+        point: ``(2,)`` or ``(3,)`` coordinate array.
+
+    Returns:
+        ``[x, y]`` or ``[x, y, z]`` list of floats.
+    """
     array = np.asarray(point, dtype=np.float64).reshape(-1)
     if array.shape == (2,):
         return [float(array[0]), float(array[1])]
@@ -285,6 +453,14 @@ def _point_to_json(point: np.ndarray) -> list[float]:
 
 
 def footprint_to_dict(footprint: MarkerFootprint) -> dict[str, list[float]]:
+    """Serialize a marker footprint to a JSON-compatible dictionary.
+
+    Args:
+        footprint: Marker footprint to serialize.
+
+    Returns:
+        Dictionary with the four corner coordinate lists.
+    """
     return {
         "top_left": _point_to_json(footprint.top_left),
         "top_right": _point_to_json(footprint.top_right),
@@ -294,6 +470,14 @@ def footprint_to_dict(footprint: MarkerFootprint) -> dict[str, list[float]]:
 
 
 def marker_layout_to_dict(layout: MarkerLayout) -> dict[str, Any]:
+    """Serialize a marker layout to a JSON-compatible dictionary.
+
+    Args:
+        layout: Marker layout to serialize.
+
+    Returns:
+        Dictionary suitable for writing to ``marker_model.json``.
+    """
     markers: dict[str, Any] = {}
     for marker_id, footprint in sorted(layout.footprints.items()):
         payload = footprint_to_dict(footprint)
@@ -315,6 +499,20 @@ def resolve_marker_sizes(
     default_size_m: float,
     overrides: dict[int, float] | None = None,
 ) -> dict[int, float]:
+    """Resolve per-marker physical edge lengths from defaults and overrides.
+
+    Args:
+        marker_ids: Marker IDs present in the layout.
+        default_size_m: Default edge length in meters.
+        overrides: Optional per-marker size overrides.
+
+    Returns:
+        Marker edge lengths keyed by marker ID.
+
+    Raises:
+        ValueError: If default or override sizes are invalid or reference unknown
+            marker IDs.
+    """
     if default_size_m <= 0.0 or not np.isfinite(default_size_m):
         raise ValueError(f"marker_size_m must be positive and finite, got {default_size_m}.")
     overrides = overrides or {}
@@ -340,6 +538,24 @@ def build_marker_layout(
     marker_sizes_m: dict[int, float] | None = None,
     anchor_marker_ids: Sequence[int] | None = None,
 ) -> MarkerLayout:
+    """Construct a validated marker layout from footprints and metadata.
+
+    Args:
+        reference_marker_id: Marker ID defining the object reference frame.
+        marker_size_m: Default physical edge length in meters.
+        footprints: Footprint geometry keyed by marker ID.
+        units: Length unit label stored in the model.
+        marker_sizes_m: Optional explicit per-marker sizes; must cover all
+            footprints when provided.
+        anchor_marker_ids: Optional subset of markers used as layout anchors.
+
+    Returns:
+        Fully derived ``MarkerLayout``.
+
+    Raises:
+        ValueError: If marker sizes are inconsistent or footprint validation
+            fails.
+    """
     footprint_ids = set(footprints)
     if marker_sizes_m is None:
         resolved_sizes = resolve_marker_sizes(footprint_ids, marker_size_m)
@@ -367,7 +583,15 @@ def build_marker_layout(
 
 
 def save_marker_model(path: str | Path, layout: MarkerLayout) -> None:
-    """Atomically write a validated marker model JSON file."""
+    """Atomically write a validated marker model JSON file.
+
+    Args:
+        path: Destination path for ``marker_model.json``.
+        layout: Marker layout to serialize.
+
+    Raises:
+        OSError: If the temporary file cannot be written or replaced.
+    """
     path = Path(path)
     payload = marker_layout_to_dict(layout)
     text = json.dumps(payload, indent=2) + "\n"
@@ -388,6 +612,18 @@ def save_marker_model(path: str | Path, layout: MarkerLayout) -> None:
 
 
 def load_marker_model(path: str | Path) -> MarkerLayout:
+    """Load and validate a marker model JSON file.
+
+    Args:
+        path: Path to ``marker_model.json``.
+
+    Returns:
+        Parsed and validated ``MarkerLayout``.
+
+    Raises:
+        FileNotFoundError: If ``path`` does not exist.
+        ValueError: If required fields are missing or geometry is invalid.
+    """
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Marker model file not found: {path}")
@@ -446,6 +682,19 @@ def _parse_anchor_marker_ids_field(
     footprints: dict[int, MarkerFootprint],
     reference_marker_id: int,
 ) -> tuple[int, ...] | None:
+    """Parse and validate the optional ``anchor_marker_ids`` JSON field.
+
+    Args:
+        raw: Raw JSON value for ``anchor_marker_ids``.
+        footprints: Footprint geometry keyed by marker ID.
+        reference_marker_id: Marker ID defining the object reference frame.
+
+    Returns:
+        Parsed anchor marker ID tuple, or ``None`` when the field is absent.
+
+    Raises:
+        ValueError: If the field is present but malformed or inconsistent.
+    """
     if raw is None:
         return None
     if not isinstance(raw, list) or not raw:
@@ -472,6 +721,17 @@ def validate_footprint_size(
     marker_size_m: float,
     tolerance: float = 1e-4,
 ) -> None:
+    """Validate that footprint edge lengths match the expected marker size.
+
+    Args:
+        footprint: Marker footprint to validate.
+        marker_size_m: Expected physical edge length in meters.
+        tolerance: Maximum allowed absolute edge-length error in meters.
+
+    Raises:
+        ValueError: If any edge length differs from ``marker_size_m`` beyond
+            ``tolerance``.
+    """
     edge_labels = ("top", "right", "bottom", "left")
     for label, value in zip(edge_labels, footprint_edge_lengths(*footprint.corners()), strict=True):
         if abs(value - marker_size_m) > tolerance:
@@ -488,6 +748,17 @@ def validate_all_footprint_sizes(
     marker_sizes_m: float | dict[int, float],
     tolerance: float = 1e-4,
 ) -> None:
+    """Validate edge lengths for all footprints against expected marker sizes.
+
+    Args:
+        footprints: Footprint geometry keyed by marker ID.
+        marker_sizes_m: Uniform expected size or per-marker size mapping.
+        tolerance: Maximum allowed absolute edge-length error in meters.
+
+    Raises:
+        ValueError: If a footprint is missing from ``marker_sizes_m`` or any
+            edge length is out of tolerance.
+    """
     if isinstance(marker_sizes_m, (int, float)):
         expected_by_id = {footprint.marker_id: float(marker_sizes_m) for footprint in footprints.values()}
     else:
@@ -503,6 +774,15 @@ def layout_axis_limits(
     layout: MarkerLayout,
     padding_m: float = 0.02,
 ) -> tuple[float, float, float, float, float, float]:
+    """Return axis-aligned bounds enclosing all layout footprint corners.
+
+    Args:
+        layout: Marker layout to bound.
+        padding_m: Extra margin added on every axis in meters.
+
+    Returns:
+        Tuple ``(x_min, x_max, y_min, y_max, z_min, z_max)``.
+    """
     points = []
     for footprint in layout.footprints.values():
         points.extend(footprint.corners())
@@ -520,18 +800,51 @@ def layout_axis_limits(
 
 
 def object_reference_footprint(layout: MarkerLayout) -> MarkerFootprint:
+    """Return the footprint of the layout reference marker.
+
+    Args:
+        layout: Marker layout defining the reference marker ID.
+
+    Returns:
+        Reference marker ``MarkerFootprint``.
+    """
     return layout.footprints[layout.reference_marker_id]
 
 
 def object_reference_origin(layout: MarkerLayout) -> np.ndarray:
+    """Return the object reference origin in layout coordinates.
+
+    Args:
+        layout: Marker layout defining the reference marker footprint.
+
+    Returns:
+        ``(3,)`` center of the reference marker footprint.
+    """
     return rectangle_center(*object_reference_footprint(layout).corners())
 
 
 def object_reference_orientation(layout: MarkerLayout) -> np.ndarray:
+    """Return the object reference orientation in layout coordinates.
+
+    Args:
+        layout: Marker layout defining the reference marker footprint.
+
+    Returns:
+        ``(3, 3)`` orientation matrix of the reference marker.
+    """
     return object_reference_footprint(layout).orientation
 
 
 def layout_point_to_object_frame(point_layout: np.ndarray, layout: MarkerLayout) -> np.ndarray:
+    """Transform a layout point into the public object frame.
+
+    Args:
+        point_layout: ``(3,)`` point in layout coordinates.
+        layout: Marker layout defining the reference frame.
+
+    Returns:
+        ``(3,)`` point in the object frame used by ``ObjectPose``.
+    """
     origin = object_reference_origin(layout)
     orientation = object_reference_orientation(layout)
     return OBJECT_AXIS_FLIP @ orientation.T @ (point_layout - origin)
@@ -543,6 +856,17 @@ def layout_point_to_camera(
     object_origin: np.ndarray,
     layout: MarkerLayout,
 ) -> np.ndarray:
+    """Transform a layout point into the OpenCV camera frame.
+
+    Args:
+        point_layout: ``(3,)`` point in layout coordinates.
+        object_rotation: ``(3, 3)`` object rotation in the camera frame.
+        object_origin: Object origin in the camera frame, meters.
+        layout: Marker layout defining the reference frame.
+
+    Returns:
+        ``(3,)`` point in the camera frame.
+    """
     point_object = layout_point_to_object_frame(point_layout, layout)
     return object_rotation @ point_object + object_origin
 
@@ -553,6 +877,17 @@ def camera_point_to_layout_point(
     object_origin: np.ndarray,
     layout: MarkerLayout,
 ) -> np.ndarray:
+    """Transform a camera-frame point back into layout coordinates.
+
+    Args:
+        point_camera: ``(3,)`` point in the camera frame.
+        object_rotation: ``(3, 3)`` object rotation in the camera frame.
+        object_origin: Object origin in the camera frame, meters.
+        layout: Marker layout defining the reference frame.
+
+    Returns:
+        ``(3,)`` point in layout coordinates.
+    """
     point = np.asarray(point_camera, dtype=np.float64).reshape(3)
     point_object = object_rotation.T @ (point - object_origin)
     orientation = object_reference_orientation(layout)
@@ -561,10 +896,28 @@ def camera_point_to_layout_point(
 
 
 def marker_color(marker_id: int, reference_marker_id: int) -> str:
+    """Return the hex color used to visualize a marker in layout UIs.
+
+    Args:
+        marker_id: Marker ID to color.
+        reference_marker_id: Reference marker ID highlighted in red.
+
+    Returns:
+        Hex color string for the marker.
+    """
     return REFERENCE_MARKER_COLOR if marker_id == reference_marker_id else DEFAULT_MARKER_COLOR
 
 
 def marker_color_bgr(marker_id: int, reference_marker_id: int) -> tuple[int, int, int]:
+    """Return the BGR color tuple used to draw a marker overlay.
+
+    Args:
+        marker_id: Marker ID to color.
+        reference_marker_id: Reference marker ID highlighted in red.
+
+    Returns:
+        ``(B, G, R)`` tuple for OpenCV drawing calls.
+    """
     return (
         REFERENCE_MARKER_COLOR_BGR
         if marker_id == reference_marker_id

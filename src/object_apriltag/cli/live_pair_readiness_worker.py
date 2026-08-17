@@ -20,6 +20,14 @@ ComputeLivePairReadiness = Callable[..., LivePairReadinessDiagnostics]
 def snapshot_observations(
     observations: Sequence[FrameObservation],
 ) -> tuple[FrameObservation, ...]:
+    """Deep-copy captured observations for background-thread computation.
+
+    Args:
+        observations: Live capture observation list from the main thread.
+
+    Returns:
+        Immutable tuple of copied ``FrameObservation`` records.
+    """
     return tuple(
         FrameObservation(
             frame_id=observation.frame_id,
@@ -38,6 +46,16 @@ def empty_pair_readiness(
     expected_marker_ids: list[int],
     reference_marker_id: int,
 ) -> LivePairReadinessDiagnostics:
+    """Build a placeholder readiness snapshot before any samples are captured.
+
+    Args:
+        sample_count: Current captured sample count.
+        expected_marker_ids: Full list of expected marker IDs.
+        reference_marker_id: Reference marker assumed connected at startup.
+
+    Returns:
+        Diagnostics with only the reference marker connected and all others missing.
+    """
     return LivePairReadinessDiagnostics(
         pairs=(),
         connected_marker_ids=frozenset({reference_marker_id}),
@@ -48,13 +66,25 @@ def empty_pair_readiness(
 
 @dataclass(frozen=True)
 class LivePairReadinessView:
+    """Snapshot of pair-readiness diagnostics for HUD polling.
+
+    Attributes:
+        diagnostics: Latest pair-readiness graph diagnostics.
+        represented_sample_count: Sample count the snapshot was computed from.
+        is_computing: Whether a newer snapshot is pending or in flight.
+    """
+
     diagnostics: LivePairReadinessDiagnostics
     represented_sample_count: int
     is_computing: bool
 
 
 class LivePairReadinessWorker:
-    """Compute pair readiness off the capture thread with coalesced snapshots."""
+    """Compute pair readiness off the capture thread with coalesced snapshots.
+
+    Submits deep-copied observation lists to a background thread so the live
+    preview loop is not blocked by pair-readiness graph computation.
+    """
 
     def __init__(
         self,
@@ -66,6 +96,16 @@ class LivePairReadinessWorker:
         reference_marker_id: int,
         settings: CalibrationSettings,
     ) -> None:
+        """Start the background readiness worker thread.
+
+        Args:
+            compute_fn: Callable compatible with ``compute_live_pair_readiness``.
+            camera_matrix: Camera intrinsics matrix.
+            dist_coeffs: Distortion coefficients.
+            expected_marker_ids: Full list of expected marker IDs.
+            reference_marker_id: Reference marker for connectivity reporting.
+            settings: Calibration thresholds used for pair-readiness gates.
+        """
         self._compute_fn = compute_fn
         self._camera_matrix = camera_matrix
         self._dist_coeffs = dist_coeffs
@@ -88,12 +128,27 @@ class LivePairReadinessWorker:
         self._thread.start()
 
     def submit(self, observations: Sequence[FrameObservation]) -> None:
+        """Queue a deep-copied observation snapshot for background computation.
+
+        Coalesces rapid submissions: only the latest pending snapshot is retained.
+
+        Args:
+            observations: Current live capture observation list.
+        """
         snapshot = snapshot_observations(observations)
         with self._condition:
             self._pending_snapshot = snapshot
             self._condition.notify()
 
     def poll(self, current_sample_count: int) -> LivePairReadinessView:
+        """Return the latest readiness snapshot for HUD display.
+
+        Args:
+            current_sample_count: Number of captured observations on the main thread.
+
+        Returns:
+            View with latest diagnostics, represented sample count, and computing flag.
+        """
         with self._condition:
             is_computing = (
                 self._represented_sample_count < current_sample_count
@@ -107,6 +162,11 @@ class LivePairReadinessWorker:
             )
 
     def shutdown(self, *, join_timeout: float = 0.0) -> None:
+        """Signal the worker thread to exit and optionally wait for it.
+
+        Args:
+            join_timeout: Seconds to wait for the background thread to finish.
+        """
         with self._condition:
             self._shutdown_requested = True
             self._pending_snapshot = None
@@ -114,6 +174,7 @@ class LivePairReadinessWorker:
         self._thread.join(timeout=join_timeout)
 
     def _run(self) -> None:
+        """Background loop: compute readiness for the latest coalesced snapshot."""
         while True:
             with self._condition:
                 while self._pending_snapshot is None and not self._shutdown_requested:
@@ -135,6 +196,15 @@ class LivePairReadinessWorker:
         self,
         snapshot: tuple[FrameObservation, ...],
     ) -> LivePairReadinessDiagnostics:
+        """Run pair-readiness computation on one observation snapshot.
+
+        Args:
+            snapshot: Deep-copied observations from the capture thread.
+
+        Returns:
+            Pair-readiness diagnostics for ``snapshot``, or a failure placeholder when
+            computation raises.
+        """
         try:
             diagnostics = self._compute_fn(
                 list(snapshot),
