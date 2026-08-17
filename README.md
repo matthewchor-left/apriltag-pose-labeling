@@ -178,9 +178,99 @@ If the object is viewed from the back or from the side, the mapping between mode
 
 Marker model JSON uses top-level `marker_size_m` as the default physical edge length (meters). Each `markers.<id>` entry may optionally include `size_m` when that sticker differs from the default; omitted `size_m` means the default. Calibration writes `size_m` only for non-default markers. Saved models record `anchor_marker_ids`: every marker in the layout when `--anchor-marker-ids` is omitted, or the explicit bootstrap core when it is provided. Footprint validation checks each marker against its resolved size.
 
-## Marker model calibration (live)
+## Marker model calibration
 
-`object-calibrate-marker-model` estimates sticker footprint positions from live camera views. No tape measure or manual corner entry — move the object so expected markers co-appear, inspect each view for sharp detections, and press **C** to capture it.
+`object-calibrate-marker-model` estimates sticker footprint positions from co-visible AprilTag detections and publishes paired `marker_model.json` and `object_model.json` artifacts.
+
+### Calibration Workspace (recommended)
+
+Point the command at a Calibration Workspace `config.json`. External video and camera-intrinsics paths inside the recipe resolve relative to the config file. Outputs are fixed lowercase siblings of the config:
+
+| Artifact | Path |
+|----------|------|
+| Marker model | `<workspace>/marker_model.json` |
+| Object model | `<workspace>/object_model.json` |
+| Diagnostics | `<workspace>/diagnostics.json` |
+
+```bash
+uv run object-calibrate-marker-model \
+  --config config/Model/playground/setup1/calibration_01/config.json \
+  --force
+```
+
+`--force` overwrites existing sibling outputs. Without it, the command refuses when any generated artifact already exists.
+
+**Calibration Recipe (`config_version: 1`)** — strict JSON; unknown or missing fields are rejected:
+
+- **`inputs`** — `source` (camera index string or video path) and `intrinsics` (camera JSON path), both resolved from the config directory.
+- **`detector`** — `dictionary` and `sensitivity` (same values as `--dictionary` / `--detection-sensitivity`).
+- **`markers`** — `reference_marker_id`, `anchor_marker_ids` (`null` for automatic anchor selection, or an explicit ID list), and non-overlapping `groups` of `{ids, size_m}` (IDs may be integers or range strings like `"22-26"`). The first group's size becomes the generated Marker Model's default size; later groups are stored as per-marker overrides.
+- **`execution`** — discriminated by `mode`:
+  - **`benchmark`** — headless video throughput: `sample_rate_hz`, `frame_selection` (`uniform` or `sharpest`).
+  - **`interactive`** — live or looping video: `capture` (`manual` or `auto`), `preview` (`none` or `keypoint_sources`); `sample_rate_hz` only when `capture` is `auto`.
+- **`solver`** — all fields required: `policy` (`strict` or `best_effort`), `anchor_stop_after_expansion`, `partial_output`, `min_inliers_per_edge`, `reprojection_rms_gate_px`, `pair_translation_rms_gate_ratio`, `pair_rotation_rms_gate_deg`, `huber_delta_px`, `corner_outlier_px`, `max_ba_iterations`.
+- **`object_model`** — `keypoint_sources` and `skeleton`; keypoint positions are generated from solved footprints at publication time (persisted `keypoints` are not recipe inputs).
+
+On refusal (quality gates, missing markers, invalid assignment), diagnostics are still written to `diagnostics.json` while model outputs are not updated. Successful publication writes marker and object models together as a pair when every `keypoint_sources` marker is present in the solved layout.
+
+Example benchmark recipe excerpt:
+
+```json
+{
+  "config_version": 1,
+  "inputs": {
+    "source": "../../../../../data/playground_calibration_01.mov",
+    "intrinsics": "../../../../../config/Camera/logi_hd_1080p/intrinsic.json"
+  },
+  "detector": {"dictionary": "36h11", "sensitivity": "relaxed"},
+  "markers": {
+    "reference_marker_id": 19,
+    "anchor_marker_ids": null,
+    "groups": [
+      {"ids": [0, 2, 3, 4], "size_m": 0.07},
+      {"ids": [19, "22-26", "28-29"], "size_m": 0.02}
+    ]
+  },
+  "execution": {
+    "mode": "benchmark",
+    "sample_rate_hz": 10.0,
+    "frame_selection": "sharpest"
+  },
+  "solver": {
+    "policy": "best_effort",
+    "anchor_stop_after_expansion": false,
+    "partial_output": true,
+    "min_inliers_per_edge": 20,
+    "reprojection_rms_gate_px": 2.0,
+    "pair_translation_rms_gate_ratio": 0.1,
+    "pair_rotation_rms_gate_deg": 5.0,
+    "huber_delta_px": 1.0,
+    "corner_outlier_px": 3.0,
+    "max_ba_iterations": 50
+  },
+  "object_model": {
+    "keypoint_sources": {
+      "left-center": {"marker_id": 19, "corner": "top_right", "padding_mm": 4.0},
+      "front-center": {"marker_id": 22, "corner": "top_right", "padding_mm": 4.0}
+    },
+    "skeleton": [["left-center", "front-center"]]
+  }
+}
+```
+
+**Benchmark video:** match intrinsics `image_size` exactly; use a constant frame rate; prefer all-intra or lossless encoding; lock exposure, focus, and white balance; record diverse viewpoints with multiple expected markers co-visible per frame.
+
+Benchmark metrics report offline processing throughput (frames read, captures accepted, wall-clock time), not camera or source real-time FPS.
+
+**Scale caveat:** metric layout depends on physical marker sizes in `markers.groups` and calibrated intrinsics. Pair translation gates scale with `pair_translation_rms_gate_ratio * min(size_a, size_b)` per edge. Wrong sizes or scaled intrinsics will bias the solved geometry.
+
+### Legacy flag mode (deprecated)
+
+Passing individual CLI flags instead of `--config` still works but emits a deprecation warning. Do not mix `--config` with legacy flags.
+
+#### Live interactive capture
+
+Move the object so expected markers co-appear, inspect each view for sharp detections, and press **C** to capture it.
 
 ```bash
 uv run object-calibrate-marker-model \
@@ -208,7 +298,7 @@ For layouts with many markers, pass `--anchor-marker-ids` to bootstrap from a sm
 
 By default, frames are recorded only when you press **C** with **at least two** expected marker IDs visible. Pass **`--auto`** to capture periodically at **`--sample-rate-hz`** (default 10 Hz) under the same two-marker rule; **C** still captures an extra frame in automatic mode. Capture sharp, diverse viewpoints rather than repeated stationary views. During solve, frames that cannot be assigned a consistent marker interpretation are rejected automatically; each marker pair used in the layout still needs at least **20** accepted co-visible frames (`--min-pair-inliers`) after rejection. You do not need to capture pairs in isolated batches. The HUD shows expected/visible IDs, captured sample count, live pair readiness (raw co-visibility and pass/weak status), graph connectivity from the reference marker, and last-solve frame acceptance when you press **S**.
 
-### Benchmark mode (video file)
+#### Legacy benchmark mode (video file)
 
 Pass **`--benchmark`** with a video-file **`--source`** to measure offline calibration throughput without preview or HUD. The tool **decodes every frame** once to EOF; **`--benchmark-frame-selection`** (default **`uniform`**) controls which decoded frames run AprilTag detection:
 
@@ -234,26 +324,20 @@ uv run object-calibrate-marker-model \
   --force
 ```
 
-**Benchmark video:** match calibration **`image_size`** exactly; use a constant frame rate; prefer all-intra or lossless encoding; lock exposure, focus, and white balance; record diverse viewpoints with multiple expected markers co-visible per frame.
-
-Benchmark metrics report offline processing throughput (frames read, captures accepted, wall-clock time), not camera or source real-time FPS.
-
-**Scale caveat:** metric layout depends on the physical `--marker-size` (default edge length) and calibrated intrinsics. Use repeatable `--marker-size-for ID_OR_RANGE:SIZE` overrides when markers differ (e.g. `4:0.03 10-12:0.025`). Pair translation gates scale with `ratio * min(size_a, size_b)` per edge. Wrong sizes or scaled intrinsics will bias the solved geometry.
-
-**Quality gates** (defaults; override on the CLI):
+**Quality gates** (defaults; override on the CLI or in recipe `solver`):
 
 | Gate | Default |
 |------|---------|
-| Global reprojection RMS | 2 px (`--reprojection-rms-gate-px`) |
+| Global reprojection RMS | 2 px (`--reprojection-rms-gate-px` / `reprojection_rms_gate_px`) |
 | Per-marker reprojection RMS | 2 px (same gate as global) |
-| Pair translation RMS | 10% of the smaller marker size in each pair (`--pair-translation-rms-gate-ratio`) |
-| Pair rotation RMS | 5° (`--pair-rotation-rms-gate-deg`) |
+| Pair translation RMS | 10% of the smaller marker size in each pair (`--pair-translation-rms-gate-ratio` / `pair_translation_rms_gate_ratio`) |
+| Pair rotation RMS | 5° (`--pair-rotation-rms-gate-deg` / `pair_rotation_rms_gate_deg`) |
 
-Refused solves print diagnostics and resume capture; nothing is written until a solve passes. Use `--force` to overwrite an existing `--output`. Frame resolution must match the calibration `image_size`; intrinsics are not scaled.
+Refused solves print diagnostics and resume capture (interactive) or exit after writing diagnostics (benchmark); model outputs are not updated until a solve passes publication rules. Use `--force` to overwrite existing outputs. Frame resolution must match the calibration `image_size`; intrinsics are not scaled.
 
-### Optional object-model keypoint update
+#### Legacy object-model keypoint update
 
-Pass **`--object-model PATH`** to copy calibrated marker footprint corners into object-model keypoints after a successful solve (same moment as `--output` is written). The object-model JSON must include a non-empty top-level **`keypoint_sources`** map from existing keypoint names to marker corners:
+Pass **`--object-model PATH`** (or declare `object_model` in a recipe) to derive object-model keypoints from calibrated marker footprint corners after a successful solve. The object-model JSON must include a non-empty top-level **`keypoint_sources`** map from existing keypoint names to marker corners:
 
 ```json
 {
@@ -271,9 +355,9 @@ Pass **`--object-model PATH`** to copy calibrated marker footprint corners into 
 }
 ```
 
-Supported corners match marker footprints: `top_left`, `top_right`, `bottom_right`, `bottom_left`. `marker_id` may be an integer or decimal string (e.g. `"01"` resolves to `1`). Only keypoints listed in `keypoint_sources` are updated; other keypoints, `skeleton`, and other metadata are preserved. `keypoint_sources` itself is left unchanged in the saved object model.
+Supported corners match marker footprints: `top_left`, `top_right`, `bottom_right`, `bottom_left`. `marker_id` may be an integer or decimal string (e.g. `"01"` resolves to `1`). In legacy mode, only keypoints listed in `keypoint_sources` are updated; other keypoints, `skeleton`, and other metadata are preserved. Recipe mode regenerates the full object model from `keypoint_sources` and `skeleton` on each successful publication.
 
-Validation runs at startup when `--object-model` is set: the file must exist, `keypoint_sources` must be non-empty with valid specs, and every source marker must appear in `--marker-ids`. Refused or no-layout solves do not modify the object model. If a source marker is missing from the solved layout (including partial solves that omit it), the marker model is still saved but the command fails clearly without changing the object model.
+Validation runs at startup when `--object-model` is set: the file must exist, `keypoint_sources` must be non-empty with valid specs, and every source marker must appear in the marker inventory. Refused or no-layout solves do not modify the object model. If a source marker is missing from the solved layout (including partial solves that omit it), publication fails clearly without changing existing model outputs.
 
 ## Marker model evaluation (offline)
 
@@ -380,7 +464,9 @@ Live camera and video file CLIs use `--source`: pass a camera device index (e.g.
 | `object-detect` | `--side2side-cad-model` | Side-by-side opaque CAD pane (`--preview` required) |
 | `object-detect` | `--cad-model` | GLB path; loads sibling `cad_registration.json` or auto-fits from `--object-model` |
 | `object-detect` / `annotation-tool` / `object-calibrate-marker-model` | `--source` | Camera device index (e.g. `0`) or path to a video file |
-| `object-calibrate-marker-model` | `--calibration` | Camera intrinsics JSON |
+| `object-calibrate-marker-model` | `--config` | Calibration Workspace `config.json` (recommended) |
+| `object-calibrate-marker-model` | `--force` | Overwrite existing workspace `marker_model.json` and `object_model.json` |
+| `object-calibrate-marker-model` | `--calibration` | Camera intrinsics JSON (legacy flag mode) |
 | `object-calibrate-marker-model` | `--marker-ids` / `--reference-marker-id` | Expected unique IDs and layout reference |
 | `object-calibrate-marker-model` | `--anchor-marker-ids` | Optional bootstrap core for large layouts |
 | `object-calibrate-marker-model` | `--anchor-stop-after-expansion` | Debug: write expansion-only layout (no BA/gates) |
@@ -391,7 +477,7 @@ Live camera and video file CLIs use `--source`: pass a camera device index (e.g.
 | `object-calibrate-marker-model` | `--benchmark-frame-selection` | Benchmark-only: `uniform` (default) or `sharpest` per-window selection; requires `--benchmark` |
 | `object-calibrate-marker-model` | `--diagnostics-output` | Diagnostics JSON (required with `--benchmark`); adds top-level `benchmark` timings/counts/environment |
 | `object-calibrate-marker-model` | `--auto` / `--sample-rate-hz` | Periodic capture at sample rate (default 10 Hz); `--auto` not needed with `--benchmark` |
-| `object-calibrate-marker-model` | `--output` / `--force` | Marker model JSON; refuse overwrite unless `--force` |
+| `object-calibrate-marker-model` | `--output` | Marker model JSON path (legacy flag mode) |
 | `object-calibrate-marker-model` | `--object-model` | Optional object model JSON; update mapped keypoints from solved footprints after a successful save |
 | `object-inspect-marker-model` | `--marker-model` / `--visualize` | Print or diagram an existing marker model |
 | `object-evaluate-marker-model` | `--manifest` | Versioned evaluation manifest JSON |

@@ -1,0 +1,50 @@
+{
+    "config_version": 1,
+    "inputs": {
+      "source": "../../../../../data/playground_setup2_calibration_01.mov",
+      "intrinsics": "../../../../../config/Camera/logi_hd_1080p/intrinsic.json"
+    },
+    "detector": {
+      "dictionary": "36h11",
+      "sensitivity": "relaxed"
+    },
+    "markers": {
+      "reference_marker_id": 0,
+      "anchor_marker_ids": null,
+      "groups": [
+        {"ids": [12, 5, "14-16", 6, 13, 20, 9, 2, 19, 28, 22, 23], "size_m": 0.02},
+        {"ids": ["0-1"], "size_m": 0.07}
+      ]
+    },
+    "execution": {
+      "mode": "benchmark",
+      "sample_rate_hz": 10.0,
+      "frame_selection": "sharpest"
+    },
+    "solver": {
+      "policy": "best_effort",
+      "anchor_stop_after_expansion": false,
+      "partial_output": true,
+      "min_inliers_per_edge": 20,
+      "reprojection_rms_gate_px": 2.0,
+      "pair_translation_rms_gate_ratio": 0.1,
+      "pair_rotation_rms_gate_deg": 5.0,
+      "huber_delta_px": 1.0,
+      "corner_outlier_px": 3.0,
+      "max_ba_iterations": 50
+    },
+    "object_model": {
+      "keypoint_sources": {
+        "top-center": {"marker_id": 22, "corner": "top_right", "padding_mm": 4.0},
+        "left-center": {"marker_id": 19, "corner": "top_right", "padding_mm": 4.0},
+        "front-center": {"marker_id": 28, "corner": "top_right", "padding_mm": 4.0},
+        "right-center": {"marker_id": 23, "corner": "top_right", "padding_mm": 4.0}
+      },
+      "skeleton": [
+        ["top-center", "left-center"],
+        ["top-center", "front-center"],
+        ["top-center", "right-center"]
+      ]
+    }
+  }
+  

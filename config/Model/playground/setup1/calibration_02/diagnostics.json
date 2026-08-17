@@ -3,7 +3,7 @@
   "benchmark": {
     "frame_selection": "sharpest",
     "source": {
-      "path": "data/playground_calibration_02.mov",
+      "path": "/Users/chorchingnam/Projects/tools/apriltag_pose_labeling/data/playground_calibration_02.mov",
       "size_bytes": 11264195,
       "reported_fps": 60.0,
       "reported_frame_count": 1657,
@@ -22,25 +22,25 @@
       "detected_markers": 835
     },
     "timing_seconds": {
-      "open_source": 0.032351125,
-      "decode": 0.621132686,
-      "detection": 15.517770374,
-      "ingest_total": 16.746190208,
-      "calibration_solve": 7.618045625,
-      "total_through_solve": 24.364236792,
+      "open_source": 0.020875416,
+      "decode": 0.619859371,
+      "detection": 15.283208701,
+      "ingest_total": 16.498053542,
+      "calibration_solve": 7.601376792,
+      "total_through_solve": 24.099431583,
       "solve_stages": {
-        "ippe_candidate_generation": 0.03094974998384714,
-        "initial_pair_consensus": 0.47850904194638133,
-        "strict_assignment": 0.05336699110921472,
-        "fallback_assignment": 0.052159085287712514,
-        "initial_bundle_adjustment": 6.870008707977831,
-        "pruning": 0.015590708004310727
+        "ippe_candidate_generation": 0.02551479102112353,
+        "initial_pair_consensus": 0.49794949998613447,
+        "strict_assignment": 0.0546157555654645,
+        "fallback_assignment": 0.053480742615647614,
+        "initial_bundle_adjustment": 6.842944208998233,
+        "pruning": 0.01611325005069375
       },
-      "sharpness_scoring": 0.497794522
+      "sharpness_scoring": 0.496805616
     },
     "throughput": {
-      "pipeline_frames_per_second": 98.88816378121004,
-      "detector_invocations_per_second": 17.786060326194644
+      "pipeline_frames_per_second": 100.375477372784,
+      "detector_invocations_per_second": 18.05903494479801
     },
     "environment": {
       "python": "3.14.6",
@@ -59,14 +59,14 @@
         "status": 3,
         "cost": 22508.236883103502,
         "timing_seconds": {
-          "setup": 0.06369179196190089,
-          "least_squares": 6.870006958954036,
-          "post": 0.005413667066022754,
-          "residual_callback_total": 4.707416188786738,
-          "residual_unpack": 1.2024119332199916,
-          "projection_loop": 3.4898111457005143,
-          "residual_callback_other": 0.01519310986623168,
-          "least_squares_overhead": 2.1625907701672986
+          "setup": 0.05486412497702986,
+          "least_squares": 6.842942916904576,
+          "post": 0.0056652919156476855,
+          "residual_callback_total": 4.750459837145172,
+          "residual_unpack": 1.2280575841432437,
+          "projection_loop": 3.507635275949724,
+          "residual_callback_other": 0.014766977052204311,
+          "least_squares_overhead": 2.092483079759404
         },
         "counts": {
           "parameter_count": 1446,

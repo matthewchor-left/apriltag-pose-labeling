@@ -449,5 +449,44 @@ class ApplyKeypointSourcesFromLayoutTests(unittest.TestCase):
         np.testing.assert_allclose(saved["keypoints"]["tip"], expected.tolist(), atol=1e-12)
 
 
+class GeneratedObjectModelTests(unittest.TestCase):
+    def test_build_object_model_document_from_layout(self) -> None:
+        from object_apriltag.object_model_edit import build_object_model_document_from_layout
+
+        layout = _synthetic_layout()
+        sources = {
+            "top": (1, "top_left", 0.0),
+            "bottom": (1, "bottom_right", 0.0),
+            "center": (1, "top_right", 0.0),
+        }
+        skeleton = (("top", "bottom"),)
+        document = build_object_model_document_from_layout(layout, sources, skeleton)
+        self.assertEqual(document["coordinate_frame"], "marker_model")
+        self.assertEqual(set(document["keypoints"]), {"top", "bottom", "center"})
+        self.assertEqual(document["skeleton"], [["top", "bottom"]])
+        np.testing.assert_allclose(
+            document["keypoints"]["top"],
+            layout.footprints[1].top_left.tolist(),
+            atol=1e-12,
+        )
+
+    def test_missing_source_marker_ids_detects_unsolved_sources(self) -> None:
+        from object_apriltag.object_model_edit import missing_source_marker_ids
+
+        layout = _synthetic_layout()
+        sources = {"top": (1, "top_left", 0.0), "missing": (9, "top_left", 0.0)}
+        self.assertEqual(missing_source_marker_ids(layout, sources), (9,))
+
+    def test_build_rejects_missing_source_marker(self) -> None:
+        from object_apriltag.object_model_edit import build_object_model_document_from_layout
+
+        layout = _synthetic_layout()
+        sources = {"top": (9, "top_left", 0.0)}
+        skeleton = (("top", "top"),)
+        with self.assertRaises(ValueError) as ctx:
+            build_object_model_document_from_layout(layout, sources, skeleton)
+        self.assertIn("missing from the solved layout", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

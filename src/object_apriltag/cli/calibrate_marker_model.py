@@ -7,6 +7,7 @@ import math
 import platform
 import sys
 import time
+import warnings
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -34,8 +35,11 @@ from object_apriltag.pose import estimate_marker_pose, marker_corner_object_poin
 from object_apriltag.viz.projection import opencv_image_point, project_camera_point
 from object_apriltag.object_model_edit import (
     apply_keypoint_sources_from_layout,
+    build_object_model_document_from_layout,
     load_object_model_document,
+    missing_source_marker_ids,
     parse_keypoint_sources,
+    save_object_model_document,
     save_object_model_keypoints,
 )
 from object_apriltag.cli.calibration_diagnostics import (
@@ -48,6 +52,11 @@ from object_apriltag.cli.live_pair_readiness_worker import (
     LivePairReadinessWorker,
 )
 from object_apriltag.viz.overlay import draw_status_hud_panel
+from object_apriltag.marker_layout_calibration.recipe import (
+    BenchmarkExecution,
+    InteractiveExecution,
+    load_calibration_recipe,
+)
 from object_apriltag.marker_layout_calibration import (
     AssignmentRejectionSummary,
     CalibrationQualityReport,
@@ -76,6 +85,152 @@ BENCHMARK_FRAME_SELECTION_UNIFORM = "uniform"
 BENCHMARK_FRAME_SELECTION_SHARPEST = "sharpest"
 DEFAULT_BENCHMARK_FRAME_SELECTION = BENCHMARK_FRAME_SELECTION_UNIFORM
 
+LEGACY_CALIBRATION_FLAGS = frozenset(
+    {
+        "--source",
+        "--calibration",
+        "--dictionary",
+        "--detection-sensitivity",
+        "--marker-size",
+        "--marker-size-for",
+        "--marker-ids",
+        "--reference-marker-id",
+        "--anchor-marker-ids",
+        "--anchor-stop-after-expansion",
+        "--best-effort",
+        "--partial-output",
+        "--output",
+        "--auto",
+        "--sample-rate-hz",
+        "--min-pair-inliers",
+        "--reprojection-rms-gate-px",
+        "--pair-translation-rms-gate-ratio",
+        "--pair-rotation-rms-gate-deg",
+        "--object-model",
+        "--overlay-object-model",
+        "--no-overlay-object-model",
+        "--diagnostics-output",
+        "--benchmark",
+        "--benchmark-frame-selection",
+    }
+)
+
+
+def _argv_uses_config(argv: list[str]) -> bool:
+    """Return whether ``argv`` requests config mode."""
+    for token in argv:
+        if token == "--config" or token.startswith("--config="):
+            return True
+    return False
+
+
+def _legacy_flags_in_argv(argv: list[str]) -> list[str]:
+    """Collect legacy calibration flag tokens present in ``argv``."""
+    legacy: list[str] = []
+    skip_next = False
+    for token in argv:
+        if skip_next:
+            skip_next = False
+            continue
+        if not token.startswith("--"):
+            continue
+        name = token.split("=", 1)[0]
+        if name == "--config" and "=" not in token:
+            skip_next = True
+            continue
+        if name in LEGACY_CALIBRATION_FLAGS:
+            legacy.append(token)
+    return legacy
+
+
+def _assert_config_mode_argv(argv: list[str]) -> None:
+    """Reject legacy calibration flags mixed with ``--config``."""
+    legacy = _legacy_flags_in_argv(argv)
+    if legacy:
+        joined = " ".join(legacy)
+        raise RuntimeError(f"--config cannot be mixed with legacy calibration flags: {joined}")
+
+
+def namespace_from_recipe(config_path: Path, *, force: bool) -> argparse.Namespace:
+    """Build a CLI namespace from a parsed Calibration Recipe."""
+    try:
+        recipe = load_calibration_recipe(config_path)
+    except (OSError, ValueError) as error:
+        raise RuntimeError(str(error)) from error
+    execution = recipe.execution
+    benchmark = isinstance(execution, BenchmarkExecution)
+    if benchmark:
+        sample_rate_hz = execution.sample_rate_hz
+        benchmark_frame_selection = execution.frame_selection
+        auto = False
+        overlay_object_model = False
+    else:
+        assert isinstance(execution, InteractiveExecution)
+        auto = execution.capture == "auto"
+        sample_rate_hz = (
+            execution.sample_rate_hz
+            if execution.sample_rate_hz is not None
+            else DEFAULT_SAMPLE_RATE_HZ
+        )
+        benchmark_frame_selection = DEFAULT_BENCHMARK_FRAME_SELECTION
+        overlay_object_model = execution.preview == "keypoint_sources"
+
+    return argparse.Namespace(
+        from_config=True,
+        recipe=recipe,
+        config_path=config_path.resolve(),
+        source=recipe.source,
+        calibration=recipe.intrinsics_path,
+        dictionary=recipe.dictionary,
+        detection_sensitivity=recipe.sensitivity,
+        marker_size=recipe.default_marker_size_m,
+        marker_size_for=None,
+        marker_ids=[str(marker_id) for marker_id in recipe.expected_marker_ids],
+        reference_marker_id=recipe.reference_marker_id,
+        anchor_marker_ids=(
+            None
+            if recipe.anchor_marker_ids is None
+            else [str(marker_id) for marker_id in recipe.anchor_marker_ids]
+        ),
+        anchor_stop_after_expansion=recipe.anchor_stop_after_expansion,
+        best_effort=recipe.policy == "best_effort",
+        partial_output=recipe.partial_output,
+        output=recipe.paths.marker_model_path,
+        force=force,
+        auto=auto,
+        sample_rate_hz=sample_rate_hz,
+        min_pair_inliers=recipe.settings.min_inliers_per_edge,
+        reprojection_rms_gate_px=recipe.settings.reprojection_rms_gate_px,
+        pair_translation_rms_gate_ratio=recipe.settings.pair_translation_rms_gate_ratio,
+        pair_rotation_rms_gate_deg=recipe.settings.pair_rotation_rms_gate_deg,
+        object_model=recipe.paths.object_model_path,
+        overlay_object_model=overlay_object_model,
+        diagnostics_output=recipe.paths.diagnostics_path,
+        benchmark=benchmark,
+        benchmark_frame_selection=benchmark_frame_selection,
+    )
+
+
+def _parse_config_mode_args() -> argparse.Namespace:
+    """Parse config-mode CLI arguments."""
+    _assert_config_mode_argv(sys.argv[1:])
+    parser = argparse.ArgumentParser(
+        description="Calibrate marker and object models from a Calibration Recipe config.json.",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        required=True,
+        help="Path to a Calibration Workspace config.json recipe.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing marker_model.json and object_model.json outputs.",
+    )
+    args = parser.parse_args()
+    return namespace_from_recipe(args.config, force=args.force)
+
 
 def _is_benchmark_mode(args: argparse.Namespace) -> bool:
     """Return whether ``--benchmark`` was set on the parsed CLI namespace.
@@ -90,11 +245,18 @@ def _is_benchmark_mode(args: argparse.Namespace) -> bool:
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse CLI flags for live capture or headless video benchmark calibration.
+    """Parse CLI flags for config mode or legacy live/benchmark calibration.
 
     Returns:
         Parsed argument namespace with calibration flags and frame-source options.
     """
+    if _argv_uses_config(sys.argv[1:]):
+        return _parse_config_mode_args()
+    return _parse_legacy_args()
+
+
+def _parse_legacy_args() -> argparse.Namespace:
+    """Parse legacy flag-based CLI arguments."""
     parser = argparse.ArgumentParser(
         description="Calibrate marker sticker layout from live co-visible AprilTag detections.",
         epilog=(
@@ -115,6 +277,14 @@ def parse_args() -> argparse.Namespace:
             "Wrong marker size or scaled intrinsics will bias the solved geometry."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        help=(
+            "Recommended: run from a Calibration Workspace config.json. "
+            "May only be combined with --force."
+        ),
     )
     parser.add_argument(
         "--source",
@@ -356,6 +526,9 @@ def validate_args(
     Raises:
         RuntimeError: Invalid flag combinations, missing files, or out-of-range values.
     """
+    if getattr(args, "from_config", False) is True:
+        return _validate_config_args(args)
+
     object_model_sources: dict[str, tuple[int, str, float]] | None = None
     if not args.calibration.exists():
         raise RuntimeError(
@@ -457,6 +630,48 @@ def validate_args(
         pair_rotation_rms_gate_deg=args.pair_rotation_rms_gate_deg,
     )
     return expected_ids, marker_sizes_m, settings, anchor_ids, args.anchor_stop_after_expansion, args.best_effort, args.partial_output
+
+
+def _validate_config_args(
+    args: argparse.Namespace,
+) -> tuple[list[int], dict[int, float], CalibrationSettings, tuple[int, ...] | None, bool, bool, bool]:
+    """Validate config-mode namespace values derived from a Calibration Recipe."""
+    recipe = args.recipe
+    if not recipe.intrinsics_path.is_file():
+        raise RuntimeError(
+            f"Calibration file not found: {recipe.intrinsics_path}\n"
+            "Run `uv run object-charuco` first."
+        )
+    existing_outputs = [
+        path
+        for path in (
+            recipe.paths.marker_model_path,
+            recipe.paths.object_model_path,
+            recipe.paths.diagnostics_path,
+        )
+        if path.exists()
+    ]
+    if existing_outputs and not args.force:
+        joined = ", ".join(str(path) for path in existing_outputs)
+        raise RuntimeError(
+            f"Output already exists: {joined}. Pass --force to overwrite."
+        )
+    if _is_benchmark_mode(args):
+        if isinstance(args.source, int):
+            raise RuntimeError("benchmark execution requires a video file source, not a camera index.")
+        if args.overlay_object_model is True:
+            raise RuntimeError(
+                "execution.preview 'keypoint_sources' cannot be used with benchmark execution."
+            )
+    return (
+        list(recipe.expected_marker_ids),
+        dict(recipe.marker_sizes_m),
+        recipe.settings,
+        recipe.anchor_marker_ids,
+        recipe.anchor_stop_after_expansion,
+        recipe.policy == "best_effort",
+        recipe.partial_output,
+    )
 
 
 def require_frame_size(
@@ -1150,6 +1365,9 @@ def apply_calibration_result(
             print(error, file=sys.stderr)
         return False
 
+    if getattr(args, "from_config", False) is True:
+        return _publish_config_mode_results(args, result, benchmark=benchmark)
+
     save_marker_model(args.output, result.layout)
     print_success(result, args.output)
     if isinstance(args.object_model, Path):
@@ -1160,6 +1378,65 @@ def apply_calibration_result(
                 f"Marker model saved to {args.output}, but object model "
                 f"update failed: {error}"
             ) from error
+    try:
+        write_calibration_diagnostics_if_requested(
+            args.diagnostics_output,
+            result,
+            benchmark=benchmark,
+        )
+    except RuntimeError as error:
+        print(error, file=sys.stderr)
+    return True
+
+
+def _publish_config_mode_results(
+    args: argparse.Namespace,
+    result: CalibrationResult,
+    *,
+    benchmark: Mapping[str, Any] | None = None,
+) -> bool:
+    """Publish paired model outputs for config mode after validation."""
+    recipe = args.recipe
+    missing_markers = missing_source_marker_ids(result.layout, recipe.keypoint_sources)
+    if missing_markers:
+        print(
+            "Calibration solved but publication refused: keypoint-source markers "
+            f"missing from layout: {list(missing_markers)}"
+        )
+        for line in format_omitted_marker_lines(result.omitted_markers):
+            print(f"  {line}")
+        try:
+            write_calibration_diagnostics_if_requested(
+                args.diagnostics_output,
+                result,
+                benchmark=benchmark,
+            )
+        except RuntimeError as error:
+            print(error, file=sys.stderr)
+        return False
+
+    try:
+        object_document = build_object_model_document_from_layout(
+            result.layout,
+            recipe.keypoint_sources,
+            recipe.skeleton,
+        )
+    except ValueError as error:
+        print(f"Calibration solved but publication refused: {error}")
+        try:
+            write_calibration_diagnostics_if_requested(
+                args.diagnostics_output,
+                result,
+                benchmark=benchmark,
+            )
+        except RuntimeError as diagnostics_error:
+            print(diagnostics_error, file=sys.stderr)
+        return False
+
+    save_marker_model(recipe.paths.marker_model_path, result.layout)
+    save_object_model_document(recipe.paths.object_model_path, object_document)
+    print_success(result, recipe.paths.marker_model_path)
+    print(f"Saved object model: {recipe.paths.object_model_path}")
     try:
         write_calibration_diagnostics_if_requested(
             args.diagnostics_output,
@@ -1689,8 +1966,11 @@ def run_capture(args: argparse.Namespace) -> bool:
 
     keypoint_sources: dict[str, tuple[int, str, float]] | None = None
     if args.overlay_object_model is True:
-        _, object_model_document = load_object_model_document(args.object_model)
-        keypoint_sources = parse_keypoint_sources(object_model_document)
+        if getattr(args, "from_config", False) is True:
+            keypoint_sources = dict(args.recipe.keypoint_sources)
+        else:
+            _, object_model_document = load_object_model_document(args.object_model)
+            keypoint_sources = parse_keypoint_sources(object_model_document)
 
     capture = open_frame_source(args.source, width=width, height=height)
     source_label = format_frame_source(args.source)
@@ -1812,6 +2092,13 @@ def main() -> None:
     """
     try:
         args = parse_args()
+        if getattr(args, "from_config", False) is not True:
+            warnings.warn(
+                "Legacy calibration CLI flags are deprecated; use "
+                "`--config <workspace>/config.json`.",
+                FutureWarning,
+                stacklevel=1,
+            )
         if _is_benchmark_mode(args):
             run_benchmark(args)
         else:

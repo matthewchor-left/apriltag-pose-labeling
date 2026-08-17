@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -183,6 +184,129 @@ def apply_keypoint_sources_from_layout(
             keypoint_names=names,
         )
     return updated
+
+
+def missing_source_marker_ids(
+    layout: MarkerLayout,
+    sources: Mapping[str, tuple[int, str, float]],
+) -> tuple[int, ...]:
+    """Return sorted source marker IDs absent from a solved marker layout.
+
+    Args:
+        layout: Solved marker layout footprint map.
+        sources: Parsed keypoint source metadata keyed by keypoint name.
+
+    Returns:
+        Sorted marker IDs referenced by ``sources`` but missing from ``layout``.
+    """
+    referenced = {marker_id for marker_id, _, _ in sources.values()}
+    missing = sorted(referenced - set(layout.footprints.keys()))
+    return tuple(missing)
+
+
+def _keypoint_source_to_json(
+    marker_id: int,
+    corner: str,
+    padding_m: float,
+) -> dict[str, Any]:
+    """Serialize one keypoint source entry for object-model JSON."""
+    payload: dict[str, Any] = {"marker_id": marker_id, "corner": corner}
+    if padding_m > 0.0:
+        payload["padding_mm"] = float(padding_m * 1000.0)
+    return payload
+
+
+def build_object_model_document_from_layout(
+    layout: MarkerLayout,
+    sources: Mapping[str, tuple[int, str, float]],
+    skeleton: tuple[tuple[str, str], ...],
+) -> dict[str, Any]:
+    """Build a complete object-model JSON document from layout-derived keypoints.
+
+    Args:
+        layout: Solved marker layout with footprint geometry.
+        sources: Keypoint source metadata keyed by keypoint name.
+        skeleton: Undirected skeleton edges as keypoint name pairs.
+
+    Returns:
+        Object-model JSON payload with generated ``keypoints``.
+
+    Raises:
+        ValueError: When skeleton coverage, source markers, or geometry are inconsistent.
+    """
+    skeleton_names = _skeleton_keypoint_names(skeleton)
+    missing_sources = sorted(set(skeleton_names) - set(sources))
+    if missing_sources:
+        raise ValueError(
+            f"skeleton keypoints are missing keypoint_sources: {missing_sources}."
+        )
+
+    missing_markers = missing_source_marker_ids(layout, sources)
+    if missing_markers:
+        raise ValueError(
+            "keypoint_sources reference markers missing from the solved layout: "
+            f"{list(missing_markers)}."
+        )
+
+    keypoints: dict[str, list[float]] = {}
+    keypoint_sources_json: dict[str, dict[str, Any]] = {}
+    for name, (marker_id, corner, padding_m) in sources.items():
+        footprint = layout.footprints[marker_id]
+        point = footprint_corner_with_padding(footprint, corner, padding_m)
+        keypoints[name] = _layout_point_to_json(point)
+        keypoint_sources_json[name] = _keypoint_source_to_json(marker_id, corner, padding_m)
+
+    document = {
+        "units": "meters",
+        "coordinate_frame": MODEL_FRAME_NAME,
+        "keypoint_sources": keypoint_sources_json,
+        "keypoints": keypoints,
+        "skeleton": [[start_name, end_name] for start_name, end_name in skeleton],
+    }
+    object_model_from_data(document)
+    return document
+
+
+def _skeleton_keypoint_names(skeleton: tuple[tuple[str, str], ...]) -> tuple[str, ...]:
+    """Collect unique skeleton endpoint names in first-seen order."""
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for start_name, end_name in skeleton:
+        for name in (start_name, end_name):
+            if name not in seen:
+                seen.add(name)
+                ordered.append(name)
+    return tuple(ordered)
+
+
+def save_object_model_document(path: str | Path, document: dict[str, Any]) -> None:
+    """Atomically write a validated object-model JSON document.
+
+    Args:
+        path: Destination ``object_model.json`` path.
+        document: Parsed object-model JSON root object to serialize.
+
+    Raises:
+        ValueError: If the document fails object-model validation.
+        OSError: If the temporary file cannot be written or replaced.
+    """
+    object_model_from_data(document)
+    path = Path(path)
+    text = json.dumps(document, indent=2) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def ordered_keypoint_names(document: dict[str, Any], model: ObjectModel) -> tuple[str, ...]:

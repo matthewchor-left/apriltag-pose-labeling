@@ -76,6 +76,7 @@ def _quality_report_mock(**overrides: object) -> mock.Mock:
 class CliHelpTests(unittest.TestCase):
     def test_calibrate_marker_model_help_lists_controls_and_sampling(self) -> None:
         help_text = _run_cli_help("object-calibrate-marker-model")
+        self.assertIn("--config", help_text)
         self.assertIn("--source", help_text)
         self.assertIn("--marker-ids", help_text)
         self.assertIn("--marker-size-for", help_text)
@@ -2405,6 +2406,228 @@ class InspectMarkerModelRegressionTests(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertIn("Reference marker id: 0", printed)
         self.assertIn("Marker 0", printed)
+
+
+def _write_workspace_recipe(
+    workspace: Path,
+    *,
+    execution: dict | None = None,
+    solver: dict | None = None,
+) -> Path:
+    intrinsics = workspace / "intrinsics.json"
+    _write_intrinsics(intrinsics)
+    (workspace / "clip.mov").write_text("", encoding="utf-8")
+    payload = {
+        "config_version": 1,
+        "inputs": {"source": "clip.mov", "intrinsics": "intrinsics.json"},
+        "detector": {"dictionary": "36h11", "sensitivity": "default"},
+        "markers": {
+            "reference_marker_id": 0,
+            "anchor_marker_ids": [0, 1],
+            "groups": [{"ids": [0, 1], "size_m": 0.07}],
+        },
+        "execution": execution
+        or {
+            "mode": "benchmark",
+            "sample_rate_hz": 10.0,
+            "frame_selection": "uniform",
+        },
+        "solver": solver
+        or {
+            "policy": "strict",
+            "anchor_stop_after_expansion": False,
+            "partial_output": False,
+            "min_inliers_per_edge": 20,
+            "reprojection_rms_gate_px": 2.0,
+            "pair_translation_rms_gate_ratio": 0.1,
+            "pair_rotation_rms_gate_deg": 5.0,
+            "huber_delta_px": 1.25,
+            "corner_outlier_px": 3.0,
+            "max_ba_iterations": 50,
+        },
+        "object_model": {
+            "keypoint_sources": {
+                "a": {"marker_id": 0, "corner": "top_left"},
+                "b": {"marker_id": 1, "corner": "top_right"},
+            },
+            "skeleton": [["a", "b"]],
+        },
+    }
+    config_path = workspace / "config.json"
+    config_path.write_text(json.dumps(payload), encoding="utf-8")
+    return config_path
+
+
+class ConfigModeCliTests(unittest.TestCase):
+    def test_config_mode_rejects_legacy_flags(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import _parse_config_mode_args
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = _write_workspace_recipe(Path(tmp_dir))
+            argv = [
+                "object-calibrate-marker-model",
+                "--config",
+                str(config_path),
+                "--source",
+                "0",
+            ]
+            with mock.patch("sys.argv", argv):
+                with self.assertRaises(RuntimeError) as ctx:
+                    _parse_config_mode_args()
+            self.assertIn("cannot be mixed", str(ctx.exception))
+
+    def test_config_mode_requires_force_for_existing_outputs(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import namespace_from_recipe, validate_args
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace = Path(tmp_dir)
+            config_path = _write_workspace_recipe(workspace)
+            (workspace / "marker_model.json").write_text("{}", encoding="utf-8")
+            args = namespace_from_recipe(config_path, force=False)
+            with self.assertRaises(RuntimeError) as ctx:
+                validate_args(args)
+            self.assertIn("--force", str(ctx.exception))
+
+    def test_config_mode_force_allows_existing_outputs(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import namespace_from_recipe, validate_args
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace = Path(tmp_dir)
+            config_path = _write_workspace_recipe(workspace)
+            (workspace / "marker_model.json").write_text("{}", encoding="utf-8")
+            args = namespace_from_recipe(config_path, force=True)
+            expected_ids, _, settings, _, _, _, _ = validate_args(args)
+            self.assertEqual(expected_ids, [0, 1])
+            self.assertEqual(settings.huber_delta_px, 1.25)
+
+    def test_config_mode_requires_force_for_existing_diagnostics(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import namespace_from_recipe, validate_args
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace = Path(tmp_dir)
+            config_path = _write_workspace_recipe(workspace)
+            (workspace / "diagnostics.json").write_text("{}", encoding="utf-8")
+            args = namespace_from_recipe(config_path, force=False)
+            with self.assertRaises(RuntimeError) as ctx:
+                validate_args(args)
+            self.assertIn("diagnostics.json", str(ctx.exception))
+
+    def test_legacy_mode_emits_deprecation_warning(self) -> None:
+        from object_apriltag.cli import calibrate_marker_model as cli_module
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace = Path(tmp_dir)
+            calibration = workspace / "intrinsics.json"
+            _write_intrinsics(calibration)
+            output = workspace / "marker_model.json"
+            argv = [
+                "object-calibrate-marker-model",
+                "--source",
+                "0",
+                "--calibration",
+                str(calibration),
+                "--dictionary",
+                "36h11",
+                "--detection-sensitivity",
+                "default",
+                "--marker-size",
+                "0.07",
+                "--marker-ids",
+                "0",
+                "1",
+                "--reference-marker-id",
+                "0",
+                "--output",
+                str(output),
+            ]
+            with mock.patch("sys.argv", argv):
+                with mock.patch.object(cli_module, "run_capture", return_value=False):
+                    with self.assertWarns(FutureWarning):
+                        cli_module.main()
+
+    def test_config_mode_publishes_paired_outputs(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import apply_calibration_result, namespace_from_recipe
+        from object_apriltag.layout import build_marker_layout, footprint_from_dict
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace = Path(tmp_dir)
+            config_path = _write_workspace_recipe(workspace)
+            args = namespace_from_recipe(config_path, force=True)
+            half = 0.035
+            footprints = {
+                0: footprint_from_dict(0, _square_corners(half)),
+                1: footprint_from_dict(
+                    1,
+                    {
+                        "top_left": [0.06, -half, 0.0],
+                        "top_right": [0.06 + 0.07, -half, 0.0],
+                        "bottom_right": [0.06 + 0.07, half, 0.0],
+                        "bottom_left": [0.06, half, 0.0],
+                    },
+                ),
+            }
+            layout = build_marker_layout(0, 0.07, footprints)
+            result = mock.Mock(
+                layout=layout,
+                quality=_quality_report_mock(),
+                failure_reason=None,
+                outcome="accepted",
+                omitted_markers=(),
+                failed_quality_gates=(),
+                failed_refinement_stage=None,
+            )
+            with mock.patch(
+                "object_apriltag.cli.calibrate_marker_model.save_calibration_diagnostics",
+                return_value=workspace / "diagnostics.json",
+            ):
+                saved = apply_calibration_result(args, result)
+            self.assertTrue(saved)
+            self.assertTrue((workspace / "marker_model.json").exists())
+            self.assertTrue((workspace / "object_model.json").exists())
+            object_model = json.loads((workspace / "object_model.json").read_text(encoding="utf-8"))
+            self.assertIn("a", object_model["keypoints"])
+            self.assertNotIn("note", object_model)
+
+    def test_config_mode_missing_source_marker_writes_diagnostics_only(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import apply_calibration_result, namespace_from_recipe
+        from object_apriltag.layout import build_marker_layout, footprint_from_dict
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace = Path(tmp_dir)
+            config_path = _write_workspace_recipe(workspace)
+            args = namespace_from_recipe(config_path, force=True)
+            half = 0.035
+            footprints = {
+                0: footprint_from_dict(0, _square_corners(half)),
+            }
+            layout = build_marker_layout(0, 0.07, footprints)
+            result = mock.Mock(
+                layout=layout,
+                quality=_quality_report_mock(),
+                failure_reason=None,
+                outcome="partial",
+                omitted_markers=(),
+                failed_quality_gates=(),
+                failed_refinement_stage=None,
+            )
+            with mock.patch(
+                "object_apriltag.cli.calibrate_marker_model.save_calibration_diagnostics",
+                return_value=workspace / "diagnostics.json",
+            ) as diagnostics_mock:
+                saved = apply_calibration_result(args, result)
+            self.assertFalse(saved)
+            self.assertFalse((workspace / "marker_model.json").exists())
+            self.assertFalse((workspace / "object_model.json").exists())
+            diagnostics_mock.assert_called_once()
+
+
+def _square_corners(half: float) -> dict[str, list[float]]:
+    return {
+        "top_left": [-half, -half, 0.0],
+        "top_right": [half, -half, 0.0],
+        "bottom_right": [half, half, 0.0],
+        "bottom_left": [-half, half, 0.0],
+    }
 
 
 if __name__ == "__main__":

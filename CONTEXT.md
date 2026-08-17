@@ -68,6 +68,18 @@ _Avoid_: board config, charuco layout file
 Static plot of marker footprints in model coordinates (`object-inspect-marker-model`).
 _Avoid_: layout diagram, layout visualization
 
+**Setup**:
+One physical marker and object sticker arrangement. If markers are moved or replaced on the object, that starts a new Setup.
+_Avoid_: experiment folder, capture session (when meaning physical layout)
+
+**Calibration Workspace**:
+One calibration identity pairing a source capture with a material Calibration Recipe and its resulting models and diagnostics. A different source capture or materially different recipe belongs to a different Calibration Workspace.
+_Avoid_: calibration run folder, output directory (when meaning the recipe-owned workspace)
+
+**Calibration Recipe**:
+The declared inputs, marker inventory, execution mode, solver policy, and object-keypoint derivation for one Calibration Workspace. It configures Marker Model Calibration and Object Model derivation; it is not itself an Object Model.
+_Avoid_: marker config, calibration settings file
+
 **Marker Model Calibration**:
 Live estimation of marker sticker layout on an object from co-visible AprilTag detections, producing `marker_model.json`.
 _Avoid_: marker layout calibration session, live layout capture
