@@ -44,18 +44,27 @@ def empty_pair_readiness(
     *,
     sample_count: int,
     expected_marker_ids: list[int],
-    reference_marker_id: int,
+    reference_marker_id: int | None,
 ) -> LivePairReadinessDiagnostics:
     """Build a placeholder readiness snapshot before any samples are captured.
 
     Args:
         sample_count: Current captured sample count.
         expected_marker_ids: Full list of expected marker IDs.
-        reference_marker_id: Reference marker assumed connected at startup.
+        reference_marker_id: Reference marker assumed connected at startup, or
+            ``None`` when reference selection is deferred.
 
     Returns:
-        Diagnostics with only the reference marker connected and all others missing.
+        Diagnostics with only the reference marker connected and all others missing,
+        or all markers missing when reference selection is deferred.
     """
+    if reference_marker_id is None:
+        return LivePairReadinessDiagnostics(
+            pairs=(),
+            connected_marker_ids=frozenset(),
+            missing_marker_ids=frozenset(expected_marker_ids),
+            sample_count=sample_count,
+        )
     return LivePairReadinessDiagnostics(
         pairs=(),
         connected_marker_ids=frozenset({reference_marker_id}),
@@ -93,7 +102,7 @@ class LivePairReadinessWorker:
         camera_matrix: np.ndarray,
         dist_coeffs: np.ndarray,
         expected_marker_ids: list[int],
-        reference_marker_id: int,
+        reference_marker_id: int | None,
         settings: CalibrationSettings,
     ) -> None:
         """Start the background readiness worker thread.
@@ -103,7 +112,8 @@ class LivePairReadinessWorker:
             camera_matrix: Camera intrinsics matrix.
             dist_coeffs: Distortion coefficients.
             expected_marker_ids: Full list of expected marker IDs.
-            reference_marker_id: Reference marker for connectivity reporting.
+            reference_marker_id: Reference marker for connectivity reporting, or
+                ``None`` to infer from raw co-visibility during computation.
             settings: Calibration thresholds used for pair-readiness gates.
         """
         self._compute_fn = compute_fn

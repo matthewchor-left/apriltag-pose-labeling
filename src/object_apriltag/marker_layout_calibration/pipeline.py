@@ -57,6 +57,9 @@ from object_apriltag.marker_layout_calibration.input import (
     validate_observations,
     validate_settings,
 )
+from object_apriltag.marker_layout_calibration.reference_selection import (
+    select_reference_marker,
+)
 from object_apriltag.marker_layout_calibration.rotation_consistent_assignment import (
     assign_frames_rotation_consistent,
 )
@@ -100,12 +103,29 @@ from object_apriltag.marker_layout_calibration.types import (
     RestoredPairEdge,
 )
 
+
+def _auto_select_reference_marker(
+    pairs: Sequence[tuple[int, int]],
+    expected_ids: Sequence[int],
+    keypoint_sources: Mapping[str, tuple[int, str, float]] | None,
+    anchor_ids: Sequence[int] | None,
+) -> tuple[int | None, str | None]:
+    """Select a reference marker and validate explicit anchor membership."""
+    selected = select_reference_marker(pairs, expected_ids, keypoint_sources or {})
+    if anchor_ids is not None and selected not in anchor_ids:
+        return None, (
+            f"Auto-selected reference marker {selected} is not in "
+            f"anchor_marker_ids {sorted(anchor_ids)}."
+        )
+    return selected, None
+
+
 def calibrate_marker_layout(
     observations: Sequence[FrameObservation],
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
     expected_marker_ids: Sequence[int],
-    reference_marker_id: int,
+    reference_marker_id: int | None,
     marker_size_m: float,
     settings: CalibrationSettings | None = None,
     anchor_marker_ids: Sequence[int] | None = None,
@@ -114,6 +134,7 @@ def calibrate_marker_layout(
     best_effort: bool = False,
     partial_output: bool = False,
     solve_diagnostics: CalibrationSolveDiagnostics | None = None,
+    keypoint_sources: Mapping[str, tuple[int, str, float]] | None = None,
 ) -> CalibrationResult:
     """Run the full marker-layout calibration pipeline.
 
@@ -126,7 +147,8 @@ def calibrate_marker_layout(
         camera_matrix: 3×3 camera intrinsics matrix.
         dist_coeffs: Lens distortion coefficients.
         expected_marker_ids: Marker IDs expected in the layout.
-        reference_marker_id: Gauge-fixed reference marker ID.
+        reference_marker_id: Gauge-fixed reference marker ID, or ``None`` to
+            auto-select from pair connectivity and keypoint-source coverage.
         marker_size_m: Default physical marker edge length in meters.
         settings: Calibration thresholds and optimizer options; defaults apply if omitted.
         anchor_marker_ids: Strict subset activates anchor-core bootstrap; all expected IDs use legacy path.
@@ -135,6 +157,8 @@ def calibrate_marker_layout(
         best_effort: Relax connectivity and enable checkpoint recovery on refinement failure.
         partial_output: Emit partial layouts for disconnected markers; requires ``best_effort``.
         solve_diagnostics: Optional mutable container for per-stage timing and optimizer stats.
+        keypoint_sources: Object-model keypoint derivation map used for automatic
+            reference selection when ``reference_marker_id`` is omitted.
 
     Returns:
         ``CalibrationResult`` with layout, quality report, and outcome metadata on success,
@@ -153,6 +177,7 @@ def calibrate_marker_layout(
     if settings_failure is not None:
         return CalibrationResult(None, None, settings_failure)
 
+    auto_reference = reference_marker_id is None
     expected_ids, expected_failure = parse_expected_marker_ids(
         expected_marker_ids,
         reference_marker_id,
@@ -222,7 +247,7 @@ def calibrate_marker_layout(
             for marker_id in never_observed:
                 omitted_markers[marker_id] = "never_observed"
             expected_ids = [marker_id for marker_id in expected_ids if marker_id in observed_ids]
-            if reference_marker_id not in expected_ids:
+            if not auto_reference and reference_marker_id not in expected_ids:
                 return CalibrationResult(
                     None,
                     empty_quality(
@@ -282,6 +307,17 @@ def calibrate_marker_layout(
 
     pair_hypotheses = collect_pair_hypotheses(frame_candidates, expected_ids)
     raw_pair_counts = raw_covisible_pair_counts(normalized_observations)
+    if auto_reference:
+        selected_reference, auto_failure = _auto_select_reference_marker(
+            list(raw_pair_counts.keys()),
+            expected_ids,
+            keypoint_sources,
+            anchor_ids,
+        )
+        if auto_failure is not None:
+            return CalibrationResult(None, None, auto_failure)
+        assert selected_reference is not None
+        reference_marker_id = selected_reference
     raw_connected = connected_marker_ids_from_pairs(raw_pair_counts.keys(), reference_marker_id)
     raw_missing = sorted(set(expected_ids) - raw_connected)
     if raw_missing:
@@ -842,6 +878,18 @@ def calibrate_marker_layout(
             partial_output=partial_output,
             anchor_marker_ids=anchor_ids,
         )
+
+    if auto_reference and use_legacy_assignment:
+        selected_reference, auto_failure = _auto_select_reference_marker(
+            list(pair_consensus.keys()),
+            expected_ids,
+            keypoint_sources,
+            anchor_ids,
+        )
+        if auto_failure is not None:
+            return CalibrationResult(None, None, auto_failure)
+        assert selected_reference is not None
+        reference_marker_id = selected_reference
 
     ref_rotation, ref_translation = reference_gauge_pose(marker_sizes_m[reference_marker_id])
     marker_poses = initialize_marker_poses(

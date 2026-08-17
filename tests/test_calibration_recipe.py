@@ -239,6 +239,13 @@ class CalibrationRecipeTests(unittest.TestCase):
         recipe = load_calibration_recipe(self._write_config(payload))
         self.assertEqual(recipe.settings.discrete_method, "rotation_consistent")
 
+    def test_parses_null_reference_marker_id(self) -> None:
+        payload = _base_recipe_payload()
+        payload["markers"]["reference_marker_id"] = None
+        payload["markers"]["anchor_marker_ids"] = None
+        recipe = load_calibration_recipe(self._write_config(payload))
+        self.assertIsNone(recipe.reference_marker_id)
+
     def test_rejects_unknown_discrete_method(self) -> None:
         payload = _base_recipe_payload()
         payload["solver"]["discrete_method"] = "clique_pcm"

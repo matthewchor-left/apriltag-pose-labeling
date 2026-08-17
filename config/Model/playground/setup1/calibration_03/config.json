@@ -9,7 +9,7 @@
     "sensitivity": "relaxed"
   },
   "markers": {
-    "reference_marker_id": 19,
+    "reference_marker_id": null,
     "anchor_marker_ids": null,
     "groups": [
       {"ids": [0, 2, 3, 4], "size_m": 0.07},
@@ -23,6 +23,7 @@
   },
   "solver": {
     "policy": "best_effort",
+    "discrete_method": "rotation_consistent",
     "anchor_stop_after_expansion": false,
     "partial_output": true,
     "min_inliers_per_edge": 20,

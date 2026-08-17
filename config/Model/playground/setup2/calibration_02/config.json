@@ -1,7 +1,7 @@
 {
     "config_version": 1,
     "inputs": {
-      "source": "../../../../../data/playground_setup2_calibration_01.mov",
+      "source": "../../../../../data/playground_setup2_calibration_02.mov",
       "intrinsics": "../../../../../config/Camera/logi_hd_1080p/intrinsic.json"
     },
     "detector": {
@@ -9,7 +9,7 @@
       "sensitivity": "relaxed"
     },
     "markers": {
-      "reference_marker_id": null,
+      "reference_marker_id": 0,
       "anchor_marker_ids": null,
       "groups": [
         {"ids": [12, 5, "14-16", 6, 13, 20, 9, 2, 19, 28, 22, 23], "size_m": 0.02},

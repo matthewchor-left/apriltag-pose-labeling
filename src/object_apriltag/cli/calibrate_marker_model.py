@@ -340,8 +340,11 @@ def _parse_legacy_args() -> argparse.Namespace:
     parser.add_argument(
         "--reference-marker-id",
         type=int,
-        required=True,
-        help="Reference marker ID; must appear in --marker-ids.",
+        default=None,
+        help=(
+            "Reference marker ID; must appear in --marker-ids. "
+            "Omitted selects automatically from pair connectivity and keypoint sources."
+        ),
     )
     parser.add_argument(
         "--anchor-marker-ids",
@@ -351,8 +354,8 @@ def _parse_legacy_args() -> argparse.Namespace:
         metavar="ID",
         help=(
             "Optional anchor-core marker IDs for bootstrap assignment (supports ranges, "
-            "e.g. 0 1 4-7). Must include --reference-marker-id and be a subset of "
-            "--marker-ids. Omitted uses full-set exhaustive IPPE assignment."
+            "e.g. 0 1 4-7). When --reference-marker-id is set, it must appear here. "
+            "Subset of --marker-ids. Omitted uses full-set exhaustive IPPE assignment."
         ),
     )
     parser.add_argument(
@@ -572,7 +575,7 @@ def validate_args(
                 "Object-model keypoint source marker IDs must appear in --marker-ids: "
                 f"{missing_source_ids}."
             )
-    if args.reference_marker_id not in expected_ids:
+    if args.reference_marker_id is not None and args.reference_marker_id not in expected_ids:
         raise RuntimeError("--reference-marker-id must appear in --marker-ids.")
     anchor_list: list[int] | None
     if args.anchor_marker_ids is None:
@@ -596,6 +599,7 @@ def validate_args(
         )
     if args.partial_output and not args.best_effort:
         raise RuntimeError("--partial-output requires --best-effort.")
+    args.keypoint_sources = object_model_sources or {}
     if args.marker_size <= 0.0:
         raise RuntimeError("--marker-size must be positive.")
     marker_sizes_m, sizes_failure = resolve_marker_sizes_for_calibration(
@@ -674,6 +678,15 @@ def _validate_config_args(
     )
 
 
+def _sync_selected_reference_marker_id(
+    args: argparse.Namespace,
+    result: CalibrationResult,
+) -> None:
+    """Copy auto-selected reference marker ID back onto CLI args for reporting."""
+    if args.reference_marker_id is None and result.layout is not None:
+        args.reference_marker_id = result.layout.reference_marker_id
+
+
 def require_frame_size(
     frame_width: int,
     frame_height: int,
@@ -733,18 +746,19 @@ def detect_expected_markers(
 def draw_detection_outlines(
     frame: np.ndarray,
     visible: dict[int, np.ndarray],
-    reference_marker_id: int,
+    reference_marker_id: int | None,
 ) -> None:
     """Draw marker outlines and ID labels on ``frame`` in place.
 
     Args:
         frame: Image to annotate (modified in place).
         visible: Detected marker corners keyed by marker ID.
-        reference_marker_id: ID used for reference-marker coloring.
+        reference_marker_id: ID used for reference-marker coloring, or ``None``.
     """
+    ref_id = reference_marker_id if reference_marker_id is not None else -1
     for marker_id, corners in visible.items():
         points = corners.reshape(4, 2).astype(np.int32)
-        color = marker_color_bgr(marker_id, reference_marker_id)
+        color = marker_color_bgr(marker_id, ref_id)
         cv2.polylines(frame, [points], isClosed=True, color=color, thickness=2)
         anchor = tuple(int(round(value)) for value in points[0])
         cv2.putText(
@@ -1033,7 +1047,7 @@ def build_pair_readiness_hud_lines(
     visible_ids: list[int],
     current_sample_count: int,
     readiness_view: LivePairReadinessView,
-    reference_marker_id: int,
+    reference_marker_id: int | None,
     max_pair_lines: int = DEFAULT_PAIR_READINESS_HUD_LINES,
 ) -> list[str]:
     """Build live pair-readiness HUD lines from the background worker snapshot.
@@ -1069,7 +1083,9 @@ def build_pair_readiness_hud_lines(
         ),
         format_marker_connectivity_line(connected_ids, diagnostics.missing_marker_ids),
         (
-            f"graph: {len(connected_ids)}/{len(expected_ids)} connected from ref {reference_marker_id}"
+            "graph: "
+            f"{len(connected_ids)}/{len(expected_ids)} connected from ref "
+            f"{reference_marker_id if reference_marker_id is not None else 'auto'}"
         ),
         (
             f"pairs: {status_counts['pass']} pass, {status_counts['weak']} weak, "
@@ -1283,6 +1299,13 @@ def append_capture_observation(
     return observation
 
 
+def keypoint_sources_for_solve(args: argparse.Namespace) -> dict[str, tuple[int, str, float]]:
+    """Return object-model keypoint sources used for automatic reference selection."""
+    if getattr(args, "from_config", False) is True:
+        return dict(args.recipe.keypoint_sources)
+    return dict(getattr(args, "keypoint_sources", {}) or {})
+
+
 def solve_calibration_from_observations(
     observations: list[FrameObservation],
     args: argparse.Namespace,
@@ -1331,6 +1354,7 @@ def solve_calibration_from_observations(
         best_effort=best_effort,
         partial_output=partial_output,
         solve_diagnostics=solve_diagnostics,
+        keypoint_sources=keypoint_sources_for_solve(args),
     )
 
 
@@ -1709,7 +1733,7 @@ def run_benchmark(args: argparse.Namespace) -> bool:
     )
 
     print(f"Expected marker IDs: {expected_ids}")
-    print(f"Reference marker ID: {args.reference_marker_id}")
+    print(f"Reference marker ID: {args.reference_marker_id if args.reference_marker_id is not None else 'auto'}")
     if frame_selection == BENCHMARK_FRAME_SELECTION_SHARPEST:
         print(
             "Benchmark capture: sharpest frame per "
@@ -1884,6 +1908,7 @@ def run_benchmark(args: argparse.Namespace) -> bool:
             partial_output=partial_output,
             solve_diagnostics=solve_diagnostics,
         )
+        _sync_selected_reference_marker_id(args, result)
         calibration_solve_ns = time.perf_counter_ns() - solve_start_ns
         total_through_solve_ns = time.perf_counter_ns() - total_start_ns
 
@@ -1948,7 +1973,7 @@ def run_capture(args: argparse.Namespace) -> bool:
     detector = build_apriltag_detector(args.dictionary, args.detection_sensitivity)
 
     print(f"Expected marker IDs: {expected_ids}")
-    print(f"Reference marker ID: {args.reference_marker_id}")
+    print(f"Reference marker ID: {args.reference_marker_id if args.reference_marker_id is not None else 'auto'}")
     print(f"Default marker size: {args.marker_size:.4f} m")
     overrides = {
         marker_id: size
@@ -2073,6 +2098,7 @@ def run_capture(args: argparse.Namespace) -> bool:
                     best_effort=best_effort,
                     partial_output=partial_output,
                 )
+                _sync_selected_reference_marker_id(args, result)
                 if apply_calibration_result(args, result):
                     return True
                 last_solve_quality = result.quality

@@ -69,7 +69,7 @@ class CalibrationRecipe:
     sensitivity: str
     expected_marker_ids: tuple[int, ...]
     marker_sizes_m: dict[int, float]
-    reference_marker_id: int
+    reference_marker_id: int | None
     default_marker_size_m: float
     anchor_marker_ids: tuple[int, ...] | None
     execution: BenchmarkExecution | InteractiveExecution
@@ -260,7 +260,7 @@ def _parse_marker_id_entries(raw_ids: Any, field: str) -> list[int]:
 def _parse_markers(raw: Any) -> tuple[
     tuple[int, ...],
     dict[int, float],
-    int,
+    int | None,
     float,
     tuple[int, ...] | None,
 ]:
@@ -272,7 +272,10 @@ def _parse_markers(raw: Any) -> tuple[
         "markers",
         frozenset({"reference_marker_id", "groups", "anchor_marker_ids"}),
     )
-    reference_marker_id = _parse_marker_id(raw["reference_marker_id"], "markers.reference_marker_id")
+    reference_marker_id = _parse_optional_marker_id(
+        raw["reference_marker_id"],
+        "markers.reference_marker_id",
+    )
     groups_raw = raw["groups"]
     if not isinstance(groups_raw, list) or not groups_raw:
         raise ValueError("markers.groups must be a non-empty array.")
@@ -307,7 +310,7 @@ def _parse_markers(raw: Any) -> tuple[
 
     if not used_ids:
         raise ValueError("markers.groups must declare at least one marker ID.")
-    if reference_marker_id not in used_ids:
+    if reference_marker_id is not None and reference_marker_id not in used_ids:
         raise ValueError(
             f"markers.reference_marker_id {reference_marker_id} is not present in markers.groups."
         )
@@ -326,7 +329,7 @@ def _parse_anchor_marker_ids_field(
     raw: Any,
     *,
     expected_ids: tuple[int, ...],
-    reference_marker_id: int,
+    reference_marker_id: int | None,
 ) -> tuple[int, ...] | None:
     """Parse explicit anchor marker IDs or ``null`` for automatic anchor selection."""
     if raw is None:
@@ -588,6 +591,13 @@ def _parse_marker_id(raw: Any, field: str) -> int:
     if isinstance(raw, bool) or not isinstance(raw, int):
         raise ValueError(f"{field} must be an integer marker id.")
     return int(raw)
+
+
+def _parse_optional_marker_id(raw: Any, field: str) -> int | None:
+    """Parse a marker ID or ``null`` for automatic reference selection."""
+    if raw is None:
+        return None
+    return _parse_marker_id(raw, field)
 
 
 def _parse_bool(raw: Any, field: str) -> bool:

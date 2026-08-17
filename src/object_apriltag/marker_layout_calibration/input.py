@@ -88,17 +88,18 @@ def parse_marker_id_spec(tokens: Sequence[str]) -> tuple[list[int] | None, str |
 
 def parse_expected_marker_ids(
     expected_marker_ids: Sequence[int],
-    reference_marker_id: int,
+    reference_marker_id: int | None,
 ) -> tuple[list[int] | None, str | None]:
-    """Normalize expected marker IDs and require the reference marker in the list.
+    """Normalize expected marker IDs and optionally require the reference marker.
 
     Args:
         expected_marker_ids: Requested marker IDs from configuration or CLI.
-        reference_marker_id: Marker ID that must appear in ``expected_marker_ids``.
+        reference_marker_id: Marker ID that must appear in ``expected_marker_ids``,
+            or ``None`` when reference selection is deferred to the solver.
 
     Returns:
         ``(sorted_unique_ids, None)`` on success, or ``(None, error_message)`` when
-        the list is empty, non-integer, duplicate, or missing the reference ID.
+        the list is empty, non-integer, duplicate, or missing an explicit reference ID.
     """
     try:
         marker_ids = [int(marker_id) for marker_id in expected_marker_ids]
@@ -117,7 +118,7 @@ def parse_expected_marker_ids(
         return None, f"expected_marker_ids contains duplicates: {sorted(duplicates)}."
 
     expected_ids = sorted(marker_ids)
-    if int(reference_marker_id) not in seen:
+    if reference_marker_id is not None and int(reference_marker_id) not in seen:
         return None, f"reference_marker_id {reference_marker_id} is not in expected_marker_ids."
     return expected_ids, None
 
@@ -125,7 +126,7 @@ def parse_expected_marker_ids(
 def parse_anchor_marker_ids(
     anchor_marker_ids: Sequence[int] | None,
     expected_ids: Sequence[int],
-    reference_marker_id: int,
+    reference_marker_id: int | None,
 ) -> tuple[tuple[int, ...] | None, str | None]:
     """Validate explicit anchor-core marker IDs against the expected layout.
 
@@ -134,7 +135,7 @@ def parse_anchor_marker_ids(
             anchors automatically.
         expected_ids: Full set of marker IDs requested for calibration.
         reference_marker_id: Marker ID that must appear in anchor markers when
-            anchors are explicit.
+            anchors are explicit; ``None`` skips that check until auto-selection.
 
     Returns:
         ``(sorted_anchor_ids, None)`` when explicit anchors are valid,
@@ -156,7 +157,7 @@ def parse_anchor_marker_ids(
     missing = sorted(set(anchors) - expected_set)
     if missing:
         return None, f"anchor_marker_ids are not subset of expected_marker_ids; extra {missing}."
-    if int(reference_marker_id) not in anchors:
+    if reference_marker_id is not None and int(reference_marker_id) not in anchors:
         return None, f"reference_marker_id {reference_marker_id} must appear in anchor_marker_ids."
     return tuple(sorted(anchors)), None
 

@@ -242,7 +242,7 @@ def compute_live_pair_readiness(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
     expected_marker_ids: Sequence[int],
-    reference_marker_id: int,
+    reference_marker_id: int | None,
     settings: CalibrationSettings | None = None,
 ) -> LivePairReadinessDiagnostics:
     """Estimate co-visibility pair strength and marker-graph readiness.
@@ -252,7 +252,8 @@ def compute_live_pair_readiness(
         camera_matrix: Camera intrinsics matrix.
         dist_coeffs: Camera distortion coefficients.
         expected_marker_ids: Marker IDs expected in the layout.
-        reference_marker_id: Root marker for connectivity analysis.
+        reference_marker_id: Root marker for connectivity analysis, or ``None`` to
+            pick the marker with the largest raw co-visibility component.
         settings: Calibration settings; defaults apply when omitted.
 
     Returns:
@@ -312,11 +313,30 @@ def compute_live_pair_readiness(
 
     normalized_observations = normalize_observations(observations, expected_ids)
     raw_pair_counts = raw_covisible_pair_counts(normalized_observations)
+    if reference_marker_id is None:
+        if raw_pair_counts:
+            from object_apriltag.marker_layout_calibration.reference_selection import (
+                select_reference_marker,
+            )
+
+            reference_marker_id = select_reference_marker(
+                raw_pair_counts.keys(),
+                expected_ids,
+                {},
+            )
+        elif expected_ids:
+            reference_marker_id = min(expected_ids)
     if not raw_pair_counts:
+        connected = frozenset({reference_marker_id}) if reference_marker_id is not None else frozenset()
+        missing = (
+            frozenset(set(expected_ids) - connected)
+            if reference_marker_id is not None
+            else frozenset(expected_ids)
+        )
         return LivePairReadinessDiagnostics(
             pairs=(),
-            connected_marker_ids=frozenset({reference_marker_id}),
-            missing_marker_ids=frozenset(expected_ids) - {reference_marker_id},
+            connected_marker_ids=connected,
+            missing_marker_ids=missing,
             sample_count=len(observations),
         )
 
