@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Literal
 
 import cv2
@@ -41,6 +41,16 @@ def normalize_observations(
     observations: Sequence[FrameObservation],
     expected_ids: list[int],
 ) -> list[tuple[str | int, dict[int, np.ndarray]]]:
+    """Parse and filter observations to expected markers with co-visibility.
+
+    Args:
+        observations: Raw per-frame marker corner observations.
+        expected_ids: Marker IDs retained during normalization.
+
+    Returns:
+        Frames with at least two valid expected markers, each mapping marker ID
+        to a ``(4, 2)`` corner array.
+    """
     expected_set = set(expected_ids)
     normalized: list[tuple[str | int, dict[int, np.ndarray]]] = []
     for observation in observations:
@@ -64,6 +74,18 @@ def estimate_frame_candidates(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> list[tuple[int, dict[int, list[MarkerCandidate]]]]:
+    """Run IPPE per marker and retain frames with sufficient candidates.
+
+    Args:
+        observations: Normalized corner observations indexed by frame.
+        object_points_by_marker: Object-frame corner coordinates per marker.
+        camera_matrix: Camera intrinsics matrix.
+        dist_coeffs: Camera distortion coefficients.
+
+    Returns:
+        List of ``(frame_index, candidates)`` for frames where at least two
+        markers produced facing-camera IPPE candidates.
+    """
     frame_candidates: list[tuple[int, dict[int, list[MarkerCandidate]]]] = []
     for frame_index, (_, markers) in enumerate(observations):
         candidates: dict[int, list[MarkerCandidate]] = {}
@@ -87,6 +109,18 @@ def ippe_candidates(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> list[MarkerCandidate]:
+    """Solve IPPE PnP and retain facing-camera hypotheses with reprojection RMS.
+
+    Args:
+        object_points: Marker corner coordinates in the marker frame, shape ``(4, 3)``.
+        image_points: Observed corner pixels, shape ``(4, 2)``.
+        camera_matrix: Camera intrinsics matrix.
+        dist_coeffs: Camera distortion coefficients.
+
+    Returns:
+        IPPE candidates whose marker +Z normal points toward the camera, each
+        annotated with per-solution reprojection RMS in pixels.
+    """
     ok, rvecs, tvecs, _ = cv2.solvePnPGeneric(
         object_points.astype(np.float32),
         image_points.astype(np.float32),
@@ -122,6 +156,14 @@ def ippe_candidates(
 
 
 def is_marker_facing_camera(rotation: np.ndarray) -> bool:
+    """Return whether the marker +Z axis points toward the camera.
+
+    Args:
+        rotation: Marker rotation in the camera frame, shape ``(3, 3)``.
+
+    Returns:
+        True when the transformed +Z normal has negative camera Z (toward the camera).
+    """
     normal = rotation @ np.array([0.0, 0.0, 1.0], dtype=np.float64)
     return float(normal[2]) < 0.0
 
@@ -134,6 +176,19 @@ def reprojection_rms(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> float:
+    """Compute RMS reprojection error for a pose hypothesis.
+
+    Args:
+        object_points: Marker corner coordinates in the marker frame.
+        image_points: Observed corner pixels.
+        rvec: Rotation vector for ``cv2.projectPoints``.
+        tvec: Translation vector for ``cv2.projectPoints``.
+        camera_matrix: Camera intrinsics matrix.
+        dist_coeffs: Camera distortion coefficients.
+
+    Returns:
+        Root-mean-square pixel distance between observed and projected corners.
+    """
     projected, _ = cv2.projectPoints(
         object_points.reshape(-1, 1, 3).astype(np.float32),
         rvec,
@@ -150,7 +205,16 @@ def relative_marker_transform(
     parent: MarkerCandidate,
     child: MarkerCandidate,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Map points in child marker frame to parent marker frame."""
+    """Map points from the child marker frame into the parent marker frame.
+
+    Args:
+        parent: Parent (low) marker IPPE candidate in the camera frame.
+        child: Child (high) marker IPPE candidate in the camera frame.
+
+    Returns:
+        Tuple ``(rotation, translation)`` expressing the child pose in the parent
+        marker frame.
+    """
     rotation = parent.rotation.T @ child.rotation
     translation = parent.rotation.T @ (child.tvec - parent.tvec)
     return rotation, translation
@@ -160,7 +224,16 @@ def transform_high_in_low(
     low: MarkerCandidate,
     high: MarkerCandidate,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Map points in the high marker frame to the low marker frame."""
+    """Map points from the high marker frame into the low marker frame.
+
+    Args:
+        low: Low-marker IPPE candidate in the camera frame.
+        high: High-marker IPPE candidate in the camera frame.
+
+    Returns:
+        Tuple ``(rotation_ba, translation_ba)`` for the high marker expressed in
+        the low marker frame.
+    """
     return relative_marker_transform(low, high)
 
 
@@ -172,7 +245,24 @@ def compute_live_pair_readiness(
     reference_marker_id: int,
     settings: CalibrationSettings | None = None,
 ) -> LivePairReadinessDiagnostics:
-    """Estimate co-visibility pair strength and graph readiness (topology only)."""
+    """Estimate co-visibility pair strength and marker-graph readiness.
+
+    Args:
+        observations: Raw per-frame marker corner observations.
+        camera_matrix: Camera intrinsics matrix.
+        dist_coeffs: Camera distortion coefficients.
+        expected_marker_ids: Marker IDs expected in the layout.
+        reference_marker_id: Root marker for connectivity analysis.
+        settings: Calibration settings; defaults apply when omitted.
+
+    Returns:
+        Diagnostics with per-pair raw co-visibility counts, connected marker set,
+        and missing IDs relative to the reference.
+
+    Notes:
+        Topology-only analysis: no pose estimation or pair RMS gating beyond
+        ``min_inliers_per_edge`` on raw co-visibility counts.
+    """
     settings = settings or CalibrationSettings()
     settings_failure = validate_settings(settings)
     if settings_failure is not None:
@@ -264,6 +354,15 @@ def connected_marker_ids_from_pairs(
     pairs: Iterable[MarkerPair],
     reference_marker_id: int,
 ) -> set[int]:
+    """Collect markers reachable from the reference along passing pair edges.
+
+    Args:
+        pairs: Marker pairs treated as connected edges.
+        reference_marker_id: Root marker for breadth-first expansion.
+
+    Returns:
+        Set of marker IDs connected to ``reference_marker_id`` via ``pairs``.
+    """
     graph: dict[int, set[int]] = {}
     for marker_a, marker_b in pairs:
         graph.setdefault(marker_a, set()).add(marker_b)
@@ -283,6 +382,14 @@ def connected_marker_ids_from_pairs(
 def raw_covisible_pair_counts(
     observations: list[tuple[str | int, dict[int, np.ndarray]]],
 ) -> dict[MarkerPair, int]:
+    """Count frames where each marker pair co-appears.
+
+    Args:
+        observations: Normalized corner observations indexed by frame.
+
+    Returns:
+        Per-pair counts of frames where both markers are visible (no pose required).
+    """
     counts: dict[MarkerPair, int] = {}
     for _, markers in observations:
         marker_ids = sorted(markers)
@@ -298,6 +405,22 @@ def best_pair_consensus(
     translation_gate: float,
     rotation_gate: float,
 ) -> PairConsensus | None:
+    """Select robust low-to-high consensus from per-frame hypotheses.
+
+    Args:
+        pair: Low-to-high marker ID pair ``(marker_a, marker_b)``.
+        hypotheses: List of ``(rotation_ba, translation_ba, frame_index)`` entries.
+        translation_gate: Maximum allowed translation deviation from the seed, in meters.
+        rotation_gate: Maximum allowed rotation deviation from the seed, in degrees.
+
+    Returns:
+        Consensus edge with quaternion-averaged rotation and mean translation over
+        inlier frames, or ``None`` when no seed yields inliers.
+
+    Notes:
+        Each frame contributes at most one hypothesis; seed selection maximizes
+        inlier frame count before averaging.
+    """
     if not hypotheses:
         return None
 
@@ -343,6 +466,18 @@ def classify_pair_readiness(
     marker_sizes_m: Mapping[int, float],
     pair: MarkerPair,
 ) -> tuple[str, int, float | None, float | None]:
+    """Classify pair readiness using inlier count and RMS gates.
+
+    Args:
+        edge: Robust pair consensus, or ``None`` when consensus failed.
+        settings: Calibration gates for inlier count and pair RMS.
+        marker_sizes_m: Physical edge lengths keyed by marker ID.
+        pair: Low-to-high marker ID pair.
+
+    Returns:
+        Tuple of status label (``pass``, ``weak``, or ``fail``), robust inlier
+        count, translation RMS in meters, and rotation RMS in degrees.
+    """
     robust_count = len(edge.inlier_frames) if edge is not None else 0
     if edge is None or robust_count < settings.min_inliers_per_edge:
         return "weak", robust_count, None, None
@@ -372,6 +507,16 @@ def collect_pair_hypotheses(
     frame_candidates: list[tuple[int, dict[int, list[MarkerCandidate]]]],
     expected_ids: list[int],
 ) -> dict[MarkerPair, list[tuple[np.ndarray, np.ndarray, int]]]:
+    """Enumerate IPPE cross-product pair hypotheses per co-visible frame.
+
+    Args:
+        frame_candidates: Per-frame IPPE candidate pools.
+        expected_ids: Marker IDs included when forming pairs.
+
+    Returns:
+        Per-pair lists of low-to-high relative transforms with frame indices for
+        every IPPE candidate cross-product in co-visible frames.
+    """
     hypotheses: dict[MarkerPair, list[tuple[np.ndarray, np.ndarray, int]]] = {}
     expected_set = set(expected_ids)
     for frame_index, candidates in frame_candidates:
@@ -402,6 +547,23 @@ def estimate_pair_consensus(
     best_effort: bool = False,
     restored_pair_edges: list[RestoredPairEdge] | None = None,
 ) -> tuple[dict[MarkerPair, PairConsensus], str | None, tuple[DroppedPairEdge, ...]]:
+    """Gate pair hypotheses into consensus with optional weak-edge restoration.
+
+    Args:
+        pair_hypotheses: Per-pair relative-transform hypotheses.
+        expected_ids: Full set of marker IDs targeted by calibration.
+        reference_marker_id: Root marker for connectivity checks.
+        marker_sizes_m: Physical edge lengths keyed by marker ID.
+        settings: Calibration gates for inlier count and pair RMS.
+        connectivity_ids: Marker subset for connectivity when restoring weak edges;
+            defaults to ``expected_ids``.
+        best_effort: When true, restore weak edges to bridge disconnected components.
+        restored_pair_edges: Optional list extended with restoration audit records.
+
+    Returns:
+        Tuple of gated pair consensus, optional connectivity failure message, and
+        dropped-edge audit records.
+    """
     rotation_gate = settings.pair_rotation_rms_gate_deg
     consensus: dict[MarkerPair, PairConsensus] = {}
     weak_pool: dict[MarkerPair, PairConsensus] = {}
@@ -522,6 +684,18 @@ def inlier_frames_for_seed(
     translation_gate: float,
     rotation_gate: float,
 ) -> dict[int, int]:
+    """Select inlier frames for a seed hypothesis under translation/rotation gates.
+
+    Args:
+        hypotheses: List of ``(rotation, translation, frame_index)`` pair hypotheses.
+        seed_index: Index of the seed hypothesis in ``hypotheses``.
+        translation_gate: Maximum translation deviation from the seed, in meters.
+        rotation_gate: Maximum rotation deviation from the seed, in degrees.
+
+    Returns:
+        Mapping from frame index to the hypothesis index chosen as inlier for that
+        frame (lowest gate-normalized cost when multiple hypotheses qualify).
+    """
     seed_rotation, seed_translation, _ = hypotheses[seed_index]
     inlier_frames: dict[int, int] = {}
     for hypothesis_index, (rotation, translation, frame_index) in enumerate(hypotheses):
@@ -552,6 +726,14 @@ def inlier_frames_for_seed(
 
 
 def _json_safe_float(value: float | None) -> float | None:
+    """Convert a float to a JSON-safe finite value.
+
+    Args:
+        value: Input scalar or ``None``.
+
+    Returns:
+        Finite ``float`` value, or ``None`` when input is missing or non-finite.
+    """
     if value is None:
         return None
     numeric = float(value)
@@ -572,6 +754,22 @@ def make_dropped_pair_edge(
     rotation_gate: float,
     edge: PairConsensus | None = None,
 ) -> DroppedPairEdge:
+    """Record why a pair edge failed gating.
+
+    Args:
+        pair: Low-to-high marker ID pair.
+        stage: Pipeline stage label for the drop event.
+        reason: Machine-readable drop reason.
+        observed_count: Frames where the pair was observed.
+        supported_count: Frames or inliers supporting the best weak consensus.
+        required_count: Minimum support required by settings.
+        translation_gate: Translation RMS gate applied, in meters.
+        rotation_gate: Rotation RMS gate applied, in degrees.
+        edge: Optional best weak consensus used to populate RMS fields.
+
+    Returns:
+        Dropped pair-edge audit record with optional RMS diagnostics.
+    """
     translation_rms_m: float | None = None
     rotation_rms_deg: float | None = None
     if edge is not None:
@@ -594,6 +792,14 @@ def make_dropped_pair_edge(
 
 
 def weak_edge_consensus_support(edge: PairConsensus) -> int:
+    """Return inlier frame count used as weak-edge support during repair.
+
+    Args:
+        edge: Weak pair consensus candidate.
+
+    Returns:
+        Number of inlier frames in ``edge``.
+    """
     return len(edge.inlier_frames)
 
 
@@ -602,6 +808,17 @@ def make_restored_pair_edge(
     edge: PairConsensus,
     stage: str,
 ) -> RestoredPairEdge:
+    """Build an audit record when a dropped weak edge is reinstated.
+
+    Args:
+        dropped: Original dropped-edge record for the pair.
+        edge: Weak consensus edge restored into the graph.
+        stage: Pipeline stage where restoration occurred.
+
+    Returns:
+        Restored pair-edge audit record with support fraction and original drop
+        metadata.
+    """
     consensus_support = weak_edge_consensus_support(edge)
     return RestoredPairEdge(
         marker_a=dropped.marker_a,
@@ -626,6 +843,18 @@ def weak_edge_rank_key(
     rotation_rms_deg: float | None,
     translation_rms_m: float | None,
 ) -> tuple[float, float, float, float]:
+    """Build a sort key for ranking weak-edge restoration candidates.
+
+    Args:
+        supported_count: Inlier or supported frame count for the weak edge.
+        observed_count: Total frames where the pair was observed.
+        rotation_rms_deg: Rotation RMS in degrees, or ``None`` if unknown.
+        translation_rms_m: Translation RMS in meters, or ``None`` if unknown.
+
+    Returns:
+        Tuple sort key preferring more inliers, higher support fraction, then lower
+        RMS (unknown RMS sorts last).
+    """
     fraction = supported_count / max(observed_count, 1)
     rotation = rotation_rms_deg if rotation_rms_deg is not None else float("inf")
     translation = translation_rms_m if translation_rms_m is not None else float("inf")
@@ -637,6 +866,16 @@ def connectivity_failure_message(
     reference_marker_id: int,
     missing: list[int],
 ) -> str:
+    """Format a connectivity failure message for a pipeline stage.
+
+    Args:
+        stage: Pipeline stage label (for example ``initial_consensus``).
+        reference_marker_id: Root marker used in connectivity analysis.
+        missing: Marker IDs not connected to the reference.
+
+    Returns:
+        Human-readable connectivity failure string.
+    """
     if stage == "initial_consensus":
         return (
             f"Expected marker IDs are not connected to reference {reference_marker_id}; "
@@ -653,6 +892,14 @@ def connectivity_failure_message(
 
 
 def meets_best_effort_weak_support_floor(supported_count: int) -> bool:
+    """Check whether weak-edge support meets the best-effort restoration floor.
+
+    Args:
+        supported_count: Inlier or supported frame count for a weak edge.
+
+    Returns:
+        True when ``supported_count`` is at least the configured weak-edge minimum.
+    """
     return supported_count >= _BEST_EFFORT_WEAK_EDGE_MIN_SUPPORT
 
 
@@ -661,6 +908,16 @@ def weak_restore_candidates(
     weak_pool: dict[MarkerPair, PairConsensus],
     dropped: Sequence[DroppedPairEdge],
 ) -> list[tuple[PairConsensus, DroppedPairEdge]]:
+    """List dropped pairs with weak consensus meeting the best-effort support floor.
+
+    Args:
+        pair_consensus: Currently accepted pair consensus edges.
+        weak_pool: Best weak consensus per pair from initial gating.
+        dropped: Dropped-edge audit records from gating.
+
+    Returns:
+        List of ``(weak_edge, drop_record)`` pairs eligible for connectivity repair.
+    """
     candidates: list[tuple[PairConsensus, DroppedPairEdge]] = []
     seen: set[MarkerPair] = set()
     for drop in dropped:
@@ -688,6 +945,26 @@ def maybe_restore_weak_connectivity(
     best_effort: bool,
     restored_pair_edges: list[RestoredPairEdge] | None,
 ) -> str | None:
+    """Restore weak edges until required markers connect to the reference.
+
+    Args:
+        pair_consensus: Accepted pair consensus edges (updated in place on restore).
+        weak_pool: Best weak consensus per pair from initial gating.
+        dropped: Dropped-edge audit records used to find restore candidates.
+        required_ids: Marker IDs that must connect to ``reference_marker_id``.
+        reference_marker_id: Root marker for connectivity checks.
+        stage: Pipeline stage label recorded on restoration audit entries.
+        best_effort: When false, return a failure message without restoring edges.
+        restored_pair_edges: Optional list extended with restoration audit records.
+
+    Returns:
+        Connectivity failure message when required markers remain disconnected,
+        or ``None`` on success.
+
+    Notes:
+        Greedy restoration picks the highest-ranked bridging weak edge each
+        iteration until ``required_ids`` connect or no bridge remains.
+    """
     connected = connected_marker_ids(pair_consensus, reference_marker_id)
     missing = sorted(set(required_ids) - connected)
     if not missing:

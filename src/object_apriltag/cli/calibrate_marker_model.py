@@ -78,10 +78,23 @@ DEFAULT_BENCHMARK_FRAME_SELECTION = BENCHMARK_FRAME_SELECTION_UNIFORM
 
 
 def _is_benchmark_mode(args: argparse.Namespace) -> bool:
+    """Return whether ``--benchmark`` was set on the parsed CLI namespace.
+
+    Args:
+        args: Parsed CLI namespace.
+
+    Returns:
+        True when benchmark mode is enabled.
+    """
     return getattr(args, "benchmark", False) is True
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse CLI flags for live capture or headless video benchmark calibration.
+
+    Returns:
+        Parsed argument namespace with calibration flags and frame-source options.
+    """
     parser = argparse.ArgumentParser(
         description="Calibrate marker sticker layout from live co-visible AprilTag detections.",
         epilog=(
@@ -309,6 +322,14 @@ def parse_args() -> argparse.Namespace:
 def flatten_marker_size_override_tokens(
     tokens: list[str] | list[list[str]] | None,
 ) -> list[str] | None:
+    """Flatten nested ``--marker-size-for`` nargs groups into one token list.
+
+    Args:
+        tokens: Raw ``action="append"`` token groups from argparse, or ``None``.
+
+    Returns:
+        Flattened token list, or ``None`` when ``tokens`` is ``None``.
+    """
     if tokens is None:
         return None
     flattened: list[str] = []
@@ -323,6 +344,18 @@ def flatten_marker_size_override_tokens(
 def validate_args(
     args: argparse.Namespace,
 ) -> tuple[list[int], dict[int, float], CalibrationSettings, tuple[int, ...] | None, bool, bool, bool]:
+    """Validate CLI inputs and derive calibration settings.
+
+    Args:
+        args: Parsed CLI namespace.
+
+    Returns:
+        Tuple of ``(expected_ids, marker_sizes_m, settings, anchor_ids,
+        anchor_stop_after_expansion, best_effort, partial_output)``.
+
+    Raises:
+        RuntimeError: Invalid flag combinations, missing files, or out-of-range values.
+    """
     object_model_sources: dict[str, tuple[int, str, float]] | None = None
     if not args.calibration.exists():
         raise RuntimeError(
@@ -433,6 +466,18 @@ def require_frame_size(
     calibration_height: int,
     calibration_path: Path,
 ) -> None:
+    """Reject frames whose resolution differs from the intrinsics calibration image size.
+
+    Args:
+        frame_width: Decoded frame width in pixels.
+        frame_height: Decoded frame height in pixels.
+        calibration_width: Width from the intrinsics calibration file.
+        calibration_height: Height from the intrinsics calibration file.
+        calibration_path: Path shown in the mismatch error message.
+
+    Raises:
+        RuntimeError: Frame dimensions do not match calibrated image size.
+    """
     if frame_width != calibration_width or frame_height != calibration_height:
         raise RuntimeError(
             "Frame size "
@@ -447,6 +492,16 @@ def detect_expected_markers(
     frame: np.ndarray,
     expected_ids: set[int],
 ) -> dict[int, np.ndarray]:
+    """Detect AprilTags in ``frame`` and return corners only for ``expected_ids``.
+
+    Args:
+        detector: OpenCV ArUco/AprilTag detector.
+        frame: BGR or grayscale image.
+        expected_ids: Marker IDs to retain from detection output.
+
+    Returns:
+        Map from marker ID to ``(4, 2)`` float64 corner array in image pixels.
+    """
     gray = frame if frame.ndim == 2 else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     corners, ids, _ = detector.detectMarkers(gray)
     if ids is None:
@@ -465,6 +520,13 @@ def draw_detection_outlines(
     visible: dict[int, np.ndarray],
     reference_marker_id: int,
 ) -> None:
+    """Draw marker outlines and ID labels on ``frame`` in place.
+
+    Args:
+        frame: Image to annotate (modified in place).
+        visible: Detected marker corners keyed by marker ID.
+        reference_marker_id: ID used for reference-marker coloring.
+    """
     for marker_id, corners in visible.items():
         points = corners.reshape(4, 2).astype(np.int32)
         color = marker_color_bgr(marker_id, reference_marker_id)
@@ -491,6 +553,15 @@ KEYPOINT_SOURCE_OVERLAY_COLORS_BGR = {
 
 
 def marker_frame_footprint(marker_id: int, marker_size_m: float):
+    """Build a marker-corner footprint in the marker frame from physical edge length.
+
+    Args:
+        marker_id: AprilTag marker ID for the footprint record.
+        marker_size_m: Physical marker edge length in meters.
+
+    Returns:
+        Marker footprint with corners named per ``CORNER_NAMES``.
+    """
     object_points = marker_corner_object_points(marker_size_m)
     payload = {
         corner_name: object_points[index].astype(np.float64).tolist()
@@ -508,6 +579,21 @@ def project_keypoint_source_on_marker(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray] | None:
+    """Project a keypoint source corner (and optional padding) into image coordinates.
+
+    Args:
+        corners: Detected marker corners ``(4, 2)``.
+        marker_id: Source marker ID.
+        marker_size_m: Physical edge length for pose estimation.
+        corner_name: Footprint corner name (e.g. ``"top"``).
+        padding_m: Outward padding along the corner normal in meters.
+        camera_matrix: Camera intrinsics matrix.
+        dist_coeffs: Distortion coefficients.
+
+    Returns:
+        ``(raw_corner_px, padded_corner_px)`` image points, or ``None`` when pose
+        estimation fails or either point projects behind the camera.
+    """
     try:
         rvec, tvec = estimate_marker_pose(corners, marker_size_m, camera_matrix, dist_coeffs)
     except RuntimeError:
@@ -539,6 +625,16 @@ def draw_keypoint_source_overlays(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> None:
+    """Preview object-model keypoint sources on visible markers.
+
+    Args:
+        frame: Live preview image (modified in place).
+        visible: Detected marker corners keyed by marker ID.
+        keypoint_sources: Keypoint name to ``(marker_id, corner_name, padding_m)`` map.
+        marker_sizes_m: Per-marker physical edge lengths.
+        camera_matrix: Camera intrinsics matrix.
+        dist_coeffs: Distortion coefficients.
+    """
     for keypoint_name, (marker_id, corner_name, padding_m) in keypoint_sources.items():
         corners = visible.get(marker_id)
         if corners is None:
@@ -593,6 +689,14 @@ def draw_keypoint_source_overlays(
 
 
 def format_solve_frame_counts(quality: CalibrationQualityReport) -> str:
+    """Format input/accepted/rejected frame counts from a solve quality report.
+
+    Args:
+        quality: Post-solve calibration quality report.
+
+    Returns:
+        Human-readable frame count summary line.
+    """
     return (
         f"frames input/accepted/rejected: "
         f"{quality.input_frame_count}/{quality.accepted_frame_count}/{quality.rejected_frame_count}"
@@ -600,6 +704,14 @@ def format_solve_frame_counts(quality: CalibrationQualityReport) -> str:
 
 
 def format_assignment_rejection_cause(cause_count) -> str:
+    """Short HUD line for one grouped assignment-rejection cause and count.
+
+    Args:
+        cause_count: Grouped rejection statistics for one cause.
+
+    Returns:
+        Compact HUD line with reason, optional pair, and count.
+    """
     pair_text = ""
     if cause_count.marker_pair is not None:
         pair_text = f" pair=({cause_count.marker_pair[0]},{cause_count.marker_pair[1]})"
@@ -611,6 +723,15 @@ def format_assignment_rejection_summary(
     *,
     max_lines: int = DEFAULT_ASSIGNMENT_REJECTION_SUMMARY_LINES,
 ) -> list[str]:
+    """Return top assignment-rejection causes for the HUD.
+
+    Args:
+        summary: Assignment-rejection rollup from a quality report.
+        max_lines: Maximum number of cause lines to include.
+
+    Returns:
+        Up to ``max_lines`` formatted cause lines; empty when nothing was rejected.
+    """
     if summary.total_rejected == 0:
         return []
     return [
@@ -620,6 +741,14 @@ def format_assignment_rejection_summary(
 
 
 def format_pair_readiness_edge(edge: PairReadinessEdge) -> str:
+    """Format one live pair-readiness edge for the capture HUD.
+
+    Args:
+        edge: Pair-readiness edge from the background worker snapshot.
+
+    Returns:
+        Compact HUD line with pair IDs, status, and raw co-visible frame count.
+    """
     return (
         f"({edge.marker_a},{edge.marker_b}) {edge.status} "
         f"raw={edge.raw_covisible_frames}"
@@ -632,7 +761,25 @@ def format_marker_connectivity_line(
     *,
     max_listed: int = 12,
 ) -> str:
+    """Summarize connected vs missing markers, truncating long ID lists.
+
+    Args:
+        connected_ids: Marker IDs connected to the reference in the readiness graph.
+        missing_ids: Expected marker IDs still missing from the graph.
+        max_listed: Maximum IDs to show before abbreviating with ``+N``.
+
+    Returns:
+        Single-line connected/missing summary.
+    """
     def compact(marker_ids: list[int]) -> str:
+        """Render a marker ID list, abbreviating when longer than ``max_listed``.
+
+        Args:
+            marker_ids: Sorted marker IDs to display.
+
+        Returns:
+            Bracketed ID list, or head IDs plus ``+N`` when truncated.
+        """
         if len(marker_ids) <= max_listed:
             return str(marker_ids)
         head = marker_ids[:max_listed]
@@ -649,6 +796,16 @@ def format_readiness_snapshot_line(
     represented_sample_count: int,
     is_computing: bool,
 ) -> str:
+    """Label which captured samples the latest readiness snapshot represents.
+
+    Args:
+        current_sample_count: Number of captured observations so far.
+        represented_sample_count: Sample count the readiness snapshot was computed from.
+        is_computing: Whether the readiness worker is still computing.
+
+    Returns:
+        Readiness snapshot label for the HUD, with optional ``(computing...)`` suffix.
+    """
     suffix = " (computing...)" if is_computing else ""
     if represented_sample_count == current_sample_count and not is_computing:
         return f"readiness@{current_sample_count} samples"
@@ -664,6 +821,22 @@ def build_pair_readiness_hud_lines(
     reference_marker_id: int,
     max_pair_lines: int = DEFAULT_PAIR_READINESS_HUD_LINES,
 ) -> list[str]:
+    """Build live pair-readiness HUD lines from the background worker snapshot.
+
+    Inserts per-pair status lines before the control hint; may append ``...`` when
+    ``max_pair_lines`` truncates the pair list.
+
+    Args:
+        expected_ids: Full list of expected marker IDs.
+        visible_ids: Marker IDs detected in the current frame.
+        current_sample_count: Number of captured observations.
+        readiness_view: Latest pair-readiness snapshot from the worker.
+        reference_marker_id: Reference marker for connectivity reporting.
+        max_pair_lines: Maximum per-pair lines before truncation.
+
+    Returns:
+        Ordered HUD text lines for the live capture overlay.
+    """
     diagnostics = readiness_view.diagnostics
     status_counts = {"pass": 0, "weak": 0, "fail": 0}
     for edge in diagnostics.pairs:
@@ -709,6 +882,19 @@ def build_pair_readiness_hud_lines_from_diagnostics(
     reference_marker_id: int,
     max_pair_lines: int = DEFAULT_PAIR_READINESS_HUD_LINES,
 ) -> list[str]:
+    """Alias for :func:`build_pair_readiness_hud_lines` used by the capture loop.
+
+    Args:
+        expected_ids: Full list of expected marker IDs.
+        visible_ids: Marker IDs detected in the current frame.
+        current_sample_count: Number of captured observations.
+        readiness_view: Latest pair-readiness snapshot from the worker.
+        reference_marker_id: Reference marker for connectivity reporting.
+        max_pair_lines: Maximum per-pair lines before truncation.
+
+    Returns:
+        Ordered HUD text lines for the live capture overlay.
+    """
     return build_pair_readiness_hud_lines(
         expected_ids=expected_ids,
         visible_ids=visible_ids,
@@ -725,6 +911,13 @@ def draw_calibration_hud(
     hud_lines: list[str],
     last_solve_quality: CalibrationQualityReport | None,
 ) -> None:
+    """Draw the calibration HUD, optionally appending the last solve's frame stats.
+
+    Args:
+        frame: Preview image (HUD drawn in place).
+        hud_lines: Base HUD lines from pair-readiness and capture status.
+        last_solve_quality: Optional quality report from the most recent solve attempt.
+    """
     lines = list(hud_lines)
     if last_solve_quality is not None:
         lines.insert(5, format_solve_frame_counts(last_solve_quality))
@@ -743,6 +936,11 @@ def draw_calibration_hud(
 
 
 def print_refusal(result: CalibrationResult) -> None:
+    """Print refusal reason and quality diagnostics to stdout.
+
+    Args:
+        result: Calibration result with ``layout`` unset or a failure reason.
+    """
     print(f"Calibration refused: {result.failure_reason}")
     quality = result.quality
     if quality is None:
@@ -755,6 +953,12 @@ def print_refusal(result: CalibrationResult) -> None:
 
 
 def print_success(result: CalibrationResult, output: Path) -> None:
+    """Print outcome-specific warnings, save path, and quality diagnostics.
+
+    Args:
+        result: Successful or best-effort calibration result.
+        output: Marker model path that was written.
+    """
     if result.outcome == "partial":
         print("WARNING: Saved partial marker model (some requested markers were omitted).")
         for line in format_omitted_marker_lines(result.omitted_markers):
@@ -787,6 +991,18 @@ def write_calibration_diagnostics_if_requested(
     *,
     benchmark: Mapping[str, Any] | None = None,
 ) -> None:
+    """Write ``--diagnostics-output`` JSON when requested and quality is available.
+
+    Prints the output path on success; diagnostics write errors go to stderr.
+
+    Args:
+        diagnostics_output: Optional diagnostics JSON path from CLI flags.
+        result: Calibration result containing the quality report.
+        benchmark: Optional benchmark timing metadata for diagnostics export.
+
+    Notes:
+        No-op when ``diagnostics_output`` is ``None`` or ``result.quality`` is missing.
+    """
     if diagnostics_output is None or result.quality is None:
         return
     if benchmark is None:
@@ -797,6 +1013,12 @@ def write_calibration_diagnostics_if_requested(
 
 
 def update_object_model_from_layout(object_model_path: Path, layout: MarkerLayout) -> None:
+    """Apply solved marker layout keypoints to an object-model JSON file in place.
+
+    Args:
+        object_model_path: Object-model JSON to update.
+        layout: Solved marker layout with keypoint source positions.
+    """
     model, document = load_object_model_document(object_model_path)
     updated = apply_keypoint_sources_from_layout(model, document, layout)
     save_object_model_keypoints(object_model_path, updated, document)
@@ -804,6 +1026,15 @@ def update_object_model_from_layout(object_model_path: Path, layout: MarkerLayou
 
 
 def format_capture_mode(auto: bool, sample_rate_hz: float) -> str:
+    """Describe manual vs automatic capture for HUD and startup logs.
+
+    Args:
+        auto: Whether automatic periodic capture is enabled.
+        sample_rate_hz: Automatic capture rate when ``auto`` is true.
+
+    Returns:
+        Short capture-mode description string.
+    """
     if auto:
         return f"automatic at {sample_rate_hz:g} Hz"
     return "manual (press C)"
@@ -815,6 +1046,18 @@ def append_capture_observation(
     *,
     readiness_worker: LivePairReadinessWorker | None = None,
 ) -> FrameObservation:
+    """Append a captured frame observation and notify the readiness worker.
+
+    Corners are copied so later in-place frame edits cannot mutate stored samples.
+
+    Args:
+        observations: Growing list of captured frame observations.
+        visible: Detected marker corners for this capture.
+        readiness_worker: Optional worker to recompute pair readiness.
+
+    Returns:
+        The newly appended ``FrameObservation``.
+    """
     observation = FrameObservation(
         frame_id=len(observations),
         markers={marker_id: corners.copy() for marker_id, corners in visible.items()},
@@ -840,6 +1083,25 @@ def solve_calibration_from_observations(
     partial_output: bool,
     solve_diagnostics: CalibrationSolveDiagnostics | None = None,
 ) -> CalibrationResult:
+    """Run marker-layout calibration on captured observations via library solver.
+
+    Args:
+        observations: Captured frame observations to solve from.
+        args: Parsed CLI namespace (reference ID, marker size, flags).
+        camera_matrix: Camera intrinsics matrix.
+        dist_coeffs: Distortion coefficients.
+        expected_ids: Expected marker IDs for the layout.
+        marker_sizes_m: Per-marker physical edge lengths.
+        settings: Quality gates and pair-inlier thresholds.
+        anchor_ids: Optional anchor-core marker subset.
+        anchor_stop_after_expansion: Stop after hierarchical expansion without full BA.
+        best_effort: Allow provisional output when strict gates fail.
+        partial_output: Allow reference-connected partial layout output.
+        solve_diagnostics: Optional container for per-stage solve timings.
+
+    Returns:
+        ``CalibrationResult`` from ``calibrate_marker_layout``.
+    """
     return calibrate_marker_layout(
         observations,
         camera_matrix,
@@ -863,7 +1125,19 @@ def apply_calibration_result(
     *,
     benchmark: Mapping[str, Any] | None = None,
 ) -> bool:
-    """Write outputs for a calibration result. Returns True when the model was saved."""
+    """Write outputs for a calibration result.
+
+    Args:
+        args: Parsed CLI namespace with output paths and flags.
+        result: Calibration solve result.
+        benchmark: Optional benchmark metadata for diagnostics export.
+
+    Returns:
+        True when the marker model was saved; False on refusal.
+
+    Raises:
+        RuntimeError: Marker model saved but object-model update failed.
+    """
     if result.layout is None:
         print_refusal(result)
         try:
@@ -898,16 +1172,33 @@ def apply_calibration_result(
 
 
 def _frame_sharpness_score(frame: np.ndarray) -> float:
-    """Relative sharpness via downsampled grayscale Laplacian variance (OpenCV)."""
+    """Score frame sharpness via downsampled grayscale Laplacian variance.
+
+    Args:
+        frame: BGR or grayscale image frame.
+
+    Returns:
+        Relative sharpness score (higher is sharper).
+    """
     gray = frame if frame.ndim == 2 else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    # ponytail: fixed 1/4 scale is enough to rank frames within one clip; bump scale if needed.
     small = cv2.resize(gray, (0, 0), fx=0.25, fy=0.25, interpolation=cv2.INTER_AREA)
     laplacian = cv2.Laplacian(small, cv2.CV_64F)
     return float(laplacian.var())
 
 
 def _benchmark_window_index(video_time: float, sample_interval: float) -> int:
-    # Keep frames exactly on a decimal window boundary out of the preceding window.
+    """Map video time to a sample window index.
+
+    Uses a tiny epsilon so frames exactly on a window boundary belong to the
+    following window, matching uniform sampling semantics.
+
+    Args:
+        video_time: Elapsed video time in seconds.
+        sample_interval: Window width in seconds (``1 / sample_rate_hz``).
+
+    Returns:
+        Zero-based window index for ``video_time``.
+    """
     return int(math.floor(video_time / sample_interval + 1e-12))
 
 
@@ -916,6 +1207,16 @@ def _benchmark_detect_on_frame(
     frame: np.ndarray,
     expected_id_set: set[int],
 ) -> tuple[dict[int, np.ndarray], int]:
+    """Detect expected markers on one frame and time the detection pass.
+
+    Args:
+        detector: OpenCV ArUco/AprilTag detector.
+        frame: Image frame to detect on.
+        expected_id_set: Marker IDs to retain.
+
+    Returns:
+        Tuple of detected corners map and detection elapsed time in nanoseconds.
+    """
     detection_start_ns = time.perf_counter_ns()
     visible = detect_expected_markers(detector, frame, expected_id_set)
     return visible, time.perf_counter_ns() - detection_start_ns
@@ -930,6 +1231,20 @@ def _record_benchmark_detection(
     covisible_frames: int,
     detected_markers: int,
 ) -> tuple[int, int, int, int]:
+    """Update benchmark counters and append an observation when >=2 markers co-visible.
+
+    Args:
+        visible: Detected marker corners for this detection invocation.
+        observations: Observation list to append to when co-visible.
+        detector_invocations: Running detector call count.
+        frames_with_expected_markers: Frames with at least one expected marker.
+        covisible_frames: Frames with two or more co-visible markers.
+        detected_markers: Total marker detections across invocations.
+
+    Returns:
+        Updated ``(detector_invocations, frames_with_expected_markers,
+        covisible_frames, detected_markers)`` counters.
+    """
     detector_invocations += 1
     detected_markers += len(visible)
     if visible:
@@ -946,6 +1261,14 @@ def _record_benchmark_detection(
 
 
 def _timing_seconds_from_ns(duration_ns: int) -> float:
+    """Convert a non-negative nanosecond duration to seconds for benchmark reporting.
+
+    Args:
+        duration_ns: Elapsed time in nanoseconds.
+
+    Returns:
+        Duration in seconds; non-finite input yields ``0.0``.
+    """
     seconds = max(0.0, duration_ns / 1_000_000_000)
     if not math.isfinite(seconds):
         return 0.0
@@ -953,6 +1276,11 @@ def _timing_seconds_from_ns(duration_ns: int) -> float:
 
 
 def _benchmark_environment() -> dict[str, str]:
+    """Collect runtime library versions embedded in benchmark diagnostics JSON.
+
+    Returns:
+        Map of library and platform version strings.
+    """
     import scipy
 
     return {
@@ -987,6 +1315,33 @@ def _build_benchmark_payload(
     frame_selection: str = DEFAULT_BENCHMARK_FRAME_SELECTION,
     sharpness_scoring_ns: int | None = None,
 ) -> dict[str, Any]:
+    """Assemble benchmark timing, throughput, and environment metadata for diagnostics export.
+
+    Args:
+        source_path: Video file path used for the benchmark.
+        reported_fps: FPS from video metadata.
+        reported_frame_count: Frame count from video metadata.
+        image_size: ``(width, height)`` of decoded frames.
+        decoded_frames: Total frames decoded from the video.
+        detector_invocations: Number of detection passes executed.
+        frames_skipped_before_detection: Frames decoded but not sent to the detector.
+        frames_with_expected_markers: Frames where at least one expected marker was found.
+        covisible_frames: Frames with two or more co-visible expected markers.
+        sampled_observations: Observations appended for calibration.
+        detected_markers: Total marker detections across invocations.
+        open_source_ns: Time to open the video source.
+        decode_ns: Total frame decode time.
+        detection_ns: Total AprilTag detection time.
+        ingest_total_ns: End-to-end ingest time through last decoded frame.
+        calibration_solve_ns: Marker-layout solve time.
+        total_through_solve_ns: Total benchmark time through solve completion.
+        solve_diagnostics: Optional per-stage solve timing container.
+        frame_selection: ``uniform`` or ``sharpest`` frame-selection mode.
+        sharpness_scoring_ns: Total sharpness scoring time for ``sharpest`` mode.
+
+    Returns:
+        Benchmark metadata dict for ``--diagnostics-output`` JSON export.
+    """
     ingest_seconds = _timing_seconds_from_ns(ingest_total_ns)
     detection_seconds = _timing_seconds_from_ns(detection_ns)
     pipeline_fps = decoded_frames / ingest_seconds if ingest_seconds > 0.0 else 0.0
@@ -1040,7 +1395,17 @@ def _build_benchmark_payload(
 
 
 def run_benchmark(args: argparse.Namespace) -> bool:
-    """Benchmark video ingest and calibration; return True when a model was saved."""
+    """Benchmark video ingest and calibration on a headless video pass.
+
+    Args:
+        args: Parsed CLI namespace; requires video ``--source`` and ``--benchmark``.
+
+    Returns:
+        True when a marker model was saved.
+
+    Raises:
+        RuntimeError: Invalid benchmark configuration or video metadata.
+    """
     if not isinstance(args.source, Path):
         raise RuntimeError("--benchmark requires a video file --source, not a camera index.")
 
@@ -1118,6 +1483,12 @@ def run_benchmark(args: argparse.Namespace) -> bool:
             window_frame_count = 0
 
             def flush_sharpest_window() -> None:
+                """Detect on the sharpest frame in the closed window and reset window state.
+
+                Updates benchmark detection counters and appends an observation when at
+                least two expected markers are co-visible. Resets per-window best-frame
+                tracking.
+                """
                 nonlocal best_frame, best_sharpness, window_frame_count
                 nonlocal detector_invocations, frames_skipped_before_detection
                 nonlocal frames_with_expected_markers, covisible_frames, detected_markers
@@ -1271,7 +1642,17 @@ def run_benchmark(args: argparse.Namespace) -> bool:
 
 
 def run_capture(args: argparse.Namespace) -> bool:
-    """Capture live samples; return True when a model was saved."""
+    """Capture live samples from camera or looping video; solve on ``S``.
+
+    Args:
+        args: Parsed CLI namespace for capture and solve flags.
+
+    Returns:
+        True when a marker model was saved before quit.
+
+    Raises:
+        RuntimeError: Frame read failure from the configured source.
+    """
     (
         expected_ids,
         marker_sizes_m,
@@ -1424,6 +1805,11 @@ def run_capture(args: argparse.Namespace) -> bool:
 
 
 def main() -> None:
+    """CLI entry point: run headless benchmark or interactive capture mode.
+
+    Raises:
+        SystemExit: Exit code 1 after printing ``RuntimeError`` to stderr.
+    """
     try:
         args = parse_args()
         if _is_benchmark_mode(args):

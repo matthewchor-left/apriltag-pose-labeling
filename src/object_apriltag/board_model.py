@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import cv2
-import numpy as np
 
 ARUCO_DICTIONARIES: dict[str, int] = {
     "4x4_50": cv2.aruco.DICT_4X4_50,
@@ -30,15 +29,6 @@ BOARD_GEOMETRY_CLI_FLAGS = (
     "--square-size",
     "--dictionary",
 )
-
-# OpenCV ChArUco board frame: +X right, +Y down, +Z into the printed face.
-# Board Reference Frame: +X right, +Y out, +Z down — same origin (outer top-left).
-BOARD_REFERENCE_FROM_OPENCV = np.array(
-    [[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]],
-    dtype=np.float64,
-)
-OPENCV_FROM_BOARD_REFERENCE = BOARD_REFERENCE_FROM_OPENCV.T
-
 
 @dataclass(frozen=True)
 class BoardReferenceFrame:

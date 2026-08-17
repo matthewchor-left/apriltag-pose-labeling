@@ -44,6 +44,15 @@ from object_apriltag.marker_layout_calibration.types import (
 
 @dataclass
 class MarkerPoseHypothesis:
+    """Object-frame marker pose from a frame layout pose and one IPPE candidate.
+
+    Attributes:
+        rotation: Marker rotation in object frame, shape ``(3, 3)``.
+        translation: Marker translation in object frame, shape ``(3,)``.
+        frame_index: Observation frame index supporting this hypothesis.
+        candidate: Camera-frame IPPE candidate used to derive the pose.
+    """
+
     rotation: np.ndarray
     translation: np.ndarray
     frame_index: int
@@ -54,6 +63,17 @@ def filter_pair_hypotheses_to_markers(
     pair_hypotheses: dict[MarkerPair, list[tuple[np.ndarray, np.ndarray, int]]],
     marker_ids: frozenset[int],
 ) -> dict[MarkerPair, list[tuple[np.ndarray, np.ndarray, int]]]:
+    """Restrict pair hypotheses to edges inside a marker subset.
+
+    Args:
+        pair_hypotheses: Per-pair relative-transform hypotheses keyed by low-to-high
+            marker ID.
+        marker_ids: Marker IDs that must both be present on an edge.
+
+    Returns:
+        Filtered copy of ``pair_hypotheses`` containing only edges whose endpoints
+        lie in ``marker_ids``.
+    """
     return {
         pair: hypotheses
         for pair, hypotheses in pair_hypotheses.items()
@@ -67,6 +87,22 @@ def relative_pose_high_in_low(
     high_rotation: np.ndarray,
     high_translation: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
+    """Express the high marker pose in the low marker frame.
+
+    Args:
+        low_rotation: Low-marker rotation in the shared parent frame, shape ``(3, 3)``.
+        low_translation: Low-marker translation in the shared parent frame, shape ``(3,)``.
+        high_rotation: High-marker rotation in the shared parent frame, shape ``(3, 3)``.
+        high_translation: High-marker translation in the shared parent frame, shape ``(3,)``.
+
+    Returns:
+        Tuple ``(rotation, translation)`` mapping points from the low marker frame to
+        the high marker frame via ``p_high = rotation @ p_low + translation``.
+
+    Notes:
+        Parent frame is object frame for marker poses or camera frame for IPPE
+        candidates; both inputs must use the same parent.
+    """
     rotation = low_rotation.T @ high_rotation
     translation = low_rotation.T @ (high_translation - low_translation)
     return rotation, translation
@@ -79,6 +115,25 @@ def pair_consensus_from_assignment_hypotheses(
     *,
     marker_poses: dict[int, tuple[np.ndarray, np.ndarray]] | None = None,
 ) -> dict[MarkerPair, PairConsensus]:
+    """Build pair consensus from assignment hypotheses with pose fallback.
+
+    Args:
+        pair_hypotheses: Per-pair relative-transform hypotheses from assigned IPPE
+            candidates.
+        settings: Calibration gates for inlier count and pair RMS.
+        marker_sizes_m: Physical edge lengths keyed by marker ID.
+        marker_poses: Optional solved object-frame marker poses used when robust
+            consensus fails RMS gates.
+
+    Returns:
+        Pair consensus edges that pass gates, or pose-derived edges when robust
+        consensus is rejected but marker poses are available.
+
+    Notes:
+        Fallback edges reuse inlier frame sets from hypotheses but replace
+        rotation and translation with poses propagated through
+        ``relative_pose_high_in_low``.
+    """
     rotation_gate = settings.pair_rotation_rms_gate_deg
     consensus: dict[MarkerPair, PairConsensus] = {}
     for pair, hypotheses in pair_hypotheses.items():
@@ -128,6 +183,16 @@ def collect_assignment_pair_hypotheses(
     assigned_candidates: dict[int, dict[int, MarkerCandidate]],
     marker_ids: frozenset[int],
 ) -> dict[MarkerPair, list[tuple[np.ndarray, np.ndarray, int]]]:
+    """Collect per-frame pair hypotheses from frozen IPPE assignments.
+
+    Args:
+        assigned_candidates: Per-frame marker-to-IPPE-candidate assignments.
+        marker_ids: Marker IDs to include when forming co-visible pairs.
+
+    Returns:
+        Per-pair lists of ``(rotation_ba, translation_ba, frame_index)`` relative
+        transforms from low to high marker, one entry per co-visible frame.
+    """
     hypotheses: dict[MarkerPair, list[tuple[np.ndarray, np.ndarray, int]]] = {}
     for frame_index, assignment in assigned_candidates.items():
         visible = sorted(marker_id for marker_id in assignment if marker_id in marker_ids)
@@ -149,6 +214,20 @@ def marker_pose_from_frame_and_candidate(
     layout_translation: np.ndarray,
     candidate: MarkerCandidate,
 ) -> tuple[np.ndarray, np.ndarray]:
+    """Map a camera-frame IPPE candidate into the object frame.
+
+    Args:
+        layout_rotation: Object-to-camera layout rotation, shape ``(3, 3)``.
+        layout_translation: Object-to-camera layout translation, shape ``(3,)``.
+        candidate: Camera-frame IPPE pose for the marker.
+
+    Returns:
+        Tuple ``(rotation, translation)`` of the marker pose in the object frame.
+
+    Notes:
+        Layout pose maps object points to the camera; this applies the inverse
+        transform to the candidate camera-frame marker pose.
+    """
     marker_rotation = layout_rotation.T @ candidate.rotation
     marker_translation = layout_rotation.T @ (candidate.tvec.reshape(3) - layout_translation)
     return marker_rotation, marker_translation
@@ -159,6 +238,17 @@ def frame_pose_from_solved_assignment(
     marker_poses: dict[int, tuple[np.ndarray, np.ndarray]],
     solved_ids: frozenset[int],
 ) -> tuple[np.ndarray, np.ndarray] | None:
+    """Average layout pose from assignment candidates on solved markers.
+
+    Args:
+        assignment: Per-marker IPPE candidates for one frame.
+        marker_poses: Object-frame marker poses for solved markers.
+        solved_ids: Marker IDs treated as already solved in the expansion graph.
+
+    Returns:
+        Mean object-to-camera layout pose, or ``None`` when no solved markers
+        appear in the assignment.
+    """
     estimates: list[tuple[np.ndarray, np.ndarray]] = []
     for marker_id, candidate in assignment.items():
         if marker_id not in solved_ids or marker_id not in marker_poses:
@@ -177,6 +267,17 @@ def frame_pose_from_known_marker_candidates(
     marker_poses: dict[int, tuple[np.ndarray, np.ndarray]],
     solved_ids: frozenset[int],
 ) -> tuple[tuple[np.ndarray, np.ndarray], dict[int, MarkerCandidate]] | None:
+    """Infer layout pose from lowest-RMS IPPE picks on solved markers.
+
+    Args:
+        candidates: Per-marker IPPE candidate lists for one frame.
+        marker_poses: Object-frame marker poses for solved markers.
+        solved_ids: Marker IDs treated as already solved in the expansion graph.
+
+    Returns:
+        Tuple of mean layout pose and the selected low-RMS candidates per solved
+        marker, or ``None`` when no solved markers have candidates in the frame.
+    """
     selected: dict[int, MarkerCandidate] = {}
     estimates: list[tuple[np.ndarray, np.ndarray]] = []
     for marker_id in sorted(candidates):
@@ -207,6 +308,26 @@ def expand_markers_hierarchically(
     tuple[MarkerExpansionRecord, ...],
     frozenset[int],
 ]:
+    """Grow the solved marker set via hierarchical self-pair consensus.
+
+    Args:
+        frame_candidates: Per-frame IPPE candidate pools.
+        assigned_candidates: Current per-frame IPPE assignments.
+        marker_poses: Object-frame marker poses for markers already solved.
+        solved_ids: Marker IDs currently treated as solved (typically anchor core).
+        expected_ids: Full set of marker IDs targeted by calibration.
+        settings: Calibration gates for pair support and RMS.
+        marker_sizes_m: Physical edge lengths keyed by marker ID.
+
+    Returns:
+        Tuple of updated marker poses, updated assignments, expansion audit records,
+        and marker IDs still unresolved after hierarchical expansion.
+
+    Notes:
+        Each unsolved marker is tested with a synthetic self-pair
+        ``(marker_id, marker_id)`` built from layout poses inferred from solved
+        neighbors; accepted markers are added iteratively until no progress.
+    """
     rotation_gate = settings.pair_rotation_rms_gate_deg
     poses = dict(marker_poses)
     assignments = {
@@ -346,6 +467,16 @@ def freeze_assigned_frame_candidates(
     frame_candidates: list[tuple[int, dict[int, list[MarkerCandidate]]]],
     assigned_candidates: dict[int, dict[int, MarkerCandidate]],
 ) -> list[tuple[int, dict[int, list[MarkerCandidate]]]]:
+    """Freeze IPPE assignments to a single candidate per assigned marker.
+
+    Args:
+        frame_candidates: Per-frame IPPE candidate pools.
+        assigned_candidates: Per-frame marker-to-candidate assignments to freeze.
+
+    Returns:
+        Frames whose frozen candidate dict retains at least two markers; frames
+        with fewer than two assigned markers are dropped.
+    """
     frozen: list[tuple[int, dict[int, list[MarkerCandidate]]]] = []
     for frame_index, candidates in frame_candidates:
         assignment = assigned_candidates.get(frame_index)
@@ -389,6 +520,39 @@ def assign_and_initialize_anchor_core(
     AnchorCoreDiagnostics,
     str | None,
 ]:
+    """Run anchor-core bootstrap, mini-BA, expansion, and full-graph consensus.
+
+    Args:
+        frame_candidates: Per-frame IPPE candidate pools.
+        pair_hypotheses: Initial per-pair relative-transform hypotheses.
+        normalized_observations: Parsed corner observations indexed by frame.
+        expected_ids: Full set of marker IDs targeted by calibration.
+        anchor_ids: Marker IDs forming the anchor core subgraph.
+        reference_marker_id: Gauge reference marker fixed during mini bundle adjustment.
+        marker_sizes_m: Physical edge lengths keyed by marker ID.
+        settings: Calibration gates and optimizer settings.
+        object_points_by_marker: Object-frame corner coordinates per marker.
+        camera_matrix: Camera intrinsics matrix.
+        dist_coeffs: Camera distortion coefficients.
+        stop_after_expansion: When true, return after hierarchical expansion without
+            full-graph re-assignment.
+        best_effort: Allow weak-edge restoration and fallback IPPE assignment.
+        restored_pair_edges: Optional list extended with weak-edge restoration records.
+        solve_diagnostics: Optional collector for stage timings and optimizer runs.
+
+    Returns:
+        Tuple of assigned candidates (or ``None`` on early bootstrap failure),
+        rejected frame indices, assignment rejections, fallback assignments,
+        pair consensus (or ``None`` when expansion leaves unresolved markers),
+        marker poses (or ``None`` before pose initialization succeeds),
+        dropped pair-edge records, anchor-core diagnostics, and an optional
+        human-readable failure message.
+
+    Notes:
+        Mini bundle adjustment runs on anchor markers only; expansion propagates
+        poses along self-pair consensus before optional full-graph IPPE search
+        and consensus on frozen assignments.
+    """
     anchor_set = frozenset(anchor_ids)
     dropped_edges: list[DroppedPairEdge] = []
     anchor_hypotheses = filter_pair_hypotheses_to_markers(pair_hypotheses, anchor_set)

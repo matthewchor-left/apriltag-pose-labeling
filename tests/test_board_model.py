@@ -7,11 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import numpy as np
-
 from object_apriltag.board_model import (
-    BOARD_REFERENCE_FROM_OPENCV,
-    OPENCV_FROM_BOARD_REFERENCE,
     board_model_geometry_flags_provided,
     load_board_model,
 )
@@ -55,33 +51,6 @@ class BoardModelTests(unittest.TestCase):
                 load_board_model(path)
         finally:
             path.unlink()
-
-    def test_board_reference_frame_axis_mapping(self) -> None:
-        np.testing.assert_allclose(
-            BOARD_REFERENCE_FROM_OPENCV @ np.array([1.0, 0.0, 0.0]),
-            [1.0, 0.0, 0.0],
-            atol=1e-9,
-        )
-        np.testing.assert_allclose(
-            BOARD_REFERENCE_FROM_OPENCV @ np.array([0.0, 1.0, 0.0]),
-            [0.0, 0.0, 1.0],
-            atol=1e-9,
-        )
-        np.testing.assert_allclose(
-            BOARD_REFERENCE_FROM_OPENCV @ np.array([0.0, 0.0, 1.0]),
-            [0.0, -1.0, 0.0],
-            atol=1e-9,
-        )
-        np.testing.assert_allclose(
-            BOARD_REFERENCE_FROM_OPENCV @ OPENCV_FROM_BOARD_REFERENCE,
-            np.eye(3),
-            atol=1e-9,
-        )
-        self.assertAlmostEqual(np.linalg.det(BOARD_REFERENCE_FROM_OPENCV), 1.0)
-        x_axis = np.array([1.0, 0.0, 0.0])
-        y_axis = np.array([0.0, 1.0, 0.0])
-        z_axis = np.array([0.0, 0.0, 1.0])
-        np.testing.assert_allclose(np.cross(x_axis, y_axis), z_axis, atol=1e-9)
 
     def test_board_model_geometry_flag_detection(self) -> None:
         class Args:

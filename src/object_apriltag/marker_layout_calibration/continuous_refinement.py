@@ -105,6 +105,17 @@ class LayoutSolveState:
         inlier_mask: np.ndarray,
         pair_consensus: dict[MarkerPair, PairConsensus],
     ) -> LayoutSolveState:
+        """Return a copy with updated poses, inlier mask, and pair consensus.
+
+        Args:
+            marker_poses: Updated marker pose map.
+            frame_poses: Updated per-frame camera poses.
+            inlier_mask: Boolean mask over corner observations.
+            pair_consensus: Updated pair-edge consensus.
+
+        Returns:
+            New ``LayoutSolveState`` sharing the original corner observations.
+        """
         return LayoutSolveState(
             self.corner_observations,
             marker_poses,
@@ -114,6 +125,14 @@ class LayoutSolveState:
         )
 
     def checkpoint_snapshot(self, stage: OptimizationCheckpointStage) -> OptimizationCheckpoint:
+        """Deep-copy the current solve state tagged with an optimization stage.
+
+        Args:
+            stage: Optimization checkpoint stage label.
+
+        Returns:
+            Deep copy of marker poses, frame poses, inlier mask, and pair consensus.
+        """
         return OptimizationCheckpoint(
             stage=stage,
             marker_poses=copy_marker_poses(self.marker_poses),
@@ -160,10 +179,27 @@ class LayoutRefinementOutcome:
 
 class ContinuousLayoutRefinement:
     def __init__(self, context: LayoutRefinementContext) -> None:
+        """Store refinement context and initialize an empty checkpoint list.
+
+        Args:
+            context: Shared settings, diagnostics, and hook callbacks for refinement.
+        """
         self._ctx = context
         self._checkpoints: list[OptimizationCheckpoint] = []
 
     def run(self, state: LayoutSolveState) -> LayoutRefinementOutcome:
+        """Run initial BA, optional consensus refresh, pruning, and refit.
+
+        Records valid checkpoints after graph initialization, initial bundle
+        adjustment, and post-pruning refit. On stage failure, attempts
+        best-effort checkpoint recovery before refusing.
+
+        Args:
+            state: Initial solve state with corner observations and seed poses.
+
+        Returns:
+            Outcome with refined state, pruning drop records, or an early ``CalibrationResult``.
+        """
         ctx = self._ctx
         self._maybe_record_checkpoint(state, "graph_initialization")
 
@@ -232,6 +268,12 @@ class ContinuousLayoutRefinement:
         state: LayoutSolveState,
         stage: OptimizationCheckpointStage,
     ) -> None:
+        """Append a checkpoint when the current state passes completeness checks.
+
+        Args:
+            state: Solve state to snapshot.
+            stage: Optimization stage label for the checkpoint.
+        """
         checkpoint = state.checkpoint_snapshot(stage)
         if _is_valid_complete_checkpoint(
             checkpoint,
@@ -255,6 +297,25 @@ class ContinuousLayoutRefinement:
         accepted_frame_count: int,
         observation_count: int,
     ) -> LayoutRefinementOutcome:
+        """Build a refinement outcome after a stage failure.
+
+        Tries checkpoint recovery when ``best_effort`` is enabled; otherwise
+        returns a refused ``CalibrationResult`` with pair-quality diagnostics.
+
+        Args:
+            state: Solve state before the failed stage.
+            marker_poses: Marker poses at failure (may be partial optimizer output).
+            frame_poses: Frame poses at failure.
+            inlier_mask: Inlier mask at failure.
+            pair_consensus: Pair consensus at failure.
+            failed_stage: Optimization stage that failed.
+            failure_message: Human-readable failure reason.
+            accepted_frame_count: Frames still counted as accepted for quality reporting.
+            observation_count: Active corner observation count for quality reporting.
+
+        Returns:
+            Outcome carrying either a recovered provisional result or a refused ``CalibrationResult``.
+        """
         ctx = self._ctx
         recovered = self._maybe_recover_from_checkpoints(
             state.corner_observations,
@@ -297,6 +358,17 @@ class ContinuousLayoutRefinement:
         failed_stage: OptimizationCheckpointStage,
         dropped_pair_edges: tuple[DroppedPairEdge, ...],
     ) -> CalibrationResult | None:
+        """Return a provisional layout from the latest valid checkpoint, if any.
+
+        Args:
+            corner_observations: Corner observations used for quality reporting.
+            failed_stage: Optimization stage that triggered recovery.
+            dropped_pair_edges: Pair edges dropped before the failure.
+
+        Returns:
+            Provisional ``CalibrationResult`` when ``best_effort`` and a valid checkpoint exist;
+            otherwise ``None``.
+        """
         ctx = self._ctx
         if not ctx.best_effort:
             return None
@@ -338,6 +410,29 @@ def run_bundle_adjustment(
     np.ndarray,
     str | None,
 ]:
+    """Optimize marker and frame poses against inlier corner observations.
+
+    Fixes the reference marker gauge; only non-reference markers and active
+    frames are optimized via sparse Huber least squares.
+
+    Args:
+        corner_observations: Flattened corner observations for bundle adjustment.
+        inlier_mask: Boolean mask selecting active corner observations.
+        marker_poses: Seed marker poses in the object frame.
+        frame_poses: Seed per-frame camera poses.
+        reference_marker_id: Gauge-fixed reference marker ID.
+        non_reference_ids: Marker IDs optimized during bundle adjustment.
+        object_points_by_marker: Object-frame corner coordinates per marker.
+        camera_matrix: 3×3 camera intrinsics matrix.
+        dist_coeffs: Lens distortion coefficients.
+        settings: Calibration thresholds and optimizer options.
+        solve_diagnostics: Optional mutable container for per-stage timing and optimizer stats.
+        stage_name: Diagnostic label for this bundle-adjustment invocation.
+
+    Returns:
+        Tuple of updated marker poses, frame poses, inlier mask, and an error message.
+        The error message is ``None`` on success; on failure the poses may reflect a partial solve.
+    """
     active_frames = sorted(
         {
             observation.frame_index
@@ -380,6 +475,14 @@ def run_bundle_adjustment(
         profiler.residual_count = int(jac_sparsity.shape[0])
 
     def residuals(params: np.ndarray) -> np.ndarray:
+        """Evaluate robust corner residuals while recording optimizer callback timings.
+
+        Args:
+            params: Flattened marker and frame pose parameters.
+
+        Returns:
+            Stacked x/y corner residual vector for ``least_squares``.
+        """
         callback_start = time.perf_counter()
         if profiler is not None:
             profiler.residual_callback_invocations += 1
@@ -514,6 +617,28 @@ def recheck_pair_support(
     restored_pair_edges: list[RestoredPairEdge] | None = None,
     restore_weak_connectivity: WeakConnectivityRestore | None = None,
 ) -> tuple[dict[MarkerPair, PairConsensus], str | None, tuple[DroppedPairEdge, ...]]:
+    """Filter pair consensus to frames with sufficient complete-marker support.
+
+    Drops edges below ``min_inliers_per_edge``, optionally restores weak edges
+    for connectivity, and records ``DroppedPairEdge`` diagnostics.
+
+    Args:
+        pair_consensus: Pair-edge consensus before support filtering.
+        corner_observations: Flattened corner observations for completeness checks.
+        inlier_mask: Boolean mask selecting active corner observations.
+        expected_ids: Marker IDs expected to remain connected.
+        reference_marker_id: Gauge-fixed reference marker ID.
+        settings: Calibration thresholds including per-edge inlier quorum.
+        allowed_frames: Optional frame subset for support counting.
+        marker_sizes_m: Per-marker edge lengths for translation gates.
+        best_effort: Allow weak-edge restoration for connectivity.
+        restored_pair_edges: Mutable list recording restored weak edges.
+        restore_weak_connectivity: Callback to repair connectivity after pruning drops.
+
+    Returns:
+        Tuple of filtered consensus, connectivity failure message, and dropped-edge records.
+        The failure message is ``None`` when connectivity remains valid.
+    """
     from object_apriltag.marker_layout_calibration.types import DroppedPairEdge
 
     rotation_gate = settings.pair_rotation_rms_gate_deg
@@ -601,6 +726,18 @@ def _provisional_result_from_checkpoint(
     corner_observations: list[CornerObservation],
     dropped_pair_edges: tuple[DroppedPairEdge, ...],
 ) -> CalibrationResult:
+    """Emit a best-effort provisional layout from a saved optimization checkpoint.
+
+    Args:
+        checkpoint: Valid optimization checkpoint to emit.
+        failed_refinement_stage: Optimization stage that failed after the checkpoint.
+        context: Refinement context for quality reporting and layout assembly.
+        corner_observations: Corner observations for quality reporting.
+        dropped_pair_edges: Pair edges dropped before the failure.
+
+    Returns:
+        Provisional ``CalibrationResult`` with layout, quality report, and checkpoint metadata.
+    """
     from object_apriltag.marker_layout_calibration.types import CalibrationResult
 
     ctx = context
@@ -669,6 +806,20 @@ def _make_pruning_dropped_edge(
     rotation_gate: float,
     edge: PairConsensus | None = None,
 ) -> DroppedPairEdge:
+    """Build a ``DroppedPairEdge`` record for an under-supported pair after pruning.
+
+    Args:
+        pair: Marker pair endpoints.
+        observed_count: Frames where the edge was observed before filtering.
+        supported_count: Frames with complete-marker support after filtering.
+        required_count: Minimum supported frames required to keep the edge.
+        translation_gate: Translation RMS gate in meters used for diagnostics.
+        rotation_gate: Rotation RMS gate in degrees used for diagnostics.
+        edge: Optional consensus edge supplying measured RMS diagnostics.
+
+    Returns:
+        ``DroppedPairEdge`` tagged for the post-pruning stage.
+    """
     from object_apriltag.marker_layout_calibration.types import DroppedPairEdge
 
     translation_rms_m: float | None = None
@@ -700,6 +851,18 @@ def _is_valid_complete_checkpoint(
     corner_observations: Sequence[CornerObservation],
     object_points_by_marker: dict[int, np.ndarray],
 ) -> bool:
+    """Return whether a checkpoint covers all markers with finite, front-facing poses.
+
+    Args:
+        checkpoint: Optimization checkpoint to validate.
+        expected_ids: Marker IDs that must be present and connected.
+        reference_marker_id: Gauge-fixed reference marker ID for connectivity checks.
+        corner_observations: Corner observations for positive-depth validation.
+        object_points_by_marker: Object-frame corner coordinates per marker.
+
+    Returns:
+        ``True`` when the checkpoint is complete, connected, finite, and front-facing.
+    """
     if set(checkpoint.marker_poses) != set(expected_ids):
         return False
     connected = connected_marker_ids(checkpoint.pair_consensus, reference_marker_id)
@@ -724,6 +887,18 @@ def _latest_valid_optimization_checkpoint(
     corner_observations: Sequence[CornerObservation],
     object_points_by_marker: dict[int, np.ndarray],
 ) -> OptimizationCheckpoint | None:
+    """Return the most recent checkpoint that passes completeness validation.
+
+    Args:
+        checkpoints: Checkpoints recorded in chronological order.
+        expected_ids: Marker IDs that must be present and connected.
+        reference_marker_id: Gauge-fixed reference marker ID for connectivity checks.
+        corner_observations: Corner observations for positive-depth validation.
+        object_points_by_marker: Object-frame corner coordinates per marker.
+
+    Returns:
+        Latest valid checkpoint, or ``None`` when none pass validation.
+    """
     for checkpoint in reversed(checkpoints):
         if _is_valid_complete_checkpoint(
             checkpoint,
@@ -747,6 +922,17 @@ def _prune_and_refit(
     str | None,
     tuple[DroppedPairEdge, ...],
 ]:
+    """Drop corner outliers, recheck pair support, and run a second bundle adjustment.
+
+    Args:
+        state: Current solve state with poses, inliers, and pair consensus.
+        ctx: Refinement context with thresholds, hooks, and diagnostics.
+
+    Returns:
+        Tuple of updated marker poses, frame poses, inlier mask, pair consensus,
+        failure message, and dropped-edge records from support filtering.
+        The failure message is ``None`` on success.
+    """
     corner_observations = state.corner_observations
     marker_poses = state.marker_poses
     frame_poses = state.frame_poses
@@ -814,7 +1000,19 @@ def _evaluate_bundle_adjustment_residuals(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> tuple[np.ndarray, int, int, int]:
-    """Vectorized corner residuals; returns (residuals, projection_calls, projectpoints_invocations, batched_corners)."""
+    """Vectorized corner residuals for sparse bundle adjustment.
+
+    Args:
+        layout: Precomputed observation indexing for batched projection.
+        marker_state: Current marker poses keyed by marker ID.
+        frame_pose_list: Current per-frame camera poses.
+        camera_matrix: 3×3 camera intrinsics matrix.
+        dist_coeffs: Lens distortion coefficients.
+
+    Returns:
+        Tuple of flattened residuals, projection call count, ``projectPoints`` invocations,
+        and batched corner count (for optimizer profiling).
+    """
     observation_count = layout.observation_count
     if observation_count == 0:
         return np.empty(0, dtype=np.float64), 0, 0, 0
@@ -886,6 +1084,18 @@ def _build_jac_sparsity(
     active_frames: list[int],
     reference_marker_id: int,
 ) -> lil_matrix:
+    """Build a sparse Jacobian pattern for the corner bundle-adjustment parameterization.
+
+    Args:
+        corner_observations: Flattened corner observations.
+        inlier_mask: Boolean mask selecting active corner observations.
+        non_reference_ids: Marker IDs with free pose parameters.
+        active_frames: Frame indices with free camera poses.
+        reference_marker_id: Gauge-fixed reference marker ID (excluded from Jacobian columns).
+
+    Returns:
+        Sparse ``lil_matrix`` Jacobian sparsity pattern for ``least_squares``.
+    """
     marker_param_index = {marker_id: index for index, marker_id in enumerate(non_reference_ids)}
     frame_param_index = {frame_index: index for index, frame_index in enumerate(active_frames)}
     num_marker_params = 6 * len(non_reference_ids)
@@ -912,6 +1122,17 @@ def _pack_parameters(
     non_reference_ids: list[int],
     active_frames: list[int],
 ) -> np.ndarray:
+    """Flatten non-reference marker and active-frame poses into an optimization vector.
+
+    Args:
+        marker_poses: Marker poses keyed by marker ID.
+        frame_poses: Per-frame camera poses.
+        non_reference_ids: Marker IDs with free pose parameters.
+        active_frames: Frame indices with free camera poses.
+
+    Returns:
+        Rodrigues-vector parameter vector for ``least_squares``.
+    """
     values: list[float] = []
     for marker_id in non_reference_ids:
         rotation, translation = marker_poses[marker_id]
@@ -938,6 +1159,22 @@ def _unpack_parameters(
     active_frames: list[int],
     reference_marker_id: int,
 ) -> tuple[dict[int, tuple[np.ndarray, np.ndarray]], list[tuple[np.ndarray, np.ndarray] | None]]:
+    """Reconstruct marker and frame pose dicts from an optimization vector.
+
+    Args:
+        params: Rodrigues-vector parameter vector from the optimizer.
+        marker_poses: Seed marker poses; reference marker pose is copied unchanged.
+        frame_poses: Seed per-frame camera poses.
+        non_reference_ids: Marker IDs with free pose parameters.
+        active_frames: Frame indices with free camera poses.
+        reference_marker_id: Gauge-fixed reference marker ID.
+
+    Returns:
+        Tuple of updated marker pose map and per-frame camera pose list.
+
+    Notes:
+        The reference marker pose is copied unchanged from the input seed.
+    """
     marker_state = dict(marker_poses)
     offset = 0
     for marker_id in non_reference_ids:

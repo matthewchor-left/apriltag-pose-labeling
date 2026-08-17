@@ -107,7 +107,31 @@ def calibrate_marker_layout(
     partial_output: bool = False,
     solve_diagnostics: CalibrationSolveDiagnostics | None = None,
 ) -> CalibrationResult:
-    """Estimate a connected marker layout or refuse with a structured reason."""
+    """Run the full marker-layout calibration pipeline.
+
+    Validates inputs, builds per-frame IPPE candidates, establishes pair
+    consensus (legacy path or anchor-core expansion), and refines poses via
+    continuous bundle adjustment.
+
+    Args:
+        observations: Per-frame detected marker corner observations.
+        camera_matrix: 3×3 camera intrinsics matrix.
+        dist_coeffs: Lens distortion coefficients.
+        expected_marker_ids: Marker IDs expected in the layout.
+        reference_marker_id: Gauge-fixed reference marker ID.
+        marker_size_m: Default physical marker edge length in meters.
+        settings: Calibration thresholds and optimizer options; defaults apply if omitted.
+        anchor_marker_ids: Strict subset activates anchor-core bootstrap; all expected IDs use legacy path.
+        anchor_stop_after_expansion: Return after anchor expansion without continuous refinement.
+        marker_sizes_m: Per-marker edge lengths; uniform default when omitted.
+        best_effort: Relax connectivity and enable checkpoint recovery on refinement failure.
+        partial_output: Emit partial layouts for disconnected markers; requires ``best_effort``.
+        solve_diagnostics: Optional mutable container for per-stage timing and optimizer stats.
+
+    Returns:
+        ``CalibrationResult`` with layout, quality report, and outcome metadata on success,
+        refusal, partial, or provisional paths.
+    """
     if partial_output and not best_effort:
         return CalibrationResult(
             None,
@@ -897,6 +921,48 @@ def _run_continuous_refinement(
     accepted_frame_count: int,
     anchor_core_diagnostics: AnchorCoreDiagnostics | None = None,
 ) -> CalibrationResult:
+    """Run continuous refinement and finalize into a ``CalibrationResult``.
+
+    Invokes ``ContinuousLayoutRefinement``, builds the quality report, applies
+    quality gates, and emits full, partial, or refused outcomes per policy flags.
+
+    Args:
+        refinement_context: Settings, diagnostics, and hooks for continuous refinement.
+        corner_observations: Flattened corner observations for bundle adjustment.
+        marker_poses: Seed marker poses in the object frame.
+        frame_poses: Seed per-frame camera poses.
+        inlier_mask: Boolean mask selecting active corner observations.
+        pair_consensus: Pair-edge consensus after discrete graph solving.
+        dropped_edges: Mutable list of dropped pair edges; refinement pruning drops are appended.
+        observations: Original frame observations for partial-output emission.
+        camera_matrix: 3×3 camera intrinsics matrix.
+        dist_coeffs: Lens distortion coefficients.
+        requested_marker_ids: Marker IDs requested before best-effort omissions.
+        omitted_markers: Markers already omitted with reason codes.
+        reference_marker_id: Gauge-fixed reference marker ID.
+        marker_size_m: Default physical marker edge length in meters.
+        marker_sizes_m: Per-marker edge lengths.
+        settings: Calibration thresholds and optimizer options.
+        best_effort: Relax connectivity and enable provisional checkpoint recovery.
+        partial_output: Emit partial layouts for markers disconnected after pruning.
+        expected_ids: Marker IDs still expected after upstream omissions.
+        object_points_by_marker: Object-frame corner coordinates per marker.
+        assignment_rejection_summary: Aggregated IPPE assignment rejection counts.
+        assignment_rejection_records: Per-frame assignment rejection detail.
+        serialized_fallback_records: Per-frame fallback assignment detail.
+        restored_pair_edges: Weak edges restored during discrete graph solving.
+        anchor_ids: Anchor marker IDs when anchor-core mode was used.
+        input_frame_count: Total input frames before rejection.
+        rejected_frame_count: Frames rejected during assignment.
+        accepted_frame_count: Frames accepted into bundle adjustment.
+        anchor_core_diagnostics: Anchor-core expansion diagnostics when applicable.
+
+    Returns:
+        Final ``CalibrationResult`` after refinement, quality gating, and optional partial wrapping.
+
+    Notes:
+        Pruning drops from refinement are merged into ``dropped_edges``.
+    """
     refinement_outcome = ContinuousLayoutRefinement(refinement_context).run(
         LayoutSolveState(
             corner_observations=corner_observations,
@@ -1017,12 +1083,55 @@ def build_layout_refinement_context(
     anchor_marker_ids: Sequence[int] | None = None,
     solve_diagnostics: CalibrationSolveDiagnostics | None = None,
 ) -> LayoutRefinementContext:
+    """Assemble ``LayoutRefinementContext`` for the continuous refinement stage.
+
+    Bundles assignment diagnostics, optional anchor-core pair-consensus refresh
+    hooks, and weak-connectivity restore callbacks used after discrete graph solving.
+
+    Args:
+        reference_marker_id: Gauge-fixed reference marker ID.
+        non_reference_ids: Marker IDs optimized during bundle adjustment.
+        expected_ids: Full set of marker IDs still expected in the layout.
+        accepted_frames: Frame indices accepted after IPPE assignment.
+        object_points_by_marker: Object-frame corner coordinates per marker.
+        camera_matrix: 3×3 camera intrinsics matrix.
+        dist_coeffs: Lens distortion coefficients.
+        settings: Calibration thresholds and optimizer options.
+        marker_sizes_m: Per-marker edge lengths.
+        marker_size_m: Default physical marker edge length in meters.
+        best_effort: Relax connectivity and enable checkpoint recovery.
+        restored_pair_edges: Weak edges restored during discrete graph solving.
+        input_frame_count: Total input frames before rejection.
+        rejected_frame_count: Frames rejected during assignment.
+        accepted_frame_count: Frames accepted into bundle adjustment.
+        assignment_rejection_summary: Aggregated IPPE assignment rejection counts.
+        assignment_rejection_records: Per-frame assignment rejection detail.
+        fallback_assignment_records: Per-frame fallback assignment detail.
+        dropped_edges: Mutable list accumulating dropped pair edges.
+        anchor_core_diagnostics: Anchor-core expansion diagnostics when applicable.
+        frame_candidates: Per-frame IPPE candidates for anchor-core refresh hook.
+        assigned_candidates: Frozen anchor assignments for consensus refresh hook.
+        anchor_marker_ids: Anchor marker IDs when anchor-core mode was used.
+        solve_diagnostics: Optional mutable container for per-stage timing and optimizer stats.
+
+    Returns:
+        Context object consumed by ``ContinuousLayoutRefinement``.
+    """
     from object_apriltag.marker_layout_calibration.solve_primitives import MarkerCandidate, MarkerPair, PairConsensus
 
     def refresh_pair_consensus_after_initial_ba(
         pair_consensus: dict[MarkerPair, PairConsensus],
         marker_poses: dict[int, tuple[np.ndarray, np.ndarray]],
     ) -> dict[MarkerPair, PairConsensus]:
+        """Re-estimate pair consensus from frozen anchor assignments after initial BA.
+
+        Args:
+            pair_consensus: Current pair consensus before refresh.
+            marker_poses: Marker poses after initial bundle adjustment.
+
+        Returns:
+            Refreshed pair consensus, or the input when anchor hooks are inactive.
+        """
         if frame_candidates is None or assigned_candidates is None:
             return pair_consensus
         frozen_frames = freeze_assigned_frame_candidates(frame_candidates, assigned_candidates)
@@ -1172,6 +1281,7 @@ def _self_check() -> None:
 
 
 def _input_boundary_self_check() -> None:
+    """Assert validation failures for malformed or duplicate input observations."""
     camera_matrix = np.array(
         [[900.0, 0.0, 320.0], [0.0, 900.0, 240.0], [0.0, 0.0, 1.0]],
         dtype=np.float64,

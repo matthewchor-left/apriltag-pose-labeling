@@ -8,17 +8,9 @@ from unittest import mock
 
 import numpy as np
 
-from object_apriltag.board_model import load_board_model
-from object_apriltag.board_pose import BoardPoseEstimate
 from object_apriltag.detector import ObjectPose
 from object_apriltag.layout import load_marker_model
-from object_apriltag.viz.board_frame import (
-    axis_segments_board,
-    draw_board_axes,
-    draw_projected_polyline,
-)
 from object_apriltag.viz.overlay import (
-    draw_board_coordinate_preview,
     draw_object_orientation,
     draw_object_pose,
     draw_racket_keypoints,
@@ -31,10 +23,6 @@ REMOTE1_MARKER_MODEL_PATH = (
 )
 REMOTE1_OBJECT_MODEL_PATH = (
     Path(__file__).resolve().parents[1] / "config/Model/remote1/object_model.json"
-)
-DEFAULT_BOARD_MODEL_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "config/Board/charuco_h11_w8_25mm_4x4_50/board_model.json"
 )
 
 HUGE_FINITE = 3.0e9
@@ -72,31 +60,6 @@ class OpenCvImagePointTests(unittest.TestCase):
 
     def test_rejects_rounding_past_int32_max(self) -> None:
         self.assertIsNone(opencv_image_point((INT32_MAX + 0.6, 0.0)))
-
-
-class BoardCoordinatePreviewTests(unittest.TestCase):
-    def test_draws_board_point_at_its_projected_pixel(self) -> None:
-        frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        camera_matrix, dist_coeffs = synthetic_camera()
-        board_pose = BoardPoseEstimate(
-            rotation=np.eye(3, dtype=np.float64),
-            origin=np.array([0.0, 0.0, 1.0], dtype=np.float64),
-            reprojection_rms_px=0.0,
-            detected_intersections=10,
-            total_intersections=40,
-        )
-
-        with mock.patch("object_apriltag.viz.overlay.cv2.drawMarker") as marker_mock:
-            draw_board_coordinate_preview(
-                frame,
-                np.zeros(3, dtype=np.float64),
-                board_pose,
-                camera_matrix,
-                dist_coeffs,
-                label="tip target",
-            )
-
-        self.assertEqual(marker_mock.call_args.args[1], (320, 240))
 
 
 class DrawRacketKeypointsSafetyTests(unittest.TestCase):
@@ -294,103 +257,6 @@ class ObjectAxisImagePointsSafetyTests(unittest.TestCase):
                 self.dist_coeffs,
                 axis_length_m=0.5,
             )
-
-
-class BoardFrameProjectionSafetyTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.camera_matrix, self.dist_coeffs = synthetic_camera()
-        self.board_model = load_board_model(DEFAULT_BOARD_MODEL_PATH)
-        self.pose = BoardPoseEstimate(
-            rotation=np.eye(3, dtype=np.float64),
-            origin=np.array([0.0, 0.0, 0.5], dtype=np.float64),
-            reprojection_rms_px=0.0,
-            detected_intersections=10,
-            total_intersections=40,
-        )
-
-    def test_draw_projected_polyline_skips_unsafe_coordinates(self) -> None:
-        frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        unsafe_points = np.array(
-            [[100.0, 100.0], [HUGE_FINITE, 100.0], [200.0, 200.0]],
-            dtype=np.float64,
-        )
-
-        with mock.patch("object_apriltag.viz.board_frame.cv2.polylines") as polyline_mock:
-            draw_projected_polyline(frame, unsafe_points, (255, 255, 255), thickness=1)
-
-        polyline_mock.assert_not_called()
-
-    def test_draw_board_axes_skips_unsafe_axis_polylines_and_labels(self) -> None:
-        frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        unsafe_pose = BoardPoseEstimate(
-            rotation=np.eye(3, dtype=np.float64),
-            origin=np.array([0.0, 0.0, 1e-8], dtype=np.float64),
-            reprojection_rms_px=0.0,
-            detected_intersections=10,
-            total_intersections=40,
-        )
-
-        with (
-            mock.patch("object_apriltag.viz.board_frame.cv2.polylines") as polyline_mock,
-            mock.patch("object_apriltag.viz.board_frame.cv2.putText") as text_mock,
-            mock.patch("object_apriltag.viz.board_frame.cv2.circle") as circle_mock,
-        ):
-            draw_board_axes(
-                frame,
-                unsafe_pose,
-                self.board_model,
-                self.camera_matrix,
-                self.dist_coeffs,
-                axis_length_squares=2.0,
-            )
-
-        self.assertEqual(polyline_mock.call_count, 1)
-        self.assertEqual(text_mock.call_count, 1)
-        self.assertEqual(text_mock.call_args.args[1], "Z")
-        circle_mock.assert_not_called()
-
-        for call in polyline_mock.call_args_list:
-            pixels = call.args[1][0]
-            self.assertLessEqual(int(np.max(np.abs(pixels))), INT32_MAX)
-
-    def test_y_origin_fallback_skips_label_when_offset_overflows_int32(self) -> None:
-        frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        y_origin = np.array([float(INT32_MAX - 10), float(INT32_MAX - 4)], dtype=np.float64)
-        y_end = np.array([float(INT32_MAX - 10), float(INT32_MAX - 3)], dtype=np.float64)
-        x_segment = axis_segments_board(self.board_model, 2.0)["x"]
-
-        def fake_project_board_polyline(
-            segment_board: np.ndarray,
-            *_args: object,
-            **_kwargs: object,
-        ) -> np.ndarray:
-            if np.array_equal(segment_board, x_segment):
-                return np.array([[320.0, 240.0], [400.0, 240.0]], dtype=np.float64)
-            return np.stack([y_origin, y_end], axis=0)
-
-        with (
-            mock.patch(
-                "object_apriltag.viz.board_frame.project_board_polyline",
-                side_effect=fake_project_board_polyline,
-            ),
-            mock.patch("object_apriltag.viz.board_frame.cv2.polylines"),
-            mock.patch("object_apriltag.viz.board_frame.cv2.circle") as circle_mock,
-            mock.patch("object_apriltag.viz.board_frame.cv2.putText") as text_mock,
-        ):
-            draw_board_axes(
-                frame,
-                self.pose,
-                self.board_model,
-                self.camera_matrix,
-                self.dist_coeffs,
-                axis_length_squares=2.0,
-            )
-
-        self.assertEqual(circle_mock.call_count, 1)
-        y_label_calls = [call for call in text_mock.call_args_list if call.args[1] == "Y"]
-        self.assertEqual(len(y_label_calls), 1)
-        self.assertEqual(y_label_calls[0].args[2], (INT32_MAX - 10, INT32_MAX - 3))
-        assert_puttext_origins_int32_safe(text_mock)
 
 
 if __name__ == "__main__":

@@ -24,7 +24,6 @@ object-detect = "object_apriltag.cli.detect:main"
 object-calibrate-marker-model = "object_apriltag.cli.calibrate_marker_model:main"
 object-inspect-marker-model = "object_apriltag.cli.inspect_marker_model:main"
 object-charuco = "object_apriltag.cli.charuco:main"
-object-visualize-board-frame = "object_apriltag.cli.visualize_board_frame:main"
 object-projection = "object_apriltag.cli.projection:main"
 object-evaluate-marker-model = "object_apriltag.cli.evaluate_marker_model:main"
 

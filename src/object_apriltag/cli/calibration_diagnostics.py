@@ -32,12 +32,30 @@ CALIBRATION_DIAGNOSTICS_VERSION = 8
 
 
 def format_reprojection_rms_px(value: float) -> str:
+    """Format global reprojection RMS for console/HUD display.
+
+    Args:
+        value: Global reprojection RMS in pixels.
+
+    Returns:
+        Fixed-precision pixel string, or ``N/A`` when non-finite.
+    """
     if not np.isfinite(value):
         return "N/A"
     return f"{value:.3f} px"
 
 
 def _format_optional_float(value: float | None, *, precision: int = 3, suffix: str = "") -> str:
+    """Format a nullable float with fixed precision.
+
+    Args:
+        value: Float to format, or ``None`` when absent.
+        precision: Decimal places in the formatted string.
+        suffix: Optional unit suffix appended to the number.
+
+    Returns:
+        Formatted string, or ``N/A`` when missing or non-finite.
+    """
     if value is None or not np.isfinite(value):
         return "N/A"
     return f"{value:.{precision}f}{suffix}"
@@ -49,6 +67,16 @@ def _format_measurement_distribution(
     label: str,
     precision: int = 3,
 ) -> str | None:
+    """Render min/median/p95/max for a measurement distribution.
+
+    Args:
+        distribution: Optional measurement distribution to format.
+        label: Prefix label for the min/med/p95/max line.
+        precision: Decimal places for each statistic.
+
+    Returns:
+        Formatted distribution line, or ``None`` when ``distribution`` is absent.
+    """
     if distribution is None:
         return None
     return (
@@ -61,6 +89,14 @@ def _format_measurement_distribution(
 
 
 def format_assignment_rejection_cause_detail(cause: AssignmentRejectionCauseStats) -> str:
+    """One-line human summary of a grouped frame-assignment rejection cause.
+
+    Args:
+        cause: Grouped rejection statistics for one reason and optional marker pair.
+
+    Returns:
+        Single-line summary with counts, gates, and sample frame IDs.
+    """
     pair_text = ""
     if cause.marker_pair is not None:
         pair_text = f" pair=({cause.marker_pair[0]},{cause.marker_pair[1]})"
@@ -80,6 +116,14 @@ def format_assignment_rejection_cause_detail(cause: AssignmentRejectionCauseStat
 
 
 def format_dropped_pair_edge(edge: DroppedPairEdge) -> str:
+    """Summarize a marker pair removed during graph pruning or weak-edge filtering.
+
+    Args:
+        edge: Dropped pair edge diagnostic from the quality report.
+
+    Returns:
+        Single-line summary with stage, support counts, and RMS metrics.
+    """
     return " ".join(
         [
             f"dropped pair ({edge.marker_a},{edge.marker_b})",
@@ -96,6 +140,14 @@ def format_dropped_pair_edge(edge: DroppedPairEdge) -> str:
 
 
 def format_restored_pair_edge(edge: RestoredPairEdge) -> str:
+    """Summarize a previously dropped pair edge that weak-edge recovery reinstated.
+
+    Args:
+        edge: Restored pair edge diagnostic from the quality report.
+
+    Returns:
+        Single-line summary with original drop reason and support metrics.
+    """
     return " ".join(
         [
             f"restored pair ({edge.marker_a},{edge.marker_b})",
@@ -114,6 +166,14 @@ def format_restored_pair_edge(edge: RestoredPairEdge) -> str:
 
 
 def format_fallback_assignment_record(record: FrameFallbackAssignmentRecord) -> str:
+    """Summarize a per-frame pose assignment kept after primary assignment failed.
+
+    Args:
+        record: Fallback assignment record from the quality report.
+
+    Returns:
+        Single-line summary with frame ID, cost, and error metrics.
+    """
     pair_text = ""
     if record.marker_pair is not None:
         pair_text = f" pair=({record.marker_pair[0]},{record.marker_pair[1]})"
@@ -129,6 +189,14 @@ def format_fallback_assignment_record(record: FrameFallbackAssignmentRecord) -> 
 
 
 def format_anchor_core_lines(anchor_core: AnchorCoreDiagnostics) -> list[str]:
+    """Expand anchor-core bootstrap/expansion diagnostics into console-ready lines.
+
+    Args:
+        anchor_core: Anchor-core diagnostic block from the quality report.
+
+    Returns:
+        Ordered console lines for bootstrap, expansion steps, and unresolved IDs.
+    """
     lines = [
         f"anchor core mode={anchor_core.mode} anchors={list(anchor_core.configured_anchor_ids)}",
         (
@@ -156,18 +224,42 @@ def format_anchor_core_lines(anchor_core: AnchorCoreDiagnostics) -> list[str]:
 
 
 def format_omitted_marker_diagnostic(record: OmittedMarkerDiagnostic) -> str:
+    """Format one omitted-marker reason for console output.
+
+    Args:
+        record: Omitted-marker diagnostic entry.
+
+    Returns:
+        Single-line ``omitted marker`` summary.
+    """
     return f"omitted marker {record.marker_id}: {record.reason}"
 
 
 def format_omitted_marker_lines(
     omitted_markers: tuple[OmittedMarkerDiagnostic, ...] | None,
 ) -> list[str]:
+    """Return formatted omitted-marker lines.
+
+    Args:
+        omitted_markers: Omitted-marker diagnostics tuple, or legacy ``None`` value.
+
+    Returns:
+        Formatted lines; empty when ``omitted_markers`` is absent or not a tuple.
+    """
     if omitted_markers is None or not isinstance(omitted_markers, tuple):
         return []
     return [format_omitted_marker_diagnostic(record) for record in omitted_markers]
 
 
 def format_quality_diagnostics_lines(quality: CalibrationQualityReport) -> list[str]:
+    """Assemble post-solve quality, pair-edge, and assignment diagnostics for printing.
+
+    Args:
+        quality: Post-solve calibration quality report.
+
+    Returns:
+        Ordered console lines for reprojection, pair edges, rejections, and anchor core.
+    """
     lines = [
         f"reprojection RMS: {format_reprojection_rms_px(quality.reprojection_rms_px)}",
         f"inlier corners: {quality.inlier_corner_count}",
@@ -206,6 +298,14 @@ def format_quality_diagnostics_lines(quality: CalibrationQualityReport) -> list[
 
 
 def _json_safe_float(value: float | None) -> float | None:
+    """Return a finite float for JSON export.
+
+    Args:
+        value: Scalar to coerce, or ``None`` when absent.
+
+    Returns:
+        Finite float, or ``None`` for missing or non-finite values.
+    """
     if value is None:
         return None
     numeric = float(value)
@@ -215,6 +315,14 @@ def _json_safe_float(value: float | None) -> float | None:
 
 
 def _json_safe_benchmark_value(value: Any) -> Any:
+    """Recursively coerce benchmark metadata to JSON-serializable scalars and containers.
+
+    Args:
+        value: Benchmark metadata value or nested structure.
+
+    Returns:
+        JSON-safe scalar, list, or dict; unknown types are returned unchanged.
+    """
     if isinstance(value, Mapping):
         return {key: _json_safe_benchmark_value(item) for key, item in value.items()}
     if isinstance(value, list):
@@ -231,6 +339,14 @@ def _json_safe_benchmark_value(value: Any) -> Any:
 def _normalize_benchmark_payload(
     benchmark: Mapping[str, Any] | None,
 ) -> dict[str, Any] | None:
+    """Copy optional benchmark metadata through :func:`_json_safe_benchmark_value`.
+
+    Args:
+        benchmark: Optional benchmark metadata mapping from the CLI benchmark run.
+
+    Returns:
+        Sanitized benchmark dict, or ``None`` when ``benchmark`` is absent.
+    """
     if benchmark is None:
         return None
     return _json_safe_benchmark_value(dict(benchmark))
@@ -239,6 +355,14 @@ def _normalize_benchmark_payload(
 def _measurement_distribution_to_dict(
     distribution: MeasurementDistribution | None,
 ) -> dict[str, float | None] | None:
+    """Serialize a measurement distribution for the diagnostics JSON document.
+
+    Args:
+        distribution: Optional measurement distribution from rejection diagnostics.
+
+    Returns:
+        Dict with min/median/p95/max keys, or ``None`` when absent.
+    """
     if distribution is None:
         return None
     return {
@@ -250,6 +374,14 @@ def _measurement_distribution_to_dict(
 
 
 def _marker_pair_to_list(pair: tuple[int, int] | None) -> list[int] | None:
+    """Convert an optional marker-pair tuple to a JSON-friendly two-element list.
+
+    Args:
+        pair: Optional ``(marker_a, marker_b)`` tuple.
+
+    Returns:
+        Two-element marker ID list, or ``None`` when ``pair`` is absent.
+    """
     if pair is None:
         return None
     return [pair[0], pair[1]]
@@ -258,6 +390,14 @@ def _marker_pair_to_list(pair: tuple[int, int] | None) -> list[int] | None:
 def _assignment_rejection_cause_to_dict(
     cause: AssignmentRejectionCauseStats,
 ) -> dict[str, Any]:
+    """Serialize grouped assignment-rejection statistics for JSON export.
+
+    Args:
+        cause: Grouped rejection statistics for one reason and optional marker pair.
+
+    Returns:
+        JSON-serializable dict with counts, gates, and error distributions.
+    """
     return {
         "reason": cause.reason,
         "marker_pair": _marker_pair_to_list(cause.marker_pair),
@@ -275,6 +415,14 @@ def _assignment_rejection_cause_to_dict(
 def _assignment_rejection_summary_to_dict(
     summary: AssignmentRejectionSummary | None,
 ) -> dict[str, Any] | None:
+    """Serialize the assignment-rejection rollup attached to a quality report.
+
+    Args:
+        summary: Optional assignment-rejection summary from the quality report.
+
+    Returns:
+        JSON-serializable rollup dict, or ``None`` when absent.
+    """
     if summary is None:
         return None
     return {
@@ -296,6 +444,14 @@ def _assignment_rejection_summary_to_dict(
 def _assignment_rejection_record_to_dict(
     record: FrameAssignmentRejectionRecord,
 ) -> dict[str, Any]:
+    """Serialize one per-frame assignment rejection for JSON export.
+
+    Args:
+        record: Per-frame assignment rejection record.
+
+    Returns:
+        JSON-serializable dict with frame metadata and gate/error values.
+    """
     return {
         "frame_index": record.frame_index,
         "frame_id": record.frame_id,
@@ -310,6 +466,14 @@ def _assignment_rejection_record_to_dict(
 
 
 def _edge_diagnostics_to_dict(edge: EdgeDiagnostics) -> dict[str, Any]:
+    """Serialize pair-edge inlier and RMS metrics for JSON export.
+
+    Args:
+        edge: Pair-edge diagnostic from the quality report.
+
+    Returns:
+        JSON-serializable dict with inlier count and RMS metrics.
+    """
     return {
         "marker_a": edge.marker_a,
         "marker_b": edge.marker_b,
@@ -320,6 +484,14 @@ def _edge_diagnostics_to_dict(edge: EdgeDiagnostics) -> dict[str, Any]:
 
 
 def _dropped_pair_edge_to_dict(edge: DroppedPairEdge) -> dict[str, Any]:
+    """Serialize a dropped pair edge, including stage, support counts, and gates.
+
+    Args:
+        edge: Dropped pair edge diagnostic.
+
+    Returns:
+        JSON-serializable dict with stage, support counts, and RMS metrics.
+    """
     return {
         "marker_a": edge.marker_a,
         "marker_b": edge.marker_b,
@@ -336,6 +508,14 @@ def _dropped_pair_edge_to_dict(edge: DroppedPairEdge) -> dict[str, Any]:
 
 
 def _restored_pair_edge_to_dict(edge: RestoredPairEdge) -> dict[str, Any]:
+    """Serialize a restored pair edge, preserving the original drop reason and stage.
+
+    Args:
+        edge: Restored pair edge diagnostic.
+
+    Returns:
+        JSON-serializable dict with original drop metadata and support metrics.
+    """
     return {
         "marker_a": edge.marker_a,
         "marker_b": edge.marker_b,
@@ -354,6 +534,17 @@ def _restored_pair_edge_to_dict(edge: RestoredPairEdge) -> dict[str, Any]:
 
 
 def _quality_report_to_dict(quality: CalibrationQualityReport) -> dict[str, Any]:
+    """Serialize core quality metrics for the diagnostics JSON document.
+
+    Extended diagnostics (rejections, dropped edges, anchor core) are serialized
+    in sibling top-level keys of the full document.
+
+    Args:
+        quality: Post-solve calibration quality report.
+
+    Returns:
+        JSON-serializable dict with reprojection, edges, and frame counts.
+    """
     per_marker = {
         str(marker_id): _json_safe_float(value)
         for marker_id, value in sorted(quality.per_marker_reprojection_rms_px.items())
@@ -379,6 +570,14 @@ def _quality_report_to_dict(quality: CalibrationQualityReport) -> dict[str, Any]
 def _serialize_assignment_rejection_records(
     records: tuple[FrameAssignmentRejectionRecord, ...] | None,
 ) -> list[dict[str, Any]] | None:
+    """Serialize per-frame rejection records.
+
+    Args:
+        records: Optional per-frame rejection record tuple.
+
+    Returns:
+        List of serialized records, or ``None`` when diagnostics were not collected.
+    """
     if records is None:
         return None
     return [_assignment_rejection_record_to_dict(record) for record in records]
@@ -387,6 +586,14 @@ def _serialize_assignment_rejection_records(
 def _serialize_dropped_pair_edges(
     edges: tuple[DroppedPairEdge, ...] | None,
 ) -> list[dict[str, Any]] | None:
+    """Serialize dropped-pair edge diagnostics.
+
+    Args:
+        edges: Optional dropped-pair edge tuple from the quality report.
+
+    Returns:
+        List of serialized edges, or ``None`` when absent.
+    """
     if edges is None:
         return None
     return [_dropped_pair_edge_to_dict(edge) for edge in edges]
@@ -395,6 +602,14 @@ def _serialize_dropped_pair_edges(
 def _serialize_restored_pair_edges(
     edges: tuple[RestoredPairEdge, ...] | None,
 ) -> list[dict[str, Any]] | None:
+    """Serialize restored-pair edge diagnostics.
+
+    Args:
+        edges: Optional restored-pair edge tuple from the quality report.
+
+    Returns:
+        List of serialized edges, or ``None`` when absent.
+    """
     if edges is None:
         return None
     return [_restored_pair_edge_to_dict(edge) for edge in edges]
@@ -403,6 +618,14 @@ def _serialize_restored_pair_edges(
 def _fallback_assignment_record_to_dict(
     record: FrameFallbackAssignmentRecord,
 ) -> dict[str, Any]:
+    """Serialize one fallback assignment record for JSON export.
+
+    Args:
+        record: Fallback assignment record from the quality report.
+
+    Returns:
+        JSON-serializable dict with frame metadata and error metrics.
+    """
     return {
         "frame_index": record.frame_index,
         "frame_id": record.frame_id,
@@ -417,6 +640,14 @@ def _fallback_assignment_record_to_dict(
 def _serialize_fallback_assignment_records(
     records: tuple[FrameFallbackAssignmentRecord, ...] | None,
 ) -> list[dict[str, Any]] | None:
+    """Serialize fallback-assignment records.
+
+    Args:
+        records: Optional fallback-assignment record tuple.
+
+    Returns:
+        List of serialized records, or ``None`` when absent.
+    """
     if records is None:
         return None
     return [_fallback_assignment_record_to_dict(record) for record in records]
@@ -425,6 +656,14 @@ def _serialize_fallback_assignment_records(
 def _anchor_core_bootstrap_to_dict(
     bootstrap: AnchorCoreBootstrapDiagnostics,
 ) -> dict[str, Any]:
+    """Serialize anchor-core bootstrap acceptance counts and failure reason.
+
+    Args:
+        bootstrap: Anchor-core bootstrap diagnostic block.
+
+    Returns:
+        JSON-serializable dict with status and frame acceptance counts.
+    """
     return {
         "status": bootstrap.status,
         "frames_considered": bootstrap.frames_considered,
@@ -434,6 +673,14 @@ def _anchor_core_bootstrap_to_dict(
 
 
 def _marker_expansion_record_to_dict(record: MarkerExpansionRecord) -> dict[str, Any]:
+    """Serialize one hierarchical marker-expansion step for JSON export.
+
+    Args:
+        record: Marker expansion step from anchor-core diagnostics.
+
+    Returns:
+        JSON-serializable dict with marker ID, status, and support frames.
+    """
     return {
         "marker_id": record.marker_id,
         "status": record.status,
@@ -444,6 +691,14 @@ def _marker_expansion_record_to_dict(record: MarkerExpansionRecord) -> dict[str,
 
 
 def _anchor_core_to_dict(anchor_core: AnchorCoreDiagnostics | None) -> dict[str, Any] | None:
+    """Serialize anchor-core diagnostics.
+
+    Args:
+        anchor_core: Optional anchor-core diagnostic block from the quality report.
+
+    Returns:
+        JSON-serializable anchor-core dict, or ``None`` when anchor mode was not used.
+    """
     if anchor_core is None:
         return None
     return {
@@ -460,6 +715,14 @@ def _anchor_core_to_dict(anchor_core: AnchorCoreDiagnostics | None) -> dict[str,
 
 
 def _omitted_marker_to_dict(record: OmittedMarkerDiagnostic) -> dict[str, Any]:
+    """Serialize one omitted-marker diagnostic entry.
+
+    Args:
+        record: Omitted-marker diagnostic entry.
+
+    Returns:
+        JSON-serializable dict with marker ID and omission reason.
+    """
     return {
         "marker_id": record.marker_id,
         "reason": record.reason,
@@ -480,6 +743,30 @@ def build_calibration_diagnostics_document(
     partial_output: bool = False,
     benchmark: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Build the versioned calibration diagnostics document for ``--diagnostics-output``.
+
+    Combines solve outcome metadata with the quality report and optional benchmark
+    payload.
+
+    Args:
+        quality: Post-solve calibration quality report.
+        succeeded: Whether a marker layout was produced without failure reason.
+        failure_reason: Refusal or partial-outcome reason when solve did not fully succeed.
+        calibration_policy: Strict vs best-effort policy label.
+        outcome: Solve outcome label (e.g. ``strict``, ``partial``, ``provisional``).
+        failed_quality_gates: Quality gates that failed on best-effort output.
+        selected_checkpoint_stage: Optimization checkpoint used for provisional output.
+        failed_refinement_stage: Refinement stage that failed before checkpoint export.
+        omitted_markers: Markers omitted from the saved layout.
+        partial_output: Whether a reference-connected partial layout was written.
+        benchmark: Optional benchmark timing metadata from a headless video run.
+
+    Returns:
+        Versioned diagnostics document dict ready for JSON serialization.
+
+    Notes:
+        Pure data assembly; no filesystem or console side effects.
+    """
     return {
         "version": CALIBRATION_DIAGNOSTICS_VERSION,
         "benchmark": _normalize_benchmark_payload(benchmark),
@@ -509,6 +796,17 @@ def build_calibration_diagnostics_document(
 
 
 def serialize_calibration_diagnostics_document(document: dict[str, Any]) -> str:
+    """Serialize a diagnostics document to indented JSON with a trailing newline.
+
+    Args:
+        document: Versioned calibration diagnostics document dict.
+
+    Returns:
+        Indented JSON text with trailing newline.
+
+    Notes:
+        Uses ``allow_nan=False``; non-finite floats must be sanitized beforehand.
+    """
     return json.dumps(document, indent=2, allow_nan=False) + "\n"
 
 
@@ -519,6 +817,24 @@ def save_calibration_diagnostics(
     serialize_fn: Callable[[dict[str, Any]], str] | None = None,
     benchmark: Mapping[str, Any] | None = None,
 ) -> Path:
+    """Write diagnostics JSON atomically from a :class:`CalibrationResult`.
+
+    Args:
+        path: Output JSON path; parent directories are created as needed.
+        result: Calibration result containing the quality report.
+        serialize_fn: Optional serializer; defaults to
+            :func:`serialize_calibration_diagnostics_document`.
+        benchmark: Optional benchmark timing metadata to embed in the document.
+
+    Returns:
+        Resolved output path after the atomic write completes.
+
+    Raises:
+        RuntimeError: ``result.quality`` is missing, or serialization/write fails.
+
+    Notes:
+        Writes via a temp file and ``os.replace`` so readers never see a partial file.
+    """
     if result.quality is None:
         raise RuntimeError("Cannot write calibration diagnostics without a quality report.")
     path = Path(path)

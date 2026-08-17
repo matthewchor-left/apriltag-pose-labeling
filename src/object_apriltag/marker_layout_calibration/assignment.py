@@ -37,6 +37,14 @@ from object_apriltag.marker_layout_calibration.types import (
 
 
 def json_safe_float(value: float | None) -> float | None:
+    """Convert a float to a JSON-safe finite value.
+
+    Args:
+        value: Input scalar or ``None``.
+
+    Returns:
+        Finite ``float`` value, or ``None`` when input is missing or non-finite.
+    """
     if value is None:
         return None
     numeric = float(value)
@@ -46,6 +54,15 @@ def json_safe_float(value: float | None) -> float | None:
 
 
 def measurement_distribution(values: Sequence[float]) -> MeasurementDistribution | None:
+    """Summarize finite measurement samples.
+
+    Args:
+        values: Scalar samples to summarize.
+
+    Returns:
+        Min, median, p95, and max over finite values, or ``None`` when no finite
+        samples exist.
+    """
     if not values:
         return None
     array = np.asarray(values, dtype=np.float64)
@@ -75,6 +92,21 @@ def assign_ippe_candidates(
     tuple[FrameAssignmentRejection, ...],
     tuple[FrameFallbackAssignment, ...],
 ]:
+    """Assign per-frame IPPE candidates against pair-consensus constraints.
+
+    Args:
+        frame_candidates: Per-frame IPPE candidate pools.
+        pair_consensus: Gated low-to-high pair consensus edges.
+        settings: Calibration gates for pair disagreement.
+        marker_sizes_m: Physical edge lengths keyed by marker ID.
+        search_marker_ids: Optional marker subset to search; defaults to all visible.
+        best_effort: When true, accept minimum-cost fallback assignments on strict failure.
+        solve_diagnostics: Optional collector for assignment stage timings.
+
+    Returns:
+        Tuple of accepted per-frame assignments, rejected frame indices, strict
+        rejection records, and fallback assignment summaries.
+    """
     assigned: dict[int, dict[int, MarkerCandidate]] = {}
     rejected_frames: list[int] = []
     rejections: list[FrameAssignmentRejection] = []
@@ -122,6 +154,16 @@ def assign_ippe_candidates(
 
 @dataclass(frozen=True)
 class FrameFallbackAssignmentResult:
+    """Best-effort per-frame IPPE assignment when strict gates fail.
+
+    Attributes:
+        assignment: Selected marker-to-candidate map, or ``None`` on failure.
+        disagreement_cost: Sum of squared gate-normalized pair errors for the pick.
+        worst_pair: Pair with largest gate exceedance among constrained edges.
+        worst_translation_error_m: Translation error on ``worst_pair``, in meters.
+        worst_rotation_error_deg: Rotation error on ``worst_pair``, in degrees.
+    """
+
     assignment: dict[int, MarkerCandidate] | None
     disagreement_cost: float
     worst_pair: MarkerPair | None
@@ -137,6 +179,19 @@ def resolve_frame_ippe_fallback_assignment(
     *,
     search_marker_ids: frozenset[int] | None = None,
 ) -> FrameFallbackAssignmentResult:
+    """Search IPPE combinations minimizing gate-normalized pair disagreement.
+
+    Args:
+        candidates: Per-marker IPPE candidate lists for one frame.
+        pair_consensus: Gated pair consensus edges constraining relative transforms.
+        settings: Calibration gates for pair disagreement.
+        marker_sizes_m: Physical edge lengths keyed by marker ID.
+        search_marker_ids: Optional marker subset to search; defaults to all visible.
+
+    Returns:
+        Best-effort assignment minimizing squared gate-normalized pair error, or
+        an empty result when fewer than two markers are searchable.
+    """
     if search_marker_ids is not None:
         marker_ids = sorted(marker_id for marker_id in candidates if marker_id in search_marker_ids)
     else:
@@ -185,6 +240,19 @@ def resolve_frame_ippe_assignment(
     *,
     search_marker_ids: frozenset[int] | None = None,
 ) -> FrameAssignmentResult:
+    """Search IPPE combinations satisfying all gated pair-consensus constraints.
+
+    Args:
+        candidates: Per-marker IPPE candidate lists for one frame.
+        pair_consensus: Gated pair consensus edges constraining relative transforms.
+        settings: Calibration gates for pair disagreement.
+        marker_sizes_m: Physical edge lengths keyed by marker ID.
+        search_marker_ids: Optional marker subset to search; defaults to all visible.
+
+    Returns:
+        Accepted assignment when all constrained pairs pass gates, otherwise a
+        rejection describing the worst gate violation.
+    """
     if search_marker_ids is not None:
         marker_ids = sorted(marker_id for marker_id in candidates if marker_id in search_marker_ids)
     else:
@@ -209,6 +277,15 @@ def new_fallback_assignment_search_holder(
     settings: CalibrationSettings,
     marker_sizes_m: Mapping[int, float],
 ) -> dict[str, object]:
+    """Create mutable search state for best-effort IPPE assignment.
+
+    Args:
+        settings: Calibration gates supplying rotation gate and settings reference.
+        marker_sizes_m: Physical edge lengths keyed by marker ID.
+
+    Returns:
+        Holder dict tracking best cost, assignment, worst pair, and gate metadata.
+    """
     return {
         "best_cost": float("inf"),
         "assignment": None,
@@ -225,6 +302,15 @@ def new_assignment_search_holder(
     settings: CalibrationSettings,
     marker_sizes_m: Mapping[int, float],
 ) -> dict[str, object]:
+    """Create mutable search state for strict IPPE assignment.
+
+    Args:
+        settings: Calibration gates supplying rotation gate and settings reference.
+        marker_sizes_m: Physical edge lengths keyed by marker ID.
+
+    Returns:
+        Holder dict tracking best score, assignment, and worst gate violation metadata.
+    """
     return {
         "score": float("-inf"),
         "assignment": None,
@@ -243,6 +329,15 @@ def new_assignment_search_holder(
 
 
 def rejection_from_assignment_search_holder(holder: dict[str, object]) -> FrameAssignmentRejection:
+    """Build a frame rejection from strict search holder state.
+
+    Args:
+        holder: Mutable search holder populated by ``search_assignments``.
+
+    Returns:
+        Rejection record for the worst gate violation, or ``no_constrained_pair``
+        when no constrained edges were evaluated.
+    """
     if not holder["saw_constrained_pair"]:
         return FrameAssignmentRejection(reason="no_constrained_pair")
 
@@ -287,6 +382,21 @@ def evaluate_fallback_assignment(
     settings: CalibrationSettings,
     rotation_gate: float,
 ) -> tuple[float | None, MarkerPair | None, float, float]:
+    """Score a fallback assignment by summed squared gate-normalized pair errors.
+
+    Args:
+        assignment: Candidate per-marker IPPE picks for one frame.
+        marker_ids: Marker IDs included in the pair loop (search order).
+        pair_consensus: Gated pair consensus edges.
+        marker_sizes_m: Physical edge lengths keyed by marker ID.
+        settings: Calibration settings for size-scaled translation gates.
+        rotation_gate: Rotation gate in degrees.
+
+    Returns:
+        Tuple of total cost, worst pair, worst translation error in meters, and
+        worst rotation error in degrees; ``None`` cost when no constrained edges
+        exist or errors are non-finite.
+    """
     constrained_edges = 0
     total_cost = 0.0
     worst_exceedance = -1.0
@@ -345,6 +455,22 @@ def evaluate_complete_assignment(
     bool,
     float,
 ]:
+    """Score a complete assignment for strict search.
+
+    Args:
+        assignment: Candidate per-marker IPPE picks for one frame.
+        marker_ids: Marker IDs included in the pair loop (search order).
+        pair_consensus: Gated pair consensus edges.
+        marker_sizes_m: Physical edge lengths keyed by marker ID.
+        settings: Calibration settings for size-scaled translation gates.
+        rotation_gate: Rotation gate in degrees.
+
+    Returns:
+        Tuple of negative total inlier cost when valid, whether any constrained
+        edge was seen, worst violation sort key, worst pair, worst errors, failure
+        flags, and worst translation gate; cost is ``None`` when invalid or
+        unconstrained.
+    """
     constrained_edges = 0
     total_cost = 0.0
     assignment_valid = True
@@ -428,6 +554,19 @@ def merge_assignment_violation_into_holder(
     worst_rotation_fail: bool,
     worst_translation_gate: float,
 ) -> None:
+    """Merge the worst gate violation from a partial assignment into search state.
+
+    Args:
+        holder: Mutable strict-assignment search holder updated in place.
+        has_constrained_pair: Whether the partial assignment touched a constrained edge.
+        worst_key: Sort key for the worst violation in this partial assignment.
+        worst_pair: Pair associated with the worst violation.
+        worst_translation_error: Translation error on ``worst_pair``, in meters.
+        worst_rotation_error: Rotation error on ``worst_pair``, in degrees.
+        worst_translation_fail: Whether translation exceeded its gate.
+        worst_rotation_fail: Whether rotation exceeded its gate.
+        worst_translation_gate: Translation gate applied to ``worst_pair``, in meters.
+    """
     if has_constrained_pair:
         holder["saw_constrained_pair"] = True
     if worst_key is None:
@@ -446,6 +585,17 @@ def merge_assignment_violation_into_holder(
 def summarize_assignment_rejections(
     rejections: Sequence[FrameAssignmentRejection],
 ) -> AssignmentRejectionSummary:
+    """Aggregate frame assignment rejections by reason and pair.
+
+    Args:
+        rejections: Per-frame strict assignment rejection records.
+
+    Returns:
+        Summary counts by reason, pair, and combined cause.
+
+    Raises:
+        TypeError: If inputs are not ``FrameAssignmentRejection`` instances.
+    """
     if rejections and not isinstance(rejections[0], FrameAssignmentRejection):
         raise TypeError(
             "summarize_assignment_rejections expects FrameAssignmentRejection inputs; "
@@ -479,6 +629,17 @@ def summarize_assignment_rejections(
 def summarize_assignment_rejection_records(
     records: Sequence[FrameAssignmentRejectionRecord],
 ) -> AssignmentRejectionSummary:
+    """Aggregate rejection records with per-cause error distributions.
+
+    Args:
+        records: Per-frame rejection records with frame metadata and errors.
+
+    Returns:
+        Summary with per-cause error distributions and sample frame IDs.
+
+    Raises:
+        TypeError: If inputs are not ``FrameAssignmentRejectionRecord`` instances.
+    """
     if records and not isinstance(records[0], FrameAssignmentRejectionRecord):
         raise TypeError(
             "summarize_assignment_rejection_records expects FrameAssignmentRejectionRecord inputs; "
@@ -568,6 +729,15 @@ def build_fallback_assignment_records(
     normalized_observations: Sequence[tuple[str | int, dict[int, np.ndarray]]],
     fallback_assignments: Sequence[FrameFallbackAssignment],
 ) -> tuple[FrameFallbackAssignmentRecord, ...]:
+    """Attach frame metadata to fallback assignment diagnostics.
+
+    Args:
+        normalized_observations: Parsed observations indexed by frame.
+        fallback_assignments: Per-frame fallback assignment summaries.
+
+    Returns:
+        Fallback assignment records with frame IDs and visible marker lists.
+    """
     records: list[FrameFallbackAssignmentRecord] = []
     for fallback in fallback_assignments:
         frame_id, markers = normalized_observations[fallback.frame_index]
@@ -591,6 +761,16 @@ def build_assignment_rejection_records(
     rejected_frame_indices: Sequence[int],
     rejections: Sequence[FrameAssignmentRejection],
 ) -> tuple[FrameAssignmentRejectionRecord, ...]:
+    """Attach frame metadata to per-frame rejection diagnostics.
+
+    Args:
+        normalized_observations: Parsed observations indexed by frame.
+        rejected_frame_indices: Frame indices rejected during assignment.
+        rejections: Parallel rejection records for ``rejected_frame_indices``.
+
+    Returns:
+        Rejection records with frame IDs, visible markers, and gate metadata.
+    """
     records: list[FrameAssignmentRejectionRecord] = []
     for frame_index, rejection in zip(rejected_frame_indices, rejections, strict=True):
         frame_id, markers = normalized_observations[frame_index]
@@ -623,6 +803,18 @@ def search_assignments(
     *,
     assignment_mode: Literal["strict", "fallback"] = "strict",
 ) -> None:
+    """Depth-first search over IPPE candidate combinations for one frame.
+
+    Args:
+        marker_ids: Marker IDs to assign in search order.
+        candidates: Per-marker IPPE candidate lists.
+        pair_consensus: Gated pair consensus edges.
+        current: Partial assignment built during search (updated in place).
+        index: Current depth in ``marker_ids``.
+        holder: Mutable search state for strict or fallback mode.
+        assignment_mode: ``strict`` for all-gates-pass search, ``fallback`` for
+            minimum-cost search.
+    """
     if index == len(marker_ids):
         if assignment_mode == "fallback":
             cost, worst_pair, worst_translation_error, worst_rotation_error = (

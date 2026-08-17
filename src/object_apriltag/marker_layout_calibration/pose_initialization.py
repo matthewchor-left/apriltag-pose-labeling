@@ -39,6 +39,22 @@ def restrict_pair_consensus_to_frames(
     best_effort: bool = False,
     restored_pair_edges: list[RestoredPairEdge] | None = None,
 ) -> tuple[dict[MarkerPair, PairConsensus], str | None, tuple[DroppedPairEdge, ...]]:
+    """Restrict pair inlier frames to an allowed frame subset.
+
+    Args:
+        pair_consensus: Pair consensus edges with per-frame inlier hypotheses.
+        allowed_frames: Frame indices retained for each edge.
+        expected_ids: Full set of marker IDs targeted by calibration.
+        reference_marker_id: Root marker for connectivity checks after restriction.
+        settings: Calibration gates for minimum inlier count per edge.
+        marker_sizes_m: Physical edge lengths keyed by marker ID.
+        best_effort: When true, restore weak edges to maintain connectivity.
+        restored_pair_edges: Optional list extended with restoration audit records.
+
+    Returns:
+        Tuple of updated pair consensus, optional connectivity failure message,
+        and dropped-edge audit records for edges losing support.
+    """
     rotation_gate = settings.pair_rotation_rms_gate_deg
     updated: dict[MarkerPair, PairConsensus] = {}
     weak_pool: dict[MarkerPair, PairConsensus] = {}
@@ -105,6 +121,15 @@ def markers_in_frame_indices(
     observations: list[tuple[str | int, dict[int, np.ndarray]]],
     frame_indices: frozenset[int],
 ) -> set[int]:
+    """Collect marker IDs visible in selected frames.
+
+    Args:
+        observations: Normalized corner observations indexed by frame.
+        frame_indices: Frame indices to include.
+
+    Returns:
+        Union of marker IDs appearing in any selected frame.
+    """
     markers: set[int] = set()
     for frame_index, (_, markers_in_frame) in enumerate(observations):
         if frame_index in frame_indices:
@@ -113,6 +138,19 @@ def markers_in_frame_indices(
 
 
 def reference_gauge_pose(marker_size_m: float) -> tuple[np.ndarray, np.ndarray]:
+    """Build the reference marker pose from square corner geometry.
+
+    Args:
+        marker_size_m: Physical edge length of the square marker.
+
+    Returns:
+        Tuple of footprint orientation rotation and marker origin translation in
+        the object frame.
+
+    Notes:
+        Corner order follows AprilTag square geometry: top-left, top-right,
+        bottom-right, bottom-left at half-edge offsets from the marker center.
+    """
     half = marker_size_m / 2.0
     top_left = np.array([-half, -half, 0.0], dtype=np.float64)
     top_right = np.array([half, -half, 0.0], dtype=np.float64)
@@ -130,6 +168,19 @@ def initialize_marker_poses(
     expected_ids: list[int],
     pair_consensus: dict[MarkerPair, PairConsensus],
 ) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+    """Propagate object-frame marker poses from the reference along pair edges.
+
+    Args:
+        reference_marker_id: Gauge reference marker with known pose.
+        ref_rotation: Reference marker rotation in the object frame.
+        ref_translation: Reference marker translation in the object frame.
+        expected_ids: Marker IDs to attempt to place in the object frame.
+        pair_consensus: Low-to-high pair consensus edges for graph propagation.
+
+    Returns:
+        Object-frame marker poses reachable from the reference along
+        ``pair_consensus`` within ``expected_ids``.
+    """
     poses: dict[int, tuple[np.ndarray, np.ndarray]] = {
         reference_marker_id: (ref_rotation.copy(), ref_translation.copy())
     }
@@ -164,6 +215,17 @@ def initialize_frame_poses(
     marker_poses: dict[int, tuple[np.ndarray, np.ndarray]],
     frame_count: int,
 ) -> list[tuple[np.ndarray, np.ndarray] | None]:
+    """Initialize per-frame layout poses from assigned IPPE candidates.
+
+    Args:
+        assigned_candidates: Per-frame marker-to-IPPE-candidate assignments.
+        marker_poses: Object-frame marker poses for initialized markers.
+        frame_count: Total number of observation frames (including unassigned).
+
+    Returns:
+        List of length ``frame_count`` with mean layout pose per assigned frame,
+        or ``None`` entries for frames without assignments.
+    """
     frame_poses: list[tuple[np.ndarray, np.ndarray] | None] = [None] * frame_count
     for frame_index, assignment in assigned_candidates.items():
         estimates: list[tuple[np.ndarray, np.ndarray]] = []
@@ -183,6 +245,15 @@ def build_corner_observations(
     observations: list[tuple[str | int, dict[int, np.ndarray]]],
     expected_ids: list[int],
 ) -> list[CornerObservation]:
+    """Flatten normalized observations into per-corner BA observations.
+
+    Args:
+        observations: Normalized corner observations indexed by frame.
+        expected_ids: Marker IDs retained when building corner observations.
+
+    Returns:
+        One ``CornerObservation`` per corner for expected markers in each frame.
+    """
     expected_set = set(expected_ids)
     corner_observations: list[CornerObservation] = []
     for frame_index, (_, markers) in enumerate(observations):
@@ -210,6 +281,23 @@ def synth_marker_corners(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> dict[int, np.ndarray]:
+    """Project marker corners through layout and marker poses.
+
+    Args:
+        marker_poses: Object-frame marker poses keyed by marker ID.
+        marker_ids: Marker IDs to project in this frame.
+        layout_rotation: Object-to-camera layout rotation.
+        layout_translation: Object-to-camera layout translation.
+        object_points: Marker corner coordinates in the marker frame.
+        camera_matrix: Camera intrinsics matrix.
+        dist_coeffs: Camera distortion coefficients.
+
+    Returns:
+        Per-marker projected corner pixels keyed by marker ID.
+
+    Notes:
+        Camera extrinsics are identity; layout pose carries object-to-camera motion.
+    """
     markers: dict[int, np.ndarray] = {}
     for marker_id in marker_ids:
         marker_rotation, marker_translation = marker_poses[marker_id]
@@ -239,6 +327,25 @@ def synth_pair_observations(
     corrupt_offset: np.ndarray | None = None,
     varying_corrupt: bool = False,
 ) -> list[FrameObservation]:
+    """Synthesize multi-frame observations for tests.
+
+    Args:
+        num_frames: Number of synthetic frames to generate.
+        marker_poses: Object-frame marker poses for markers ``0`` and ``1``.
+        object_points: Marker corner coordinates in the marker frame.
+        camera_matrix: Camera intrinsics matrix.
+        dist_coeffs: Camera distortion coefficients.
+        corrupt_frames: Frame indices where marker ``1`` pose is corrupted.
+        corrupt_offset: Translation offset applied during corruption.
+        varying_corrupt: When true, scale corruption offset by frame index.
+
+    Returns:
+        Synthetic ``FrameObservation`` list with smooth layout motion per frame.
+
+    Notes:
+        Corruption replaces marker ``1`` translation with marker ``0`` translation
+        plus offset on selected frames to simulate inconsistent pair observations.
+    """
     observations: list[FrameObservation] = []
     base_wrong_offset = (
         np.array([0.20, 0.0, -0.08], dtype=np.float64)

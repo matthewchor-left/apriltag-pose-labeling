@@ -29,6 +29,16 @@ def pair_translation_gate(
     marker_sizes_m: Mapping[int, float],
     pair: MarkerPair,
 ) -> float:
+    """Compute the size-scaled translation gate for a marker pair.
+
+    Args:
+        settings: Calibration settings with ``pair_translation_rms_gate_ratio``.
+        marker_sizes_m: Physical edge lengths keyed by marker ID.
+        pair: Low-to-high marker ID pair.
+
+    Returns:
+        Translation RMS gate in meters: ratio times the smaller marker edge length.
+    """
     return settings.pair_translation_rms_gate_ratio * min(
         marker_sizes_m[pair[0]],
         marker_sizes_m[pair[1]],
@@ -39,6 +49,15 @@ def edge_diagnostics(
     pair: MarkerPair,
     edge: PairConsensus,
 ) -> EdgeDiagnostics:
+    """Compute RMS deviation of inlier hypotheses from pair consensus.
+
+    Args:
+        pair: Low-to-high marker ID pair.
+        edge: Pair consensus with per-frame inlier hypotheses.
+
+    Returns:
+        Edge diagnostics with inlier count and translation/rotation RMS.
+    """
     translations: list[float] = []
     rotations: list[float] = []
     for frame_index in edge.inlier_frames:
@@ -58,6 +77,16 @@ def footprints_from_poses(
     marker_poses: dict[int, tuple[np.ndarray, np.ndarray]],
     marker_sizes_m: Mapping[int, float],
 ) -> dict[int, object]:
+    """Build object-frame corner footprints from solved marker poses.
+
+    Args:
+        marker_poses: Object-frame marker poses keyed by marker ID.
+        marker_sizes_m: Physical edge lengths keyed by marker ID.
+
+    Returns:
+        ``MarkerFootprint`` objects keyed by marker ID with corner positions in
+        the object frame.
+    """
     from object_apriltag.layout import MarkerFootprint
 
     footprints: dict[int, MarkerFootprint] = {}
@@ -94,6 +123,34 @@ def build_quality_report(
     restored_pair_edges: object | None = None,
     anchor_core: object | None = None,
 ) -> CalibrationQualityReport:
+    """Build a full calibration quality report from bundle-adjustment state.
+
+    Args:
+        corner_observations: Full per-corner observation list.
+        inlier_mask: Boolean mask parallel to ``corner_observations``.
+        marker_poses: Object-frame marker poses keyed by marker ID.
+        frame_poses: Per-frame layout poses.
+        pair_consensus: Accepted pair consensus edges.
+        expected_ids: Full set of marker IDs targeted by calibration.
+        reference_marker_id: Root marker for connectivity analysis.
+        missing_ids: Expected IDs still missing from the solved graph.
+        input_frame_count: Raw observation frame count before rejection.
+        rejected_frame_count: Frames rejected during assignment.
+        accepted_frame_count: Frames with accepted assignments.
+        object_points_by_marker: Object-frame corner coordinates per marker.
+        camera_matrix: Camera intrinsics matrix.
+        dist_coeffs: Camera distortion coefficients.
+        assignment_rejections: Optional aggregated assignment rejection summary.
+        assignment_rejection_records: Optional per-frame rejection records.
+        fallback_assignment_records: Optional fallback assignment records.
+        dropped_pair_edges: Optional dropped pair-edge audit records.
+        restored_pair_edges: Optional restored pair-edge audit records.
+        anchor_core: Optional anchor-core diagnostics payload.
+
+    Returns:
+        ``CalibrationQualityReport`` with reprojection, pair RMS, connectivity,
+        and optional diagnostic attachments.
+    """
     errors = corner_errors(
         corner_observations,
         inlier_mask,
@@ -162,6 +219,28 @@ def quality_from_pairs(
     restored_pair_edges: object | None = None,
     anchor_core: object | None = None,
 ) -> CalibrationQualityReport:
+    """Build a pair-only quality report without reprojection metrics.
+
+    Args:
+        pair_consensus: Accepted pair consensus edges.
+        expected_ids: Full set of marker IDs targeted by calibration.
+        reference_marker_id: Root marker for connectivity analysis.
+        missing_ids: Expected IDs still missing from the solved graph.
+        input_frame_count: Raw observation frame count before rejection.
+        rejected_frame_count: Frames rejected during assignment.
+        accepted_frame_count: Frames with accepted assignments.
+        observation_count: Total corner observation count when BA is unavailable.
+        assignment_rejections: Optional aggregated assignment rejection summary.
+        assignment_rejection_records: Optional per-frame rejection records.
+        fallback_assignment_records: Optional fallback assignment records.
+        dropped_pair_edges: Optional dropped pair-edge audit records.
+        restored_pair_edges: Optional restored pair-edge audit records.
+        anchor_core: Optional anchor-core diagnostics payload.
+
+    Returns:
+        ``CalibrationQualityReport`` with pair RMS and connectivity fields;
+        reprojection metrics are set to sentinel empty values.
+    """
     edge_reports = [edge_diagnostics(pair, edge) for pair, edge in sorted(pair_consensus.items())]
     connected = connected_marker_ids(pair_consensus, reference_marker_id)
     return CalibrationQualityReport(
@@ -194,6 +273,17 @@ def collect_quality_gate_failures(
     marker_sizes_m: Mapping[int, float],
     expected_ids: list[int],
 ) -> tuple[QualityGateFailure, ...]:
+    """Collect strict, data, and connectivity gate failures against settings.
+
+    Args:
+        quality: ``CalibrationQualityReport`` to evaluate.
+        settings: Calibration gate thresholds.
+        marker_sizes_m: Physical edge lengths keyed by marker ID.
+        expected_ids: Marker IDs required to have inlier reprojection samples.
+
+    Returns:
+        Tuple of gate failure records for exceeded thresholds or missing data.
+    """
     failures: list[QualityGateFailure] = []
     if quality.reprojection_rms_px > settings.reprojection_rms_gate_px:
         failures.append(

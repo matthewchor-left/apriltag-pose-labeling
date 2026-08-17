@@ -24,7 +24,16 @@ from object_apriltag.marker_layout_calibration.types import (
     OmittedMarkerDiagnostic,
 )
 
+
 def connectivity_omission_reason(stage: str) -> str:
+    """Map an internal connectivity stage name to a stable omission reason string.
+
+    Args:
+        stage: Internal pipeline stage where connectivity was lost.
+
+    Returns:
+        A stable ``reason`` token for ``OmittedMarkerDiagnostic``.
+    """
     if stage == "initial_consensus":
         return "not_connected_to_reference"
     if stage == "assignment_support":
@@ -39,6 +48,16 @@ def omitted_marker_records(
     emitted_marker_ids: set[int],
     omitted: Mapping[int, str],
 ) -> tuple[OmittedMarkerDiagnostic, ...]:
+    """Build omission diagnostics for requested markers absent from the emitted layout.
+
+    Args:
+        requested_marker_ids: Marker IDs the caller asked to calibrate.
+        emitted_marker_ids: Marker IDs present in the output layout.
+        omitted: Mapping from omitted marker ID to omission reason.
+
+    Returns:
+        Sorted diagnostics for requested IDs not present in the emitted layout.
+    """
     return tuple(
         OmittedMarkerDiagnostic(marker_id=marker_id, reason=omitted[marker_id])
         for marker_id in sorted(requested_marker_ids)
@@ -52,6 +71,17 @@ def quality_for_partial_output(
     requested_marker_ids: Sequence[int],
     emitted_marker_ids: set[int],
 ) -> CalibrationQualityReport:
+    """Trim quality metrics to emitted markers and record which requested IDs were omitted.
+
+    Args:
+        quality: Full quality report from the subset solve.
+        requested_marker_ids: Marker IDs originally requested by the caller.
+        emitted_marker_ids: Marker IDs retained in the partial output.
+
+    Returns:
+        A quality report scoped to ``emitted_marker_ids`` with
+        ``missing_expected_ids`` set to the requested-but-omitted IDs.
+    """
     missing = frozenset(set(requested_marker_ids) - emitted_marker_ids)
     return CalibrationQualityReport(
         reprojection_rms_px=quality.reprojection_rms_px,
@@ -96,6 +126,18 @@ def wrap_subset_as_partial(
     emitted_marker_ids: set[int],
     omitted: Mapping[int, str],
 ) -> CalibrationResult:
+    """Re-label a successful subset solve as a partial best-effort calibration result.
+
+    Args:
+        subset_result: Result from calibrating the connected marker subset.
+        requested_marker_ids: Marker IDs originally requested by the caller.
+        emitted_marker_ids: Marker IDs present in the subset layout.
+        omitted: Mapping from omitted marker ID to omission reason.
+
+    Returns:
+        A ``partial`` best-effort result with trimmed quality and omission records,
+        or a ``refused`` result when the subset solve did not produce a layout.
+    """
     if subset_result.layout is None or subset_result.quality is None:
         return CalibrationResult(
             None,
@@ -138,6 +180,28 @@ def emit_partial_calibration_result(
     best_effort: bool,
     anchor_marker_ids: Sequence[int] | None = None,
 ) -> CalibrationResult:
+    """Re-run calibration on the connected subset when partial output is allowed.
+
+    Refuses when the reference marker or any connected non-reference marker is missing.
+
+    Args:
+        observations: Full multi-frame corner observations.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Camera distortion coefficients.
+        requested_marker_ids: Marker IDs originally requested by the caller.
+        connected_ids: Marker IDs connected to the reference in pair consensus.
+        omitted: Known omission reasons before the subset re-solve.
+        reference_marker_id: Layout reference marker ID.
+        marker_size_m: Default marker edge length in meters.
+        marker_sizes_m: Per-marker physical sizes for the full request.
+        settings: Calibration thresholds and iteration limits.
+        best_effort: Whether best-effort policy applies to the subset solve.
+        anchor_marker_ids: Optional explicit anchor-core marker IDs.
+
+    Returns:
+        A ``partial`` result when the subset solve succeeds, or ``refused`` when
+        connectivity prerequisites are not met or the subset solve fails.
+    """
     emitted_ids = sorted(connected_ids & set(requested_marker_ids))
     non_reference = [marker_id for marker_id in emitted_ids if marker_id != reference_marker_id]
     if reference_marker_id not in emitted_ids or not non_reference:
@@ -221,6 +285,30 @@ def partial_from_pair_consensus_or_refuse(
     partial_output: bool,
     anchor_marker_ids: Sequence[int] | None,
 ) -> CalibrationResult:
+    """Attempt partial recovery after pair-consensus failure, or return a refused result.
+
+    Args:
+        observations: Full multi-frame corner observations.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Camera distortion coefficients.
+        pair_consensus: Pair-consensus graph at the failure point.
+        quality: Quality report accumulated before refusal.
+        failure_message: Refusal message when partial recovery is disabled.
+        requested_marker_ids: Marker IDs originally requested by the caller.
+        omitted_markers: Omission reasons already known before recovery.
+        connectivity_stage: Internal stage name for newly disconnected markers.
+        reference_marker_id: Layout reference marker ID.
+        marker_size_m: Default marker edge length in meters.
+        marker_sizes_m: Per-marker physical sizes for the full request.
+        settings: Calibration thresholds and iteration limits.
+        best_effort: Whether best-effort partial output is enabled.
+        partial_output: Whether the caller requested partial output on failure.
+        anchor_marker_ids: Optional explicit anchor-core marker IDs.
+
+    Returns:
+        A partial calibration result when ``partial_output`` and ``best_effort`` are
+        both true; otherwise a refused result carrying ``failure_message``.
+    """
     if partial_output and best_effort:
         connected = connected_marker_ids(pair_consensus, reference_marker_id)
         merged = dict(omitted_markers)
@@ -264,6 +352,31 @@ def partial_after_missing_accepted_frames_or_refuse(
     partial_output: bool,
     anchor_marker_ids: Sequence[int] | None,
 ) -> CalibrationResult:
+    """Attempt partial recovery when some markers lack accepted-frame observations.
+
+    Args:
+        observations: Full multi-frame corner observations.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Camera distortion coefficients.
+        pair_consensus: Pair-consensus graph at the failure point.
+        quality: Quality report accumulated before refusal.
+        failure_message: Refusal message when partial recovery is disabled.
+        requested_marker_ids: Marker IDs originally requested by the caller.
+        omitted_markers: Omission reasons already known before recovery.
+        markers_in_accepted_frames: Marker IDs with at least one accepted frame.
+        missing_after_rejection: Marker IDs with no accepted-frame observations.
+        reference_marker_id: Layout reference marker ID.
+        marker_size_m: Default marker edge length in meters.
+        marker_sizes_m: Per-marker physical sizes for the full request.
+        settings: Calibration thresholds and iteration limits.
+        best_effort: Whether best-effort partial output is enabled.
+        partial_output: Whether the caller requested partial output on failure.
+        anchor_marker_ids: Optional explicit anchor-core marker IDs.
+
+    Returns:
+        A partial calibration result when ``partial_output`` and ``best_effort`` are
+        both true; otherwise a refused result carrying ``failure_message``.
+    """
     if partial_output and best_effort:
         connected = connected_marker_ids(pair_consensus, reference_marker_id) & markers_in_accepted_frames
         merged = dict(omitted_markers)
@@ -293,6 +406,18 @@ def maybe_wrap_partial_success(
     emitted_marker_ids: set[int],
     omitted_markers: Mapping[int, str],
 ) -> CalibrationResult:
+    """Promote a full solve with explicit omissions to a partial outcome when appropriate.
+
+    Args:
+        result: Calibration result from the main solve path.
+        requested_marker_ids: Marker IDs originally requested by the caller.
+        emitted_marker_ids: Marker IDs present in the solved layout.
+        omitted_markers: Mapping from omitted marker ID to omission reason.
+
+    Returns:
+        ``result`` unchanged when omissions are absent or the solve failed; otherwise
+        a ``partial`` wrapper with trimmed quality and omission records.
+    """
     if not omitted_markers or result.layout is None or result.failure_reason is not None:
         return result
     return wrap_subset_as_partial(
@@ -309,6 +434,17 @@ def accepted_calibration_result(
     *,
     best_effort: bool,
 ) -> CalibrationResult:
+    """Build a successful calibration result tagged with the active policy.
+
+    Args:
+        layout: Solved marker layout.
+        quality: Final quality report for the accepted solve.
+        best_effort: Whether the solve ran under best-effort policy.
+
+    Returns:
+        An ``accepted`` ``CalibrationResult`` with ``calibration_policy`` set from
+        ``best_effort``.
+    """
     return CalibrationResult(
         layout,
         quality,
@@ -324,6 +460,17 @@ def check_quality_gates(
     marker_sizes_m: Mapping[int, float],
     expected_ids: list[int],
 ) -> str | None:
+    """Return the first quality-gate failure message, if any.
+
+    Args:
+        quality: Aggregate calibration quality metrics.
+        settings: Thresholds used to evaluate gates.
+        marker_sizes_m: Per-marker physical sizes for pair translation gates.
+        expected_ids: Marker IDs that must be connected and covered.
+
+    Returns:
+        The first gate failure message, or ``None`` when all gates pass.
+    """
     failures = collect_quality_gate_failures(quality, settings, marker_sizes_m, expected_ids)
     return failures[0].message if failures else None
 
@@ -335,6 +482,18 @@ def empty_quality(
     rejected_frame_count: int = 0,
     accepted_frame_count: int = 0,
 ) -> CalibrationQualityReport:
+    """Construct a sentinel quality report for early pipeline failures.
+
+    Args:
+        missing_expected_ids: Expected marker IDs not connected to the reference.
+        connected_marker_ids: Marker IDs connected at the failure point.
+        input_frame_count: Total frames supplied to calibration.
+        rejected_frame_count: Frames rejected before pose solving.
+        accepted_frame_count: Frames accepted for solving.
+
+    Returns:
+        A quality report with infinite RMS metrics and zero observation counts.
+    """
     return CalibrationQualityReport(
         reprojection_rms_px=float("inf"),
         per_marker_reprojection_rms_px={},
@@ -367,6 +526,30 @@ def finalize_solved_calibration(
     best_effort: bool,
     anchor_marker_ids=None,
 ) -> CalibrationResult | None:
+    """Apply quality gates and footprint checks after pose solving.
+
+    Args:
+        marker_poses: Solved object-frame marker poses keyed by marker ID.
+        quality: Aggregate quality metrics from the solve.
+        settings: Thresholds used to evaluate gates.
+        marker_sizes_m: Per-marker physical sizes for layout construction.
+        expected_ids: Marker IDs that must appear in the final layout.
+        reference_marker_id: Layout reference marker ID.
+        marker_size_m: Default marker edge length in meters.
+        missing_ids: Expected marker IDs not connected to the reference.
+        gate_failure: Precomputed gate failure message, if any.
+        best_effort: Whether strict-only gate failures may yield a provisional layout.
+        anchor_marker_ids: Optional explicit anchor-core marker IDs.
+
+    Returns:
+        ``None`` when the caller should build the layout from solved poses.
+        A refused or provisional ``CalibrationResult`` when gates, connectivity, or
+        footprint coverage block a strict acceptance.
+
+    Notes:
+        Under best-effort, strict-only gate failures with full connectivity may yield
+        a provisional result instead of refusing.
+    """
     from typing import Literal
 
     policy: Literal["strict", "best_effort"] = "best_effort" if best_effort else "strict"

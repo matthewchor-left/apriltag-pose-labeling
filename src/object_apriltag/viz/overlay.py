@@ -5,9 +5,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from object_apriltag.board_pose import BoardPoseEstimate, board_point_to_camera, camera_point_to_board
 from object_apriltag.detector import ObjectPose
-from object_apriltag.eraser import EraserModel, eraser_offset_to_model_point
 from object_apriltag.layout import (
     CORNER_NAMES,
     CORNER_LABELS,
@@ -24,7 +22,6 @@ from object_apriltag.viz.projection import (
 )
 from object_apriltag.viz.skeleton import ObjectModel
 
-BOARD_LABEL_COLOR_BGR = (255, 255, 255)
 AXIS_COLORS_LABELS = (
     ((0, 0, 255), "X"),
     ((0, 255, 0), "Y"),
@@ -67,211 +64,6 @@ def _draw_axis_triad(
                 2,
                 cv2.LINE_AA,
             )
-
-
-def format_board_coordinate_mm(point_board: np.ndarray) -> str:
-    point = np.asarray(point_board, dtype=np.float64).reshape(3) * 1000.0
-    return f"({point[0]:.1f}, {point[1]:.1f}, {point[2]:.1f}) mm"
-
-
-def format_board_coordinate_hud_row(identity: str, point_board: np.ndarray) -> str:
-    return f"{identity}: {format_board_coordinate_mm(point_board)}"
-
-
-def draw_board_coordinate_preview(
-    frame: np.ndarray,
-    point_board: np.ndarray,
-    board_pose: BoardPoseEstimate,
-    camera_matrix: np.ndarray,
-    dist_coeffs: np.ndarray,
-    *,
-    label: str = "preview",
-) -> None:
-    point_camera = board_point_to_camera(point_board, board_pose)
-    if point_camera[2] <= 0.0:
-        return
-    point = opencv_image_point(project_camera_point(point_camera, camera_matrix, dist_coeffs))
-    if point is None:
-        return
-
-    color = (255, 0, 255)
-    cv2.drawMarker(frame, point, color, cv2.MARKER_CROSS, 18, 2, cv2.LINE_AA)
-    label_origin = opencv_image_point((point[0] + 10, point[1] - 10))
-    if label_origin is not None:
-        cv2.putText(
-            frame,
-            label,
-            label_origin,
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            color,
-            2,
-            cv2.LINE_AA,
-        )
-
-
-def draw_board_coordinates_hud(
-    frame: np.ndarray,
-    entries: list[tuple[str, np.ndarray]],
-    *,
-    title: str = "Board coordinates",
-    margin: int = 10,
-    padding: int = 8,
-    line_height: int = 18,
-    font_scale: float = 0.45,
-    color: tuple[int, int, int] = BOARD_LABEL_COLOR_BGR,
-) -> None:
-    if not entries:
-        return
-
-    height, width = frame.shape[:2]
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    thickness = 1
-    entry_lines = [format_board_coordinate_hud_row(identity, point_board) for identity, point_board in entries]
-    lines = [title, *entry_lines]
-    text_sizes = [cv2.getTextSize(line, font, font_scale, thickness)[0] for line in lines]
-    panel_width = max(size[0] for size in text_sizes) + 2 * padding
-    available_height = height - 2 * margin
-    max_content_lines = max(1, (available_height - 2 * padding) // line_height)
-    truncated = len(lines) > max_content_lines
-    if truncated:
-        omitted = len(lines) - max_content_lines + 1
-        lines = lines[: max_content_lines - 1] + [f"... +{omitted} more"]
-
-    panel_height = len(lines) * line_height + 2 * padding
-    x0 = max(margin, width - panel_width - margin)
-    y0 = margin
-    x1 = min(width - margin, x0 + panel_width)
-    y1 = min(height - margin, y0 + panel_height)
-
-    cv2.rectangle(frame, (x0, y0), (x1, y1), (0, 0, 0), -1)
-    cv2.rectangle(frame, (x0, y0), (x1, y1), color, 1)
-
-    for index, line in enumerate(lines):
-        text_y = y0 + padding + (index + 1) * line_height - 4
-        cv2.putText(
-            frame,
-            line,
-            (x0 + padding, text_y),
-            font,
-            font_scale,
-            (0, 0, 0),
-            3,
-            cv2.LINE_AA,
-        )
-        cv2.putText(
-            frame,
-            line,
-            (x0 + padding, text_y),
-            font,
-            font_scale,
-            color,
-            thickness,
-            cv2.LINE_AA,
-        )
-
-
-def _draw_board_coordinate_labels_for_points(
-    frame: np.ndarray,
-    board_pose: BoardPoseEstimate,
-    labeled_camera_points: list[tuple[str, np.ndarray]],
-    camera_matrix: np.ndarray,
-    dist_coeffs: np.ndarray,
-    *,
-    colors: list[tuple[int, int, int]] | None = None,
-) -> None:
-    del camera_matrix, dist_coeffs, colors
-    entries = [
-        (identity, camera_point_to_board(camera_point, board_pose))
-        for identity, camera_point in labeled_camera_points
-    ]
-    draw_board_coordinates_hud(frame, entries)
-
-
-def draw_object_model_board_coordinate_labels(
-    frame: np.ndarray,
-    pose: ObjectPose,
-    board_pose: BoardPoseEstimate,
-    marker_model: MarkerLayout,
-    object_model: ObjectModel,
-    camera_matrix: np.ndarray,
-    dist_coeffs: np.ndarray,
-) -> None:
-    labeled_points: list[tuple[str, np.ndarray]] = []
-    colors: list[tuple[int, int, int]] = []
-    for name in object_model.keypoint_names:
-        labeled_points.append(
-            (
-                name,
-                layout_point_to_camera(
-                    object_model.keypoints[name],
-                    pose.rotation,
-                    pose.origin,
-                    marker_model,
-                ),
-            )
-        )
-        colors.append(KEYPOINT_COLORS_BGR.get(name, (200, 200, 200)))
-    _draw_board_coordinate_labels_for_points(
-        frame, board_pose, labeled_points, camera_matrix, dist_coeffs, colors=colors
-    )
-
-
-def draw_marker_model_board_coordinate_labels(
-    frame: np.ndarray,
-    pose: ObjectPose,
-    board_pose: BoardPoseEstimate,
-    marker_model: MarkerLayout,
-    camera_matrix: np.ndarray,
-    dist_coeffs: np.ndarray,
-) -> None:
-    labeled_points: list[tuple[str, np.ndarray]] = []
-    colors: list[tuple[int, int, int]] = []
-    for marker_id in sorted(marker_model.footprints):
-        footprint = marker_model.footprints[marker_id]
-        color = marker_color_bgr(marker_id, marker_model.reference_marker_id)
-        for corner_name, point_layout in footprint.corners_by_name().items():
-            labeled_points.append(
-                (
-                    f"{marker_id}:{CORNER_LABELS[corner_name]}",
-                    layout_point_to_camera(point_layout, pose.rotation, pose.origin, marker_model),
-                )
-            )
-            colors.append(color)
-    _draw_board_coordinate_labels_for_points(
-        frame, board_pose, labeled_points, camera_matrix, dist_coeffs, colors=colors
-    )
-
-
-def draw_eraser_model_board_coordinate_labels(
-    frame: np.ndarray,
-    pose: ObjectPose,
-    board_pose: BoardPoseEstimate,
-    eraser_model: EraserModel,
-    marker_model: MarkerLayout,
-    camera_matrix: np.ndarray,
-    dist_coeffs: np.ndarray,
-) -> None:
-    labeled_points: list[tuple[str, np.ndarray]] = []
-    eraser_color = (0, 255, 255)
-    for plane_index, plane in enumerate(eraser_model.planes):
-        plane_ref = plane.plane_id if plane.plane_id is not None else str(plane_index)
-        for corner_name, offset in zip(CORNER_NAMES, plane.corners(), strict=True):
-            model_point = eraser_offset_to_model_point(offset, marker_model)
-            labeled_points.append(
-                (
-                    f"{plane_ref}:{CORNER_LABELS[corner_name]}",
-                    layout_point_to_camera(model_point, pose.rotation, pose.origin, marker_model),
-                )
-            )
-    _draw_board_coordinate_labels_for_points(
-        frame,
-        board_pose,
-        labeled_points,
-        camera_matrix,
-        dist_coeffs,
-        colors=[eraser_color] * len(labeled_points),
-    )
 
 
 KEYPOINT_COLORS_BGR = {
@@ -584,29 +376,6 @@ def draw_status_hud_panel(frame: np.ndarray, lines: list[str]) -> None:
             cv2.LINE_AA,
         )
         y += STATUS_HUD_LINE_SPACING
-
-
-def draw_object_model_edit_hud(
-    frame: np.ndarray,
-    *,
-    dirty: bool,
-    status_message: str,
-    origin: tuple[int, int] = (10, 90),
-    line_spacing: int = 22,
-) -> None:
-    lines = [
-        "edit: e add/update  s save  q quit  x discard+quit",
-        "modified" if dirty else "saved",
-    ]
-    if status_message:
-        lines.append(status_message)
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 0.55
-    thickness = 2
-    color = (0, 255, 255) if dirty else (200, 255, 200)
-    for index, line in enumerate(lines):
-        x, y = origin[0], origin[1] + index * line_spacing
-        cv2.putText(frame, line, (x, y), font, font_scale, color, thickness, cv2.LINE_AA)
 
 
 def format_reference_marker_camera_line(

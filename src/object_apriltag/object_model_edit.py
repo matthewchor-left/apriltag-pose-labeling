@@ -1,22 +1,18 @@
-"""Interactive Object Model keypoint editing helpers."""
+"""Object model load/save and keypoint source helpers."""
 
 from __future__ import annotations
 
 import json
 import os
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from object_apriltag.board_pose import BoardPoseEstimate, board_point_to_camera
-from object_apriltag.detector import ObjectPose
 from object_apriltag.layout import (
     CORNER_NAMES,
     MarkerLayout,
-    camera_point_to_layout_point,
     footprint_corner_with_padding,
 )
 from object_apriltag.viz.skeleton import MODEL_FRAME_NAME, ObjectModel, object_model_from_data
@@ -133,15 +129,6 @@ def apply_keypoint_sources_from_layout(
     return updated
 
 
-def object_model_for_render(
-    object_model: ObjectModel | None,
-    edit_session: ObjectModelEditSession | None,
-) -> ObjectModel | None:
-    if edit_session is not None:
-        return edit_session.working_model
-    return object_model
-
-
 def ordered_keypoint_names(document: dict[str, Any], model: ObjectModel) -> tuple[str, ...]:
     raw = document.get("keypoints")
     ordered: list[str] = []
@@ -173,43 +160,6 @@ def object_model_with_keypoint(
         keypoints=keypoints,
         skeleton_edges=model.skeleton_edges,
         object_points=object_points,
-    )
-
-
-def parse_keypoint_edit_line(line: str) -> tuple[str, float, float, float]:
-    text = line.strip()
-    if not text:
-        raise ValueError("empty input")
-    parts = text.split()
-    if len(parts) != 4:
-        raise ValueError("expected: keypoint-id x_mm y_mm z_mm")
-    keypoint_id = parts[0]
-    if not keypoint_id:
-        raise ValueError("keypoint id must be non-empty")
-    try:
-        x_mm, y_mm, z_mm = (float(parts[1]), float(parts[2]), float(parts[3]))
-    except ValueError as exc:
-        raise ValueError("coordinates must be numbers") from exc
-    if not all(np.isfinite(value) for value in (x_mm, y_mm, z_mm)):
-        raise ValueError("coordinates must be finite")
-    return keypoint_id, x_mm, y_mm, z_mm
-
-
-def board_coordinate_mm_to_layout_point(
-    x_mm: float,
-    y_mm: float,
-    z_mm: float,
-    board_pose: BoardPoseEstimate,
-    object_pose: ObjectPose,
-    marker_model: MarkerLayout,
-) -> np.ndarray:
-    board_point = np.array([x_mm, y_mm, z_mm], dtype=np.float64) / 1000.0
-    camera_point = board_point_to_camera(board_point, board_pose)
-    return camera_point_to_layout_point(
-        camera_point,
-        object_pose.rotation,
-        object_pose.origin,
-        marker_model,
     )
 
 
@@ -245,84 +195,3 @@ def save_object_model_keypoints(
         except OSError:
             pass
         raise
-
-
-@dataclass
-class ObjectModelEditSession:
-    path: Path
-    document: dict[str, Any]
-    saved_model: ObjectModel
-    working_model: ObjectModel
-    dirty: bool = False
-    status_message: str = ""
-    preview_keypoint_id: str | None = None
-    preview_board_point_m: np.ndarray | None = None
-
-    @classmethod
-    def from_path(cls, path: str | Path) -> ObjectModelEditSession:
-        model, document = load_object_model_document(path)
-        return cls(
-            path=Path(path),
-            document=document,
-            saved_model=model,
-            working_model=model,
-        )
-
-    def apply_keypoint_edit(
-        self,
-        line: str,
-        object_pose: ObjectPose | None,
-        board_pose: BoardPoseEstimate | None,
-        marker_model: MarkerLayout,
-    ) -> bool:
-        if object_pose is None:
-            self.status_message = "edit failed: fused object pose unavailable"
-            return False
-        if board_pose is None:
-            self.status_message = "edit failed: board pose unavailable"
-            return False
-        try:
-            keypoint_id, x_mm, y_mm, z_mm = parse_keypoint_edit_line(line)
-            layout_point = board_coordinate_mm_to_layout_point(
-                x_mm,
-                y_mm,
-                z_mm,
-                board_pose,
-                object_pose,
-                marker_model,
-            )
-        except ValueError as exc:
-            self.status_message = f"edit failed: {exc}"
-            return False
-
-        names = ordered_keypoint_names(self.document, self.working_model)
-        if keypoint_id not in names:
-            names = names + (keypoint_id,)
-        self.working_model = object_model_with_keypoint(
-            self.working_model,
-            keypoint_id,
-            layout_point,
-            keypoint_names=names,
-        )
-        self.preview_keypoint_id = keypoint_id
-        self.preview_board_point_m = np.array([x_mm, y_mm, z_mm], dtype=np.float64) / 1000.0
-        self.dirty = True
-        action = "updated" if keypoint_id in self.saved_model.keypoints else "added"
-        self.status_message = f"{action} {keypoint_id}"
-        return True
-
-    def save(self) -> bool:
-        try:
-            save_object_model_keypoints(self.path, self.working_model, self.document)
-        except OSError as exc:
-            self.status_message = f"save failed: {exc}"
-            return False
-        self.saved_model = self.working_model
-        self.dirty = False
-        self.status_message = "saved"
-        return True
-
-    def discard(self) -> None:
-        self.working_model = self.saved_model
-        self.dirty = False
-        self.status_message = "discarded"

@@ -8,8 +8,6 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from object_apriltag.board_model import load_board_model
-from object_apriltag.board_pose import make_charuco_detector, select_board_pose, solve_board_pose
 from object_apriltag.calibration import load_intrinsics, require_calibration_image_size
 from object_apriltag.detector import ObjectDetector, ObjectPose
 from object_apriltag.eraser import EraserModel, load_eraser_model, project_eraser_planes
@@ -20,8 +18,7 @@ from object_apriltag.frame_source import (
     read_frame,
 )
 from object_apriltag.layout import MarkerModel
-from object_apriltag.viz.board_frame import render_board_frame_grid_axes
-from object_apriltag.viz.overlay import draw_object_model_board_coordinate_labels, draw_object_pose
+from object_apriltag.viz.overlay import draw_object_pose
 from object_apriltag.viz.skeleton import load_object_model
 
 
@@ -171,32 +168,10 @@ def main() -> None:
         default=False,
         help="Draw object skeleton keypoints and bone lines from --object-model on the preview frame.",
     )
-    parser.add_argument(
-        "--board-frame",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Overlay the Board Reference Frame grid and axes, and annotate model points in board coordinates.",
-    )
-    parser.add_argument(
-        "--board-model",
-        type=Path,
-        help="ChArUco board model JSON. Required when --board-frame is enabled.",
-    )
-    parser.add_argument(
-        "--camera-motion",
-        choices=("static", "dynamic"),
-        default="static",
-        help=(
-            "Board pose retention when tracking drops out: static keeps the latest valid estimate; "
-            "dynamic clears labels and grid until the board is visible again."
-        ),
-    )
     args = parser.parse_args()
 
     if args.overlay_object_model and args.object_model is None:
         raise RuntimeError("--object-model is required when --overlay-object-model is enabled.")
-    if args.board_frame and args.board_model is None:
-        raise RuntimeError("--board-model is required when --board-frame is enabled.")
 
     if not args.calibration.exists():
         raise RuntimeError(f"Calibration file not found: {args.calibration}")
@@ -206,8 +181,6 @@ def main() -> None:
         raise RuntimeError(f"Eraser model file not found: {args.eraser_model}")
     if args.object_model is not None and not args.object_model.exists():
         raise RuntimeError(f"Object model file not found: {args.object_model}")
-    if args.board_frame and not args.board_model.exists():
-        raise RuntimeError(f"Board model file not found: {args.board_model}")
 
     camera_matrix, dist_coeffs, image_width, image_height, calibration_source = load_intrinsics(
         args.calibration
@@ -224,17 +197,11 @@ def main() -> None:
     marker_model = detector.marker_model
     marker_size_m = detector.marker_size_m
     object_model = load_object_model(args.object_model) if args.overlay_object_model else None
-    board_model = load_board_model(args.board_model) if args.board_frame else None
-    board_charuco = make_charuco_detector(board_model) if board_model is not None else None
-    board_retained_pose = None
 
     print(f"Using marker model: {args.marker_model} ({len(marker_model.marker_ids)} markers)")
     print(f"Using eraser model: {args.eraser_model} ({len(eraser_model.planes)} planes)")
     if object_model is not None:
         print(f"Using object model: {args.object_model} ({len(object_model.keypoint_names)} keypoints)")
-    if board_model is not None:
-        print(f"Using board model: {args.board_model}")
-        print(f"Board camera motion: {args.camera_motion}")
     print(f"Eraser origin: {eraser_model.origin}")
     print(f"Marker size: {marker_size_m:.4f} m")
     print(f"Using camera calibration: {args.calibration}")
@@ -260,24 +227,6 @@ def main() -> None:
         preview = frame.copy()
         pose = detector.fuse(detections)
 
-        board_pose = None
-        if args.board_frame and board_model is not None and board_charuco is not None:
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            board, board_detector = board_charuco
-            board_result = solve_board_pose(
-                gray,
-                board,
-                board_detector,
-                board_model,
-                camera_matrix,
-                dist_coeffs,
-            )
-            board_pose, board_retained_pose = select_board_pose(
-                board_result.pose,
-                board_retained_pose,
-                args.camera_motion,
-            )
-
         if background_plate is not None and pose is not None:
             preview, _ = erase_eraser_planes(
                 preview,
@@ -287,14 +236,6 @@ def main() -> None:
                 marker_model,
                 camera_matrix,
                 dist_coeffs,
-            )
-        if board_pose is not None and board_model is not None:
-            render_board_frame_grid_axes(
-                preview,
-                model=board_model,
-                pose=board_pose,
-                camera_matrix=camera_matrix,
-                dist_coeffs=dist_coeffs,
             )
         if args.overlay_object_model and pose is not None and object_model is not None:
             draw_object_pose(
@@ -306,16 +247,6 @@ def main() -> None:
                 object_model,
                 marker_model,
             )
-            if board_pose is not None:
-                draw_object_model_board_coordinate_labels(
-                    preview,
-                    pose,
-                    board_pose,
-                    marker_model,
-                    object_model,
-                    camera_matrix,
-                    dist_coeffs,
-                )
 
         draw_status_hud(
             preview,

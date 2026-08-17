@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
 MarkerPair = tuple[int, int]
 
+
 @dataclass(frozen=True)
 class FrameObservation:
     """One camera sample with expected marker corners in OpenCV order."""
@@ -23,6 +24,8 @@ class FrameObservation:
 
 @dataclass(frozen=True)
 class CalibrationSettings:
+    """Thresholds and iteration limits for multi-view marker layout calibration."""
+
     min_inliers_per_edge: int = 20
     reprojection_rms_gate_px: float = 2.0
     pair_translation_rms_gate_ratio: float = 0.10
@@ -34,6 +37,8 @@ class CalibrationSettings:
 
 @dataclass(frozen=True)
 class EdgeDiagnostics:
+    """Per-edge pair-consensus quality metrics for one marker pair."""
+
     marker_a: int
     marker_b: int
     inlier_count: int
@@ -43,6 +48,8 @@ class EdgeDiagnostics:
 
 @dataclass(frozen=True)
 class CalibrationQualityReport:
+    """Aggregate diagnostic snapshot produced during or after calibration."""
+
     reprojection_rms_px: float
     per_marker_reprojection_rms_px: dict[int, float]
     edges: tuple[EdgeDiagnostics, ...]
@@ -67,6 +74,8 @@ class CalibrationQualityReport:
 
 @dataclass(frozen=True)
 class MarkerExpansionRecord:
+    """Outcome of one anchor-core expansion attempt for a candidate marker."""
+
     marker_id: int
     status: str
     support_frames: int = 0
@@ -76,6 +85,8 @@ class MarkerExpansionRecord:
 
 @dataclass(frozen=True)
 class AnchorCoreBootstrapDiagnostics:
+    """Summary of the anchor-core bootstrap phase before hierarchical expansion."""
+
     status: str
     frames_considered: int
     frames_accepted: int
@@ -84,6 +95,8 @@ class AnchorCoreBootstrapDiagnostics:
 
 @dataclass(frozen=True)
 class AnchorCoreDiagnostics:
+    """End-to-end anchor-core solve trace from bootstrap through expansion."""
+
     mode: str
     configured_anchor_ids: tuple[int, ...]
     bootstrap: AnchorCoreBootstrapDiagnostics
@@ -95,18 +108,27 @@ class AnchorCoreDiagnostics:
 
 @dataclass(frozen=True)
 class OmittedMarkerDiagnostic:
+    """Records why a requested marker ID was omitted from the calibration output."""
+
     marker_id: int
     reason: str
 
 
 @dataclass(frozen=True)
 class QualityGateFailure:
+    """Categorized quality-gate failure.
+
+    ``strict`` gates may be waived under best-effort policy.
+    """
+
     category: Literal["strict", "connectivity", "data"]
     message: str
 
 
 @dataclass(frozen=True)
 class CalibrationResult:
+    """Outcome of a calibration attempt, including layout, quality, and refusal metadata."""
+
     layout: MarkerLayout | None
     quality: CalibrationQualityReport | None
     failure_reason: str | None
@@ -119,6 +141,7 @@ class CalibrationResult:
     partial_output: bool = False
 
     def __post_init__(self) -> None:
+        """Infer ``outcome`` from layout, failure, and omission fields when not preset."""
         if self.outcome is not None:
             return
         if self.layout is not None and self.failure_reason is None:
@@ -138,6 +161,8 @@ class CalibrationResult:
 
 @dataclass(frozen=True)
 class PairReadinessEdge:
+    """Live pair-readiness status for one marker pair before full calibration."""
+
     marker_a: int
     marker_b: int
     raw_covisible_frames: int
@@ -149,6 +174,8 @@ class PairReadinessEdge:
 
 @dataclass(frozen=True)
 class LivePairReadinessDiagnostics:
+    """Snapshot of marker-pair readiness and connectivity from a live observation sample."""
+
     pairs: tuple[PairReadinessEdge, ...]
     connected_marker_ids: frozenset[int]
     missing_marker_ids: frozenset[int]
@@ -158,6 +185,8 @@ class LivePairReadinessDiagnostics:
 
 @dataclass(frozen=True)
 class FrameAssignmentRejection:
+    """Why IPPE assignment failed for one frame."""
+
     reason: str
     marker_pair: MarkerPair | None = None
     translation_error_m: float | None = None
@@ -168,12 +197,16 @@ class FrameAssignmentRejection:
 
 @dataclass(frozen=True)
 class FrameAssignmentResult:
+    """Per-frame IPPE assignment outcome or rejection detail."""
+
     assignment: dict[int, "MarkerCandidate"] | None
     rejection: FrameAssignmentRejection | None
 
 
 @dataclass(frozen=True)
 class AssignmentRejectionCauseCount:
+    """Occurrence count for one assignment-rejection cause."""
+
     reason: str
     marker_pair: MarkerPair | None
     count: int
@@ -181,6 +214,8 @@ class AssignmentRejectionCauseCount:
 
 @dataclass(frozen=True)
 class MeasurementDistribution:
+    """Summary statistics for a scalar measurement sample."""
+
     min: float | None
     median: float | None
     p95: float | None
@@ -189,6 +224,8 @@ class MeasurementDistribution:
 
 @dataclass(frozen=True)
 class FrameAssignmentRejectionRecord:
+    """One rejected frame preserved for assignment diagnostics."""
+
     frame_index: int
     frame_id: str | int
     visible_marker_ids: tuple[int, ...]
@@ -202,6 +239,8 @@ class FrameAssignmentRejectionRecord:
 
 @dataclass(frozen=True)
 class FrameFallbackAssignmentRecord:
+    """One fallback IPPE assignment chosen after primary assignment failed."""
+
     frame_index: int
     frame_id: str | int
     visible_marker_ids: tuple[int, ...]
@@ -213,6 +252,8 @@ class FrameFallbackAssignmentRecord:
 
 @dataclass(frozen=True)
 class FrameFallbackAssignment:
+    """Compact fallback-assignment summary for solve-time bookkeeping."""
+
     frame_index: int
     disagreement_cost: float
     marker_pair: MarkerPair | None
@@ -222,6 +263,8 @@ class FrameFallbackAssignment:
 
 @dataclass(frozen=True)
 class AssignmentRejectionCauseStats:
+    """Aggregated assignment-rejection statistics for one cause."""
+
     reason: str
     marker_pair: MarkerPair | None
     count: int
@@ -236,6 +279,8 @@ class AssignmentRejectionCauseStats:
 
 @dataclass(frozen=True)
 class AssignmentRejectionSummary:
+    """Roll-up of frame assignment rejections across a calibration run."""
+
     total_rejected: int
     by_reason: tuple[tuple[str, int], ...]
     by_pair: tuple[tuple[MarkerPair, int], ...]
@@ -245,6 +290,8 @@ class AssignmentRejectionSummary:
 
 @dataclass(frozen=True)
 class DroppedPairEdge:
+    """Pair edge removed from consensus during pruning or support filtering."""
+
     marker_a: int
     marker_b: int
     stage: str
@@ -259,11 +306,18 @@ class DroppedPairEdge:
 
     @property
     def marker_pair(self) -> MarkerPair:
+        """Return the pair key used to index pair-consensus maps.
+
+        Returns:
+            ``(marker_a, marker_b)``.
+        """
         return (self.marker_a, self.marker_b)
 
 
 @dataclass(frozen=True)
 class RestoredPairEdge:
+    """Pair edge reinstated into consensus after an earlier drop."""
+
     marker_a: int
     marker_b: int
     stage: str
@@ -280,5 +334,9 @@ class RestoredPairEdge:
 
     @property
     def marker_pair(self) -> MarkerPair:
-        return (self.marker_a, self.marker_b)
+        """Return the pair key used to index pair-consensus maps.
 
+        Returns:
+            ``(marker_a, marker_b)``.
+        """
+        return (self.marker_a, self.marker_b)
