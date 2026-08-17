@@ -60,7 +60,10 @@ def _multi_marker_layout(
     for index, marker_id in enumerate(sorted_ids):
         row = index // 4
         col = index % 4
-        top_left = np.array([col * spacing, row * spacing, 0.0], dtype=np.float64)
+        top_left = np.array(
+            [col * spacing, row * spacing, float(index) * 0.05],
+            dtype=np.float64,
+        )
         footprints[marker_id] = _footprint_with_top_left(marker_id, top_left, marker_size)
     return build_marker_layout(sorted_ids[0], marker_size, footprints)
 

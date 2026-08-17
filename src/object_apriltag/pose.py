@@ -255,6 +255,29 @@ def _global_pose_correspondences(
     )
 
 
+def _has_multiple_ippe_solutions(
+    object_points: np.ndarray,
+    image_points: np.ndarray,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+) -> bool:
+    if object_points.shape[0] < 4:
+        return False
+    try:
+        ok, rvecs, _, _ = cv2.solvePnPGeneric(
+            object_points.astype(np.float32),
+            image_points.astype(np.float32),
+            camera_matrix,
+            dist_coeffs,
+            flags=cv2.SOLVEPNP_IPPE,
+        )
+    except cv2.error:
+        return False
+    if not ok or rvecs is None:
+        return False
+    return len(rvecs) > 1
+
+
 def estimate_global_layout_pose(
     detections: list[Detection],
     layout: MarkerLayout,
@@ -267,6 +290,10 @@ def estimate_global_layout_pose(
     )
 
     if len(set(marker_ids.tolist())) < 2:
+        return None
+    if _has_multiple_ippe_solutions(
+        object_points, image_points, camera_matrix, dist_coeffs
+    ):
         return None
     try:
         ok, rvec, tvec, inliers = cv2.solvePnPRansac(

@@ -8,7 +8,12 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from object_apriltag.layout import layout_point_to_object_frame, load_marker_model
+from object_apriltag.layout import (
+    build_marker_layout,
+    footprint_from_dict,
+    layout_point_to_object_frame,
+    load_marker_model,
+)
 from object_apriltag.pose import estimate_global_layout_pose
 
 REMOTE1_MARKER_MODEL = (
@@ -54,6 +59,15 @@ def _project_layout_detections(
             (projected.reshape(1, 4, 2).astype(np.float32), marker_id)
         )
     return detections
+
+
+def _square_payload(half: float, z: float = 0.0) -> dict[str, list[float]]:
+    return {
+        "top_left": [-half, -half, z],
+        "top_right": [half, -half, z],
+        "bottom_right": [half, half, z],
+        "bottom_left": [-half, half, z],
+    }
 
 
 class GlobalObjectPoseTests(unittest.TestCase):
@@ -114,6 +128,67 @@ class GlobalObjectPoseTests(unittest.TestCase):
                 self.camera_matrix,
                 self.dist_coeffs,
             ) or (None, None))
+        )
+
+
+class CoplanarLayoutPoseTests(unittest.TestCase):
+    def setUp(self) -> None:
+        marker_size_m = 0.07
+        half = marker_size_m / 2.0
+        self.layout = build_marker_layout(
+            0,
+            marker_size_m,
+            {
+                0: footprint_from_dict(0, _square_payload(half)),
+                1: footprint_from_dict(1, _square_payload(half, z=0.12)),
+            },
+        )
+        self.camera_matrix, self.dist_coeffs = _camera()
+        self.object_rvec = np.array([0.18, -0.12, 0.07], dtype=np.float64)
+        self.object_origin = np.array([0.02, -0.015, 0.62], dtype=np.float64)
+
+    def test_rejects_coplanar_markers_with_multiple_ippe_solutions(self) -> None:
+        coplanar_layout = build_marker_layout(
+            0,
+            0.07,
+            {
+                0: footprint_from_dict(0, _square_payload(0.035)),
+                1: footprint_from_dict(1, _square_payload(0.035)),
+            },
+        )
+        detections = _project_layout_detections(
+            coplanar_layout,
+            [0, 1],
+            self.object_rvec,
+            self.object_origin,
+            self.camera_matrix,
+            self.dist_coeffs,
+        )
+        self.assertIsNone(
+            estimate_global_layout_pose(
+                detections,
+                coplanar_layout,
+                self.camera_matrix,
+                self.dist_coeffs,
+            )
+        )
+
+    def test_allows_non_coplanar_markers(self) -> None:
+        detections = _project_layout_detections(
+            self.layout,
+            [0, 1],
+            self.object_rvec,
+            self.object_origin,
+            self.camera_matrix,
+            self.dist_coeffs,
+        )
+        self.assertIsNotNone(
+            estimate_global_layout_pose(
+                detections,
+                self.layout,
+                self.camera_matrix,
+                self.dist_coeffs,
+            )
         )
 
 
