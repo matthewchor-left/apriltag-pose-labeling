@@ -21,7 +21,7 @@ from object_apriltag.layout import (
     footprint_from_dict,
     layout_point_to_object_frame,
 )
-from object_apriltag.pose import estimate_fused_pose, estimate_strict_global_pose
+from object_apriltag.pose import estimate_global_layout_pose
 
 
 def _camera() -> tuple[np.ndarray, np.ndarray]:
@@ -151,7 +151,7 @@ class StrictGlobalPoseTests(unittest.TestCase):
         self.object_rvec = np.array([0.18, -0.12, 0.07], dtype=np.float64)
         self.object_origin = np.array([0.02, -0.015, 0.62], dtype=np.float64)
 
-    def test_strict_pose_rejects_single_marker_without_ippe_fallback(self) -> None:
+    def test_global_layout_pose_rejects_single_marker(self) -> None:
         detections = _project_layout_detections(
             self.layout,
             [0],
@@ -160,32 +160,14 @@ class StrictGlobalPoseTests(unittest.TestCase):
             self.camera_matrix,
             self.dist_coeffs,
         )
-        origin, rotation = estimate_strict_global_pose(
-            detections,
-            self.layout,
-            self.camera_matrix,
-            self.dist_coeffs,
+        self.assertIsNone(
+            estimate_global_layout_pose(
+                detections,
+                self.layout,
+                self.camera_matrix,
+                self.dist_coeffs,
+            )
         )
-        self.assertIsNone(origin)
-        self.assertIsNone(rotation)
-
-    def test_fused_pose_still_uses_single_marker_fallback(self) -> None:
-        detections = _project_layout_detections(
-            self.layout,
-            [0],
-            self.object_rvec,
-            self.object_origin,
-            self.camera_matrix,
-            self.dist_coeffs,
-        )
-        origin, rotation = estimate_fused_pose(
-            detections,
-            self.layout,
-            self.camera_matrix,
-            self.dist_coeffs,
-        )
-        self.assertIsNotNone(origin)
-        self.assertIsNotNone(rotation)
 
 
 class DetectionConsistencyEvaluationTests(unittest.TestCase):
@@ -231,7 +213,7 @@ class DetectionConsistencyEvaluationTests(unittest.TestCase):
 
         def capture_solve(detections, layout, camera_matrix, dist_coeffs):
             captured_training_ids.append({marker_id for _, marker_id in detections})
-            return estimate_strict_global_pose(
+            return estimate_global_layout_pose(
                 detections, layout, camera_matrix, dist_coeffs
             )
 
@@ -245,7 +227,7 @@ class DetectionConsistencyEvaluationTests(unittest.TestCase):
             frame_count=1,
         )
         with mock.patch(
-            "object_apriltag.evaluation.detection_consistency.estimate_strict_global_pose",
+            "object_apriltag.evaluation.detection_consistency.estimate_global_layout_pose",
             side_effect=capture_solve,
         ):
             evaluate_detection_consistency(
@@ -287,8 +269,8 @@ class DetectionConsistencyEvaluationTests(unittest.TestCase):
 
     def test_solve_failure_accounted_separately(self) -> None:
         with mock.patch(
-            "object_apriltag.evaluation.detection_consistency.estimate_strict_global_pose",
-            return_value=(None, None),
+            "object_apriltag.evaluation.detection_consistency.estimate_global_layout_pose",
+            return_value=None,
         ):
             report = evaluate_detection_consistency(
                 expected_marker_ids=self.expected_marker_ids,

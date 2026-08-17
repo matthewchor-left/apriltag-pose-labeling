@@ -61,39 +61,6 @@ def estimate_marker_pose(
     return rvec, tvec
 
 
-def _marker_pose_candidates(
-    corners: np.ndarray,
-    marker_size_m: float,
-    camera_matrix: np.ndarray,
-    dist_coeffs: np.ndarray,
-) -> list[tuple[np.ndarray, np.ndarray, float]]:
-    object_points = marker_corner_object_points(marker_size_m)
-    image_points = corners.reshape(4, 2).astype(np.float32)
-    ok, rvecs, tvecs, reprojection_errors = cv2.solvePnPGeneric(
-        object_points,
-        image_points,
-        camera_matrix,
-        dist_coeffs,
-        flags=cv2.SOLVEPNP_IPPE,
-    )
-    if not ok or rvecs is None or tvecs is None:
-        return []
-    raw_errors = (
-        np.asarray(reprojection_errors, dtype=np.float64).reshape(-1)
-        if reprojection_errors is not None
-        else np.full(len(rvecs), np.inf, dtype=np.float64)
-    )
-    candidates = [
-        (
-            np.asarray(rvec, dtype=np.float64).reshape(3, 1),
-            np.asarray(tvec, dtype=np.float64).reshape(3, 1),
-            float(raw_errors[index]),
-        )
-        for index, (rvec, tvec) in enumerate(zip(rvecs, tvecs, strict=True))
-    ]
-    return sorted(candidates, key=lambda candidate: candidate[2])
-
-
 def marker_reprojection_error(
     corners: np.ndarray,
     marker_size_m: float,
@@ -288,15 +255,17 @@ def _global_pose_correspondences(
     )
 
 
-def _estimate_global_layout_pose(
+def estimate_global_layout_pose(
     detections: list[Detection],
     layout: MarkerLayout,
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
 ) -> PoseTuple | None:
+    """Estimate layout-wide object pose from multi-marker RANSAC/LM."""
     object_points, image_points, marker_ids = _global_pose_correspondences(
         detections, layout
     )
+
     if len(set(marker_ids.tolist())) < 2:
         return None
     try:
@@ -343,97 +312,3 @@ def _estimate_global_layout_pose(
     ):
         return None
     return origin, np.asarray(rotation, dtype=np.float64)
-
-
-def _rotation_distance_rad(rotation_a: np.ndarray, rotation_b: np.ndarray) -> float:
-    relative = rotation_a @ rotation_b.T
-    cosine = np.clip((np.trace(relative) - 1.0) / 2.0, -1.0, 1.0)
-    return float(np.arccos(cosine))
-
-
-def _estimate_best_marker_pose(
-    detections: list[Detection],
-    layout: MarkerLayout,
-    camera_matrix: np.ndarray,
-    dist_coeffs: np.ndarray,
-    previous_pose: PoseTuple | None,
-) -> PoseTuple | None:
-    candidates: list[tuple[np.ndarray, np.ndarray, float, float]] = []
-    for corners, marker_id in detections:
-        if marker_id not in layout.transforms:
-            continue
-        marker_size_m = layout.marker_size_for(marker_id)
-        for rvec, tvec, reprojection_error in _marker_pose_candidates(
-            corners, marker_size_m, camera_matrix, dist_coeffs
-        ):
-            try:
-                rotation, origin = object_pose_from_marker_pose(
-                    rvec, tvec, marker_id, layout
-                )
-            except (RuntimeError, KeyError):
-                continue
-            temporal_cost = 0.0
-            if previous_pose is not None:
-                previous_origin, previous_rotation = previous_pose
-                temporal_cost = (
-                    np.linalg.norm(origin - previous_origin)
-                    / max(marker_size_m, 1e-9)
-                    + _rotation_distance_rad(rotation, previous_rotation)
-                )
-            candidates.append(
-                (origin, rotation, temporal_cost, reprojection_error)
-            )
-    if not candidates:
-        return None
-    if previous_pose is None:
-        origin, rotation, _, _ = min(
-            candidates, key=lambda candidate: candidate[3]
-        )
-    else:
-        origin, rotation, _, _ = min(
-            candidates, key=lambda candidate: (candidate[2], candidate[3])
-        )
-    return origin, rotation
-
-
-def estimate_strict_global_pose(
-    detections: list[Detection],
-    layout: MarkerLayout,
-    camera_matrix: np.ndarray,
-    dist_coeffs: np.ndarray,
-) -> tuple[np.ndarray | None, np.ndarray | None]:
-    """Estimate layout-wide object pose from multi-marker RANSAC/LM only.
-
-    Unlike estimate_fused_pose, this never falls back to single-marker IPPE or
-    temporal pose history.
-    """
-    pose = _estimate_global_layout_pose(
-        detections, layout, camera_matrix, dist_coeffs
-    )
-    if pose is None:
-        return None, None
-    return pose
-
-
-def estimate_fused_pose(
-    detections: list[Detection],
-    layout: MarkerLayout,
-    camera_matrix: np.ndarray,
-    dist_coeffs: np.ndarray,
-    previous_pose: PoseTuple | None = None,
-) -> tuple[np.ndarray | None, np.ndarray | None]:
-    """Estimate one layout-wide object pose, with temporal single-marker fallback."""
-    pose = _estimate_global_layout_pose(
-        detections, layout, camera_matrix, dist_coeffs
-    )
-    if pose is None:
-        pose = _estimate_best_marker_pose(
-            detections,
-            layout,
-            camera_matrix,
-            dist_coeffs,
-            previous_pose,
-        )
-    if pose is None:
-        return None, None
-    return pose

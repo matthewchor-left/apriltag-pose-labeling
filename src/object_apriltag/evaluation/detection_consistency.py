@@ -33,7 +33,7 @@ from object_apriltag.evaluation.types import (
     VisibleMarkerCountStratum,
 )
 from object_apriltag.layout import MarkerLayout, layout_point_to_camera
-from object_apriltag.pose import Detection, estimate_strict_global_pose
+from object_apriltag.pose import Detection, estimate_global_layout_pose
 
 _MIN_TRAINING_MARKERS = 2
 
@@ -195,13 +195,13 @@ def _evaluate_candidate(
                     (corners_by_id[marker_id].reshape(1, 4, 2).astype(np.float32), marker_id)
                     for marker_id in training_marker_ids
                 ]
-                origin, rotation = estimate_strict_global_pose(
+                pose = estimate_global_layout_pose(
                     training_detections,
                     candidate.layout,
                     camera_matrix,
                     dist_coeffs,
                 )
-                if origin is None or rotation is None:
+                if pose is None:
                     folds.append(
                         LeaveOneMarkerDetectionFold(
                             source_video=video.source_video,
@@ -217,6 +217,7 @@ def _evaluate_candidate(
                     )
                     continue
 
+                origin, rotation = pose
                 try:
                     corner_errors = _held_out_corner_errors_px(
                         observed_corners=corners_by_id[held_out_marker_id],

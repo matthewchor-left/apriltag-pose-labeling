@@ -10,7 +10,7 @@ import numpy as np
 
 from object_apriltag.apriltag import DEFAULT_APRILTAG_DICTIONARY, build_apriltag_detector
 from object_apriltag.layout import MarkerModel, load_marker_model
-from object_apriltag.pose import Detection, estimate_fused_pose
+from object_apriltag.pose import Detection, estimate_global_layout_pose
 
 
 @dataclass(frozen=True)
@@ -53,7 +53,6 @@ class ObjectDetector:
                 )
         self._known_ids = self._marker_model.marker_ids if marker_ids is None else marker_ids
         self._detector = build_apriltag_detector(dictionary, sensitivity)
-        self._previous_pose: ObjectPose | None = None
 
     @property
     def marker_model(self) -> MarkerModel:
@@ -77,23 +76,16 @@ class ObjectDetector:
         return detections
 
     def fuse(self, detections: list[Detection]) -> ObjectPose | None:
-        previous_pose = (
-            (self._previous_pose.origin, self._previous_pose.rotation)
-            if self._previous_pose is not None
-            else None
-        )
-        origin, rotation = estimate_fused_pose(
+        pose = estimate_global_layout_pose(
             detections,
             self._marker_model,
             self._camera_matrix,
             self._dist_coeffs,
-            previous_pose=previous_pose,
         )
-        if origin is None or rotation is None:
+        if pose is None:
             return None
-        pose = ObjectPose(origin=origin, rotation=rotation)
-        self._previous_pose = pose
-        return pose
+        origin, rotation = pose
+        return ObjectPose(origin=origin, rotation=rotation)
 
     def detect(self, frame: np.ndarray) -> ObjectPose | None:
         return self.fuse(self.find_markers(frame))

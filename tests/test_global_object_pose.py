@@ -4,17 +4,12 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
-from unittest import mock
 
 import cv2
 import numpy as np
 
-from object_apriltag.layout import (
-    OBJECT_AXIS_FLIP,
-    layout_point_to_object_frame,
-    load_marker_model,
-)
-from object_apriltag.pose import estimate_fused_pose
+from object_apriltag.layout import layout_point_to_object_frame, load_marker_model
+from object_apriltag.pose import estimate_global_layout_pose
 
 REMOTE1_MARKER_MODEL = (
     Path(__file__).resolve().parents[1]
@@ -89,12 +84,12 @@ class GlobalObjectPoseTests(unittest.TestCase):
             self.dist_coeffs,
         )
         self.assert_pose_close(
-            *estimate_fused_pose(
+            *(estimate_global_layout_pose(
                 detections,
                 self.layout,
                 self.camera_matrix,
                 self.dist_coeffs,
-            )
+            ) or (None, None))
         )
 
     def test_ransac_rejects_one_corrupted_marker(self) -> None:
@@ -113,50 +108,13 @@ class GlobalObjectPoseTests(unittest.TestCase):
             corrupted_id,
         )
         self.assert_pose_close(
-            *estimate_fused_pose(
+            *(estimate_global_layout_pose(
                 detections,
                 self.layout,
                 self.camera_matrix,
                 self.dist_coeffs,
-            )
+            ) or (None, None))
         )
-
-    def test_single_marker_chooses_ippe_branch_nearest_previous_pose(self) -> None:
-        marker_id = self.layout.reference_marker_id
-        transform = self.layout.transforms[marker_id]
-        wrong_rotation, _ = cv2.Rodrigues(
-            np.array([1.1, -0.3, 0.2], dtype=np.float64)
-        )
-        wrong_origin = self.object_origin + np.array([0.15, 0.0, 0.08])
-
-        def marker_candidate(object_rotation, object_origin, error):
-            marker_rotation = (
-                object_rotation
-                @ OBJECT_AXIS_FLIP.T
-                @ transform.rotation.T
-            )
-            rvec, _ = cv2.Rodrigues(marker_rotation)
-            tvec = object_origin - marker_rotation @ transform.offset
-            return rvec, tvec.reshape(3, 1), error
-
-        candidates = [
-            marker_candidate(wrong_rotation, wrong_origin, 0.1),
-            marker_candidate(self.object_rotation, self.object_origin, 0.2),
-        ]
-        dummy_detection = [(np.zeros((1, 4, 2), dtype=np.float32), marker_id)]
-        with mock.patch(
-            "object_apriltag.pose._marker_pose_candidates",
-            return_value=candidates,
-        ):
-            self.assert_pose_close(
-                *estimate_fused_pose(
-                    dummy_detection,
-                    self.layout,
-                    self.camera_matrix,
-                    self.dist_coeffs,
-                    previous_pose=(self.object_origin, self.object_rotation),
-                )
-            )
 
 
 if __name__ == "__main__":

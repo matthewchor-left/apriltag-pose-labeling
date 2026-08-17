@@ -15,6 +15,7 @@ from object_apriltag.layout import (
     build_marker_layout,
     footprint_edge_lengths,
     footprint_from_dict,
+    layout_point_to_object_frame,
     load_marker_model,
     marker_layout_to_dict,
     resolve_marker_sizes,
@@ -31,7 +32,7 @@ from object_apriltag.marker_layout_calibration import (
 from object_apriltag.marker_layout_calibration.finalize import check_quality_gates
 from object_apriltag.marker_layout_calibration.input import parse_marker_size_override_spec
 from object_apriltag.marker_layout_calibration.solve_quality import pair_translation_gate
-from object_apriltag.pose import estimate_fused_pose, marker_corner_object_points
+from object_apriltag.pose import estimate_global_layout_pose, marker_corner_object_points
 from tests.test_marker_layout_calibration import (
     _default_camera,
     reference_gauge_pose,
@@ -201,49 +202,71 @@ class MixedRuntimeFusionTests(unittest.TestCase):
     def test_fusion_uses_per_marker_sizes(self) -> None:
         default_size = 0.07
         small_size = 0.05
-        ref_rotation, ref_translation = reference_gauge_pose(default_size)
-        small_rotation, small_translation = reference_gauge_pose(small_size)
-        small_translation = small_translation + np.array([0.12, 0.0, 0.0], dtype=np.float64)
+        object_rvec = np.array([0.18, -0.12, 0.07], dtype=np.float64)
+        object_origin = np.array([0.02, -0.015, 0.62], dtype=np.float64)
         footprints = {
             0: footprint_from_dict(0, _square_payload(default_size / 2)),
             1: footprint_from_dict(1, _square_payload(small_size / 2, z=0.12)),
+            2: footprint_from_dict(2, _square_payload(default_size / 2, z=0.12)),
+            3: footprint_from_dict(3, _square_payload(small_size / 2, z=0.24)),
         }
         layout = build_marker_layout(
             0,
             default_size,
             footprints,
-            marker_sizes_m={0: default_size, 1: small_size},
+            marker_sizes_m={0: default_size, 1: small_size, 2: default_size, 3: small_size},
         )
         camera_matrix, dist_coeffs = _default_camera()
 
-        def projected_corners(size: float, rotation: np.ndarray, translation: np.ndarray) -> np.ndarray:
-            object_points = marker_corner_object_points(size)
-            rvec, _ = cv2.Rodrigues(rotation)
+        def projected_corners(marker_id: int) -> np.ndarray:
+            object_points = np.stack(
+                [
+                    layout_point_to_object_frame(point, layout)
+                    for point in layout.footprints[marker_id].corners()
+                ]
+            )
             projected, _ = cv2.projectPoints(
-                object_points.astype(np.float32),
-                rvec,
-                translation.reshape(3, 1),
+                object_points,
+                object_rvec,
+                object_origin,
                 camera_matrix,
                 dist_coeffs,
             )
-            return projected.reshape(1, 4, 2)
+            return projected.reshape(1, 4, 2).astype(np.float32)
+
+        def projected_corners_with_wrong_sizes(marker_id: int) -> np.ndarray:
+            size = small_size if marker_id in (0, 2) else default_size
+            object_points = marker_corner_object_points(size)
+            marker_rotation, _ = cv2.Rodrigues(object_rvec)
+            marker_origin = object_origin + marker_rotation @ layout.transforms[
+                marker_id
+            ].offset
+            rvec, _ = cv2.Rodrigues(marker_rotation @ layout.transforms[marker_id].rotation)
+            projected, _ = cv2.projectPoints(
+                object_points.astype(np.float32),
+                rvec,
+                marker_origin.reshape(3, 1),
+                camera_matrix,
+                dist_coeffs,
+            )
+            return projected.reshape(1, 4, 2).astype(np.float32)
 
         detections = [
-            (projected_corners(default_size, ref_rotation, ref_translation), 0),
-            (projected_corners(small_size, small_rotation, small_translation), 1),
+            (projected_corners(marker_id), marker_id) for marker_id in (0, 1, 2, 3)
         ]
-        origin, rotation = estimate_fused_pose(detections, layout, camera_matrix, dist_coeffs)
-        self.assertIsNotNone(origin)
-        self.assertIsNotNone(rotation)
+        pose = estimate_global_layout_pose(detections, layout, camera_matrix, dist_coeffs)
+        self.assertIsNotNone(pose)
+        origin, rotation = pose
 
         swapped = [
-            (projected_corners(small_size, ref_rotation, ref_translation), 0),
-            (projected_corners(default_size, small_rotation, small_translation), 1),
+            (projected_corners_with_wrong_sizes(marker_id), marker_id)
+            for marker_id in (0, 1, 2, 3)
         ]
-        swapped_origin, swapped_rotation = estimate_fused_pose(
+        swapped_pose = estimate_global_layout_pose(
             swapped, layout, camera_matrix, dist_coeffs
         )
-        self.assertIsNotNone(swapped_origin)
+        self.assertIsNotNone(swapped_pose)
+        swapped_origin, swapped_rotation = swapped_pose
         assert origin is not None and swapped_origin is not None
         self.assertGreater(np.linalg.norm(origin - swapped_origin), 1e-3)
 

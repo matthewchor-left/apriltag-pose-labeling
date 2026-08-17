@@ -9,7 +9,7 @@ import numpy as np
 from object_apriltag import ObjectDetector, ObjectPose
 from object_apriltag.calibration import DEFAULT_MARKER_MODEL_PATH
 from object_apriltag.layout import load_marker_model
-from object_apriltag.pose import estimate_fused_pose, object_pose_from_marker
+from object_apriltag.pose import estimate_global_layout_pose, object_pose_from_marker
 
 
 class ObjectDetectorTests(unittest.TestCase):
@@ -36,21 +36,16 @@ class ObjectDetectorTests(unittest.TestCase):
             dtype=np.float32,
         ).reshape(1, 4, 2)
 
-    def test_fused_pose_from_synthetic_marker(self) -> None:
+    def test_fused_pose_returns_none_for_single_marker(self) -> None:
         corners = self._synthetic_corners()
         detections = [(corners, 0)]
-        origin, rotation = estimate_fused_pose(
+        pose = estimate_global_layout_pose(
             detections,
             self.marker_model,
             self.camera_matrix,
             self.dist_coeffs,
         )
-        self.assertIsNotNone(origin)
-        self.assertIsNotNone(rotation)
-        assert origin is not None and rotation is not None
-        self.assertEqual(origin.shape, (3,))
-        self.assertEqual(rotation.shape, (3, 3))
-        self.assertAlmostEqual(float(np.linalg.det(rotation)), 1.0, places=4)
+        self.assertIsNone(pose)
 
     def test_object_pose_dataclass(self) -> None:
         corners = self._synthetic_corners()

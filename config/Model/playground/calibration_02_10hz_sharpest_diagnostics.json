@@ -22,25 +22,25 @@
       "detected_markers": 835
     },
     "timing_seconds": {
-      "open_source": 0.019434625,
-      "decode": 0.504792114,
-      "detection": 15.541729795,
-      "ingest_total": 16.63329525,
-      "calibration_solve": 7.572704666,
-      "total_through_solve": 24.206000958,
+      "open_source": 0.032351125,
+      "decode": 0.621132686,
+      "detection": 15.517770374,
+      "ingest_total": 16.746190208,
+      "calibration_solve": 7.618045625,
+      "total_through_solve": 24.364236792,
       "solve_stages": {
-        "ippe_candidate_generation": 0.025299500091932714,
-        "initial_pair_consensus": 0.48681854095775634,
-        "strict_assignment": 0.054108622833155096,
-        "fallback_assignment": 0.05298030038829893,
-        "initial_bundle_adjustment": 6.8283089169999585,
-        "pruning": 0.016127875074744225
+        "ippe_candidate_generation": 0.03094974998384714,
+        "initial_pair_consensus": 0.47850904194638133,
+        "strict_assignment": 0.05336699110921472,
+        "fallback_assignment": 0.052159085287712514,
+        "initial_bundle_adjustment": 6.870008707977831,
+        "pruning": 0.015590708004310727
       },
-      "sharpness_scoring": 0.492347312
+      "sharpness_scoring": 0.497794522
     },
     "throughput": {
-      "pipeline_frames_per_second": 99.55934618547698,
-      "detector_invocations_per_second": 17.75864100331954
+      "pipeline_frames_per_second": 98.88816378121004,
+      "detector_invocations_per_second": 17.786060326194644
     },
     "environment": {
       "python": "3.14.6",
@@ -59,14 +59,14 @@
         "status": 3,
         "cost": 22508.236883103502,
         "timing_seconds": {
-          "setup": 0.05519499990623444,
-          "least_squares": 6.828307707910426,
-          "post": 0.005532707902602851,
-          "residual_callback_total": 4.7401339688804,
-          "residual_unpack": 1.213497202261351,
-          "projection_loop": 3.512181660044007,
-          "residual_callback_other": 0.01445510657504201,
-          "least_squares_overhead": 2.088173739030026
+          "setup": 0.06369179196190089,
+          "least_squares": 6.870006958954036,
+          "post": 0.005413667066022754,
+          "residual_callback_total": 4.707416188786738,
+          "residual_unpack": 1.2024119332199916,
+          "projection_loop": 3.4898111457005143,
+          "residual_callback_other": 0.01519310986623168,
+          "least_squares_overhead": 2.1625907701672986
         },
         "counts": {
           "parameter_count": 1446,

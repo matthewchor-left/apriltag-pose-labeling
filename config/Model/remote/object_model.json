@@ -1,0 +1,52 @@
+{
+  "units": "meters",
+  "coordinate_frame": "marker_model",
+  "keypoint_sources": {
+    "green-button-top": {
+      "marker_id": 24,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "back-button-left": {
+      "marker_id": 25,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "home-button-right": {
+      "marker_id": 23,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    }
+  },
+  "keypoints": {
+    "green-button-top": [
+      -0.10242654515276278,
+      -0.002875787255027176,
+      0.06393535037955478
+    ],
+    "back-button-left": [
+      -0.06957139983530328,
+      0.011168351781858588,
+      0.06305215468358898
+    ],
+    "home-button-right": [
+      -0.06716169741308844,
+      -0.01129180300949379,
+      0.0636480491780478
+    ]
+  },
+  "skeleton": [
+    [
+      "green-button-top",
+      "back-button-left"
+    ],
+    [
+      "green-button-top",
+      "home-button-right"
+    ],
+    [
+      "back-button-left",
+      "home-button-right"
+    ]
+  ]
+}
