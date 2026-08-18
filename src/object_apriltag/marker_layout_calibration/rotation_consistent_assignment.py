@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import itertools
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
@@ -143,22 +142,51 @@ def _select_seed_frame_index(
     return best_frame
 
 
-def _enumerate_assignments(
+def _search_assignments(
     candidates: dict[int, list[MarkerCandidate]],
+    neighbors: list[tuple[int, dict[int, MarkerCandidate]]],
+    rotation_gate: float,
 ) -> list[dict[int, MarkerCandidate]]:
+    """Enumerate marker-branch assignments, pruning incompatible partial paths early.
+
+    Args:
+        candidates: Per-marker IPPE candidate lists for one frame.
+        neighbors: Already-assigned neighbor frames used for rotation agreement.
+        rotation_gate: Maximum allowed relative rotation disagreement in degrees.
+
+    Returns:
+        Full assignments that satisfy all neighbor rotation constraints.
+    """
     marker_ids = sorted(candidates)
     if len(marker_ids) < 2:
         return []
-    ranges = [range(len(candidates[marker_id])) for marker_id in marker_ids]
-    assignments: list[dict[int, MarkerCandidate]] = []
-    for indices in itertools.product(*ranges):
-        assignments.append(
-            {
-                marker_id: candidates[marker_id][candidate_index]
-                for marker_id, candidate_index in zip(marker_ids, indices, strict=True)
-            }
-        )
-    return assignments
+
+    results: list[dict[int, MarkerCandidate]] = []
+    partial: dict[int, MarkerCandidate] = {}
+
+    def partial_compatible() -> bool:
+        for _, neighbor_assignment in neighbors:
+            if not _partial_compatible_with_neighbor(
+                partial,
+                neighbor_assignment,
+                rotation_gate,
+            ):
+                return False
+        return True
+
+    def dfs(index: int) -> None:
+        if index == len(marker_ids):
+            results.append(dict(partial))
+            return
+        marker_id = marker_ids[index]
+        for candidate in candidates[marker_id]:
+            partial[marker_id] = candidate
+            if not neighbors or partial_compatible():
+                dfs(index + 1)
+            del partial[marker_id]
+
+    dfs(0)
+    return results
 
 
 def _mean_reprojection_rms(assignment: dict[int, MarkerCandidate]) -> float:
@@ -168,8 +196,30 @@ def _mean_reprojection_rms(assignment: dict[int, MarkerCandidate]) -> float:
 def _select_lowest_reprojection_assignment(
     candidates: dict[int, list[MarkerCandidate]],
 ) -> dict[int, MarkerCandidate] | None:
-    compatible = _enumerate_assignments(candidates)
-    return _pick_lowest_reprojection_assignment(compatible)
+    marker_ids = sorted(candidates)
+    if len(marker_ids) < 2:
+        return None
+
+    best: dict[int, MarkerCandidate] | None = None
+    best_rms = float("inf")
+    partial: dict[int, MarkerCandidate] = {}
+
+    def dfs(index: int) -> None:
+        nonlocal best, best_rms
+        if index == len(marker_ids):
+            rms = _mean_reprojection_rms(partial)
+            if rms < best_rms:
+                best_rms = rms
+                best = dict(partial)
+            return
+        marker_id = marker_ids[index]
+        for candidate in candidates[marker_id]:
+            partial[marker_id] = candidate
+            dfs(index + 1)
+            del partial[marker_id]
+
+    dfs(0)
+    return best
 
 
 def _pick_lowest_reprojection_assignment(
@@ -194,19 +244,31 @@ def _shared_marker_count(
     return len(_shared_marker_ids(assignment, candidates))
 
 
+def _partial_compatible_with_neighbor(
+    partial: dict[int, MarkerCandidate],
+    neighbor_assignment: dict[int, MarkerCandidate],
+    rotation_gate: float,
+) -> bool:
+    shared = sorted(_shared_marker_ids(partial, neighbor_assignment))
+    assigned_shared = [marker_id for marker_id in shared if marker_id in partial]
+    for index_a, marker_low in enumerate(assigned_shared):
+        for marker_high in assigned_shared[index_a + 1 :]:
+            rotation_left, _ = transform_high_in_low(partial[marker_low], partial[marker_high])
+            rotation_right, _ = transform_high_in_low(
+                neighbor_assignment[marker_low],
+                neighbor_assignment[marker_high],
+            )
+            if rotation_geodesic_deg(rotation_left, rotation_right) > rotation_gate:
+                return False
+    return True
+
+
 def _assignments_compatible(
     left: dict[int, MarkerCandidate],
     right: dict[int, MarkerCandidate],
     rotation_gate: float,
 ) -> bool:
-    shared = sorted(_shared_marker_ids(left, right))
-    for index_a, marker_low in enumerate(shared):
-        for marker_high in shared[index_a + 1 :]:
-            rotation_left, _ = transform_high_in_low(left[marker_low], left[marker_high])
-            rotation_right, _ = transform_high_in_low(right[marker_low], right[marker_high])
-            if rotation_geodesic_deg(rotation_left, rotation_right) > rotation_gate:
-                return False
-    return True
+    return _partial_compatible_with_neighbor(left, right, rotation_gate)
 
 
 def _compatible_assignments(
@@ -214,16 +276,7 @@ def _compatible_assignments(
     neighbors: list[tuple[int, dict[int, MarkerCandidate]]],
     rotation_gate: float,
 ) -> list[dict[int, MarkerCandidate]]:
-    if not neighbors:
-        return _enumerate_assignments(candidates)
-    compatible: list[dict[int, MarkerCandidate]] = []
-    for assignment in _enumerate_assignments(candidates):
-        if all(
-            _assignments_compatible(assignment, neighbor_assignment, rotation_gate)
-            for _, neighbor_assignment in neighbors
-        ):
-            compatible.append(assignment)
-    return compatible
+    return _search_assignments(candidates, neighbors, rotation_gate)
 
 
 def _candidate_branch_index(

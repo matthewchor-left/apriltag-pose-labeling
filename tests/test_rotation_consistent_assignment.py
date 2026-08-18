@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import itertools
 import unittest
 
 import cv2
 import numpy as np
 
 from object_apriltag.marker_layout_calibration.rotation_consistent_assignment import (
+    _compatible_assignments,
+    _pick_lowest_reprojection_assignment,
+    _search_assignments,
+    _select_lowest_reprojection_assignment,
     assign_frames_rotation_consistent,
 )
 from object_apriltag.marker_layout_calibration.solve_primitives import MarkerCandidate
@@ -142,6 +147,102 @@ class RotationConsistentAssignmentTests(unittest.TestCase):
         )
         self.assertIn(0, result.assigned)
         self.assertIn(1, result.rejected_frames)
+
+
+def _enumerate_assignments_bruteforce(
+    candidates: dict[int, list[MarkerCandidate]],
+) -> list[dict[int, MarkerCandidate]]:
+    marker_ids = sorted(candidates)
+    if len(marker_ids) < 2:
+        return []
+    ranges = [range(len(candidates[marker_id])) for marker_id in marker_ids]
+    assignments: list[dict[int, MarkerCandidate]] = []
+    for indices in itertools.product(*ranges):
+        assignments.append(
+            {
+                marker_id: candidates[marker_id][candidate_index]
+                for marker_id, candidate_index in zip(marker_ids, indices, strict=True)
+            }
+        )
+    return assignments
+
+
+def _assignment_signature(assignment: dict[int, MarkerCandidate]) -> tuple[tuple[int, float, float, float], ...]:
+    return tuple(
+        sorted(
+            (
+                marker_id,
+                float(candidate.tvec[0]),
+                float(candidate.tvec[1]),
+                float(candidate.tvec[2]),
+            )
+            for marker_id, candidate in assignment.items()
+        )
+    )
+
+
+class AssignmentSearchTests(unittest.TestCase):
+    def _random_candidates(self, marker_count: int) -> dict[int, list[MarkerCandidate]]:
+        rng = np.random.default_rng(7)
+        candidates: dict[int, list[MarkerCandidate]] = {}
+        for marker_id in range(marker_count):
+            branch_candidates = []
+            for branch in range(2):
+                translation = rng.normal(size=3) * 0.05 + np.array([0.0, 0.0, 0.5])
+                rotation = cv2.Rodrigues(rng.normal(size=3) * 0.2)[0]
+                branch_candidates.append(
+                    _make_candidate(
+                        translation,
+                        rotation=rotation,
+                        reprojection_rms_px=float(branch + marker_id) * 0.1,
+                    )
+                )
+            candidates[marker_id] = branch_candidates
+        return candidates
+
+    def test_search_matches_bruteforce_without_neighbors(self) -> None:
+        candidates = self._random_candidates(marker_count=5)
+        expected = _enumerate_assignments_bruteforce(candidates)
+        actual = _search_assignments(candidates, [], rotation_gate=5.0)
+        self.assertEqual(
+            {_assignment_signature(assignment) for assignment in expected},
+            {_assignment_signature(assignment) for assignment in actual},
+        )
+
+    def test_search_matches_bruteforce_with_neighbor_constraints(self) -> None:
+        from object_apriltag.marker_layout_calibration.rotation_consistent_assignment import (
+            _assignments_compatible,
+        )
+
+        candidates = self._random_candidates(marker_count=6)
+        neighbor_assignment = _enumerate_assignments_bruteforce(candidates)[0]
+        neighbors = [(0, neighbor_assignment)]
+        expected = [
+            assignment
+            for assignment in _enumerate_assignments_bruteforce(candidates)
+            if _assignments_compatible(assignment, neighbor_assignment, 5.0)
+        ]
+        actual = _search_assignments(candidates, neighbors, rotation_gate=5.0)
+        self.assertEqual(
+            {_assignment_signature(assignment) for assignment in expected},
+            {_assignment_signature(assignment) for assignment in actual},
+        )
+
+    def test_lowest_reprojection_assignment_matches_bruteforce(self) -> None:
+        candidates = self._random_candidates(marker_count=5)
+        expected = _pick_lowest_reprojection_assignment(_enumerate_assignments_bruteforce(candidates))
+        actual = _select_lowest_reprojection_assignment(candidates)
+        assert expected is not None and actual is not None
+        self.assertEqual(_assignment_signature(expected), _assignment_signature(actual))
+
+    def test_compatible_assignments_wrapper_matches_search(self) -> None:
+        candidates = self._random_candidates(marker_count=4)
+        neighbor_assignment = _enumerate_assignments_bruteforce(candidates)[3]
+        neighbors = [(2, neighbor_assignment)]
+        self.assertEqual(
+            _compatible_assignments(candidates, neighbors, rotation_gate=5.0),
+            _search_assignments(candidates, neighbors, rotation_gate=5.0),
+        )
 
 
 if __name__ == "__main__":
