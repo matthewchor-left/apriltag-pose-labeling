@@ -149,7 +149,8 @@ uv run annotation-tool \
 Video sources run headlessly to EOF. Live camera shows a preview and stops on **q**.
 Add `--labeled-images N` to write annotated previews for the first `N` saved samples
 under `labeled-images/<split>/`. See [`docs/training-data.md`](docs/training-data.md)
-for acceptance rules, output layout, and the fixed 17-landmark contract.
+for acceptance rules, output layout, the fixed 17-landmark contract, and CAD
+self-occlusion visibility (`v=1` / `v=2`).
 
 ## Core API
 

@@ -62,6 +62,10 @@ A frame is an Accepted Frame when:
 3. The clipped axis-aligned bounds of the projected CAD mesh silhouette are
    valid.
 
+Each accepted keypoint also receives a CAD self-occlusion visibility flag from a
+sparse camera-to-landmark ray test against the registered CAD mesh. External
+occluders (hands, furniture, other objects) are not modeled.
+
 Cropping, inpainting, and eraser masking are out of scope for this stage.
 
 ## Output tree
@@ -79,7 +83,8 @@ Saved images are raw full-resolution JPEG quality 95. Preview rendering never
 contaminates saved files. When `--labeled-images N` is set, the first `N` saved
 Training Samples also write annotated JPEG previews under `labeled-images/<split>/`
 with the generated bounding box and 17 named keypoints drawn on a copy of the raw
-frame.
+frame. Visible keypoints (`v=2`) are orange; CAD-self-occluded keypoints (`v=1`)
+are red, with a small legend in the preview image.
 
 `data.yaml` is created on first use and must match the schema below on later
 appends. The generator refuses run-name or sample-file collisions and validates
@@ -113,8 +118,25 @@ Each image has one YOLO pose label row:
 
 This is 56 whitespace-separated fields: one class ID, four bounding-box values,
 and 17 keypoint triplets. Coordinates are normalized to the image width and
-height. The generator always sets class `0`, `v=2` for all 17 keypoints, and does
-not encode occlusion or missing-keypoint states.
+height. The generator always sets class `0`.
+
+Keypoint visibility `v` encodes CAD-only self-occlusion:
+
+| `v` | Meaning |
+|-----|---------|
+| `2` | Visible: no other CAD mesh triangle blocks the camera-to-landmark segment outside the landmark neighborhood. |
+| `1` | CAD-self-occluded: another CAD mesh triangle intersects the open segment more than 5 mm before the landmark vertex. |
+
+CAD ray hits within 5 mm of a landmark endpoint are treated as part of the landmark
+neighborhood and do not mark the keypoint occluded. Incident triangles that share the
+snapped landmark vertex are still skipped separately.
+
+Landmarks that fail projection acceptance (missing, non-finite, behind camera, or
+outside the image) reject the whole frame; they are not written with `v=0`.
+External occluders are not detected.
+
+At startup the generator associates each required landmark EMPTY node with the
+nearest CAD mesh vertex and fails when the snap distance exceeds 1 mm.
 
 | Index | GLB EMPTY name | Label triplet position (1-based field #) |
 |------:|----------------|------------------------------------------|

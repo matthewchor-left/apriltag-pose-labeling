@@ -17,6 +17,14 @@ import cv2
 import numpy as np
 
 from object_apriltag.cad import CadLandmarks, CadModel, CadRegistration, load_cad_landmarks
+from object_apriltag.cad_self_occlusion import (
+    YOLO_KEYPOINT_OCCLUDED,
+    YOLO_KEYPOINT_VISIBLE,
+    CadSelfOcclusionContext,
+    build_cad_self_occlusion_context,
+    camera_origin_in_cad,
+    classify_cad_keypoint_visibility,
+)
 from object_apriltag.detector import ObjectDetector, ObjectPose
 from object_apriltag.frame_source import (
     FrameSource,
@@ -54,7 +62,7 @@ YOLO_LANDMARK_NAMES: tuple[str, ...] = (
     "top-right-center",
 )
 YOLO_CLASS_ID = 0
-YOLO_KEYPOINT_VISIBILITY = 2
+YOLO_KEYPOINT_VISIBILITY = YOLO_KEYPOINT_VISIBLE
 YOLO_FIELD_COUNT = 56
 JPEG_QUALITY = 95
 DATASET_SPLITS = frozenset({"train", "val"})
@@ -81,6 +89,7 @@ class FrameLabel:
 
     bbox_xyxy: tuple[float, float, float, float]
     keypoints_xy: np.ndarray
+    keypoint_visibility: np.ndarray
 
 
 @dataclass
@@ -198,6 +207,7 @@ def build_training_sample(
     dist_coeffs: np.ndarray,
     image_width: int,
     image_height: int,
+    occlusion_context: CadSelfOcclusionContext,
 ) -> FrameLabel | SampleRejection:
     """Build one accepted Training Sample label from fused pose and CAD geometry."""
     keypoints = project_yolo_landmarks_to_image(
@@ -225,7 +235,19 @@ def build_training_sample(
     )
     if bounds is None:
         return SampleRejection.BBOX
-    return FrameLabel(bbox_xyxy=bounds, keypoints_xy=keypoints)
+
+    points_cad = _landmark_positions_cad(cad_landmarks)
+    camera_origin_cad = camera_origin_in_cad(pose, marker_model, registration)
+    keypoint_visibility = classify_cad_keypoint_visibility(
+        occlusion_context,
+        points_cad,
+        camera_origin_cad,
+    )
+    return FrameLabel(
+        bbox_xyxy=bounds,
+        keypoints_xy=keypoints,
+        keypoint_visibility=keypoint_visibility,
+    )
 
 
 def normalize_yolo_bbox(
@@ -243,6 +265,10 @@ def normalize_yolo_bbox(
     x_center = (x_min + x_max) / 2.0 / width
     y_center = (y_min + y_max) / 2.0 / height
     return x_center, y_center, box_width, box_height
+
+
+_VISIBLE_KEYPOINT_COLOR_BGR = (0, 165, 255)
+_OCCLUDED_KEYPOINT_COLOR_BGR = (0, 0, 255)
 
 
 def draw_yolo_pose_label(
@@ -265,7 +291,13 @@ def draw_yolo_pose_label(
     for index, point in enumerate(label.keypoints_xy):
         x = int(round(float(point[0])))
         y = int(round(float(point[1])))
-        cv2.circle(output, (x, y), 5, (0, 165, 255), -1, lineType=cv2.LINE_AA)
+        visibility = int(label.keypoint_visibility[index])
+        color = (
+            _VISIBLE_KEYPOINT_COLOR_BGR
+            if visibility == YOLO_KEYPOINT_VISIBLE
+            else _OCCLUDED_KEYPOINT_COLOR_BGR
+        )
+        cv2.circle(output, (x, y), 5, color, -1, lineType=cv2.LINE_AA)
         cv2.circle(output, (x, y), 5, (0, 0, 0), 1, lineType=cv2.LINE_AA)
         name = landmark_names[index]
         label_origin = (x + 6, y - 6)
@@ -285,10 +317,33 @@ def draw_yolo_pose_label(
             label_origin,
             cv2.FONT_HERSHEY_SIMPLEX,
             0.45,
-            (0, 165, 255),
+            color,
             1,
             cv2.LINE_AA,
         )
+    legend_y = max(20, output.shape[0] - 12)
+    cv2.circle(output, (14, legend_y - 18), 5, _VISIBLE_KEYPOINT_COLOR_BGR, -1, lineType=cv2.LINE_AA)
+    cv2.putText(
+        output,
+        "v=2 visible",
+        (24, legend_y - 14),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.45,
+        _VISIBLE_KEYPOINT_COLOR_BGR,
+        1,
+        lineType=cv2.LINE_AA,
+    )
+    cv2.circle(output, (14, legend_y - 2), 5, _OCCLUDED_KEYPOINT_COLOR_BGR, -1, lineType=cv2.LINE_AA)
+    cv2.putText(
+        output,
+        "v=1 CAD-occluded",
+        (24, legend_y + 2),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.45,
+        _OCCLUDED_KEYPOINT_COLOR_BGR,
+        1,
+        lineType=cv2.LINE_AA,
+    )
     return output
 
 
@@ -313,12 +368,18 @@ def format_yolo_pose_label(
         f"{box_width:.6f}",
         f"{box_height:.6f}",
     ]
-    for point in label.keypoints_xy:
+    for index, point in enumerate(label.keypoints_xy):
+        visibility = int(label.keypoint_visibility[index])
+        if visibility not in (YOLO_KEYPOINT_OCCLUDED, YOLO_KEYPOINT_VISIBLE):
+            raise ValueError(
+                f"YOLO keypoint visibility must be {YOLO_KEYPOINT_OCCLUDED} or "
+                f"{YOLO_KEYPOINT_VISIBLE}, got {visibility}."
+            )
         fields.extend(
             [
                 f"{float(point[0]) / width:.6f}",
                 f"{float(point[1]) / height:.6f}",
-                str(YOLO_KEYPOINT_VISIBILITY),
+                str(visibility),
             ]
         )
     if len(fields) != YOLO_FIELD_COUNT:
@@ -626,6 +687,7 @@ def _process_due_frame(
     sample_index: int,
     due_for_sample: bool,
     current_time: float,
+    occlusion_context: CadSelfOcclusionContext,
     labeled_images_limit: int | None = None,
 ) -> bool:
     if not due_for_sample:
@@ -646,6 +708,7 @@ def _process_due_frame(
         dist_coeffs=dist_coeffs,
         image_width=image_width,
         image_height=image_height,
+        occlusion_context=occlusion_context,
     )
     if isinstance(sample, SampleRejection):
         if sample is SampleRejection.LANDMARKS:
@@ -710,8 +773,15 @@ def _run_sampling_loop(
     current_time_fn: Callable[[int], float],
     preview_should_stop: Callable[[], bool] | None = None,
     labeled_images_limit: int | None = None,
+    occlusion_context: CadSelfOcclusionContext | None = None,
 ) -> None:
     marker_model = detector.marker_model
+    if occlusion_context is None:
+        occlusion_context = build_cad_self_occlusion_context(
+            cad_model,
+            cad_landmarks,
+            YOLO_LANDMARK_NAMES,
+        )
     sample_interval = 1.0 / sample_rate_hz
     next_sample_time = 0.0
     sample_index = 0
@@ -746,6 +816,7 @@ def _run_sampling_loop(
             sample_index=sample_index,
             due_for_sample=due_for_sample,
             current_time=current_time,
+            occlusion_context=occlusion_context,
             labeled_images_limit=labeled_images_limit,
         )
         if saved:
@@ -804,6 +875,11 @@ def generate_dataset_from_source(
     try:
         ensure_dataset_layout(output_dir, split=split, run_name=run_name)
         generation_started = True
+        occlusion_context = build_cad_self_occlusion_context(
+            cad_model,
+            cad_landmarks,
+            YOLO_LANDMARK_NAMES,
+        )
         capture = open_frame_source(source, width=image_width, height=image_height)
         if is_camera_source(source):
             clock_start = time.monotonic()
@@ -836,6 +912,7 @@ def generate_dataset_from_source(
                 current_time_fn=camera_time,
                 preview_should_stop=preview_should_stop if show_preview else None,
                 labeled_images_limit=labeled_images_limit,
+                occlusion_context=occlusion_context,
             )
         else:
             reported_fps = float(capture.get(cv2.CAP_PROP_FPS))
@@ -864,6 +941,7 @@ def generate_dataset_from_source(
                 stop_on_eof=True,
                 current_time_fn=video_time,
                 labeled_images_limit=labeled_images_limit,
+                occlusion_context=occlusion_context,
             )
     except BaseException as error:
         run_error = error

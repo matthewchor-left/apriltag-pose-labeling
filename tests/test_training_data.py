@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import math
 import os
 import tempfile
 import unittest
@@ -14,6 +13,10 @@ import cv2
 import numpy as np
 
 from object_apriltag.cad import CadRegistration, load_cad_model, load_cad_registration
+from object_apriltag.cad_self_occlusion import (
+    YOLO_KEYPOINT_VISIBLE,
+    build_cad_self_occlusion_context,
+)
 from object_apriltag.detector import ObjectPose
 from object_apriltag.layout import load_marker_model
 from object_apriltag.training_data import (
@@ -57,17 +60,15 @@ def load_registration_from_payload(payload: dict[str, object]) -> CadRegistratio
 
 
 def synthetic_yolo_landmarks(*, center: tuple[float, float, float] = (0.0, 0.0, 0.0)) -> dict[str, np.ndarray]:
+    vertex_positions = [
+        (center[0] - 0.08, center[1] - 0.08, center[2]),
+        (center[0] + 0.08, center[1] - 0.08, center[2]),
+        (center[0] - 0.08, center[1] + 0.08, center[2]),
+        (center[0] + 0.08, center[1] + 0.08, center[2]),
+    ]
     landmarks: dict[str, np.ndarray] = {}
     for index, name in enumerate(YOLO_LANDMARK_NAMES):
-        angle = 2.0 * math.pi * index / len(YOLO_LANDMARK_NAMES)
-        landmarks[name] = np.array(
-            [
-                center[0] + 0.015 * math.cos(angle),
-                center[1] + 0.015 * math.sin(angle),
-                center[2],
-            ],
-            dtype=np.float64,
-        )
+        landmarks[name] = np.array(vertex_positions[index % len(vertex_positions)], dtype=np.float64)
     return landmarks
 
 
@@ -77,6 +78,14 @@ def load_triangle_cad_model(*, vertices: np.ndarray, indices: np.ndarray):
         handle.write(glb)
         handle.flush()
         return load_cad_model(handle.name)
+
+
+def default_keypoint_visibility(count: int = 17) -> np.ndarray:
+    return np.full(count, YOLO_KEYPOINT_VISIBLE, dtype=np.int32)
+
+
+def synthetic_occlusion_context(cad_model, landmarks):
+    return build_cad_self_occlusion_context(cad_model, landmarks, YOLO_LANDMARK_NAMES)
 
 
 def synthetic_triangle_model():
@@ -125,6 +134,7 @@ class YoloLabelFormattingTests(unittest.TestCase):
         label = FrameLabel(
             bbox_xyxy=(100.0, 50.0, 300.0, 250.0),
             keypoints_xy=np.array([[160.0, 120.0], [180.0, 140.0]] + [[170.0, 130.0]] * 15, dtype=np.float64),
+            keypoint_visibility=default_keypoint_visibility(),
         )
         row = format_yolo_pose_label(label, image_width=640, image_height=480)
         fields = row.split()
@@ -142,6 +152,7 @@ class YoloLabelFormattingTests(unittest.TestCase):
         pose = ObjectPose(origin=np.array([0.0, 0.0, 0.8]), rotation=np.eye(3))
         landmarks = synthetic_yolo_landmarks()
         cad_model = synthetic_triangle_model()
+        occlusion_context = synthetic_occlusion_context(cad_model, landmarks)
         sample = build_training_sample(
             pose=pose,
             cad_landmarks=landmarks,
@@ -152,6 +163,7 @@ class YoloLabelFormattingTests(unittest.TestCase):
             dist_coeffs=dist_coeffs,
             image_width=640,
             image_height=480,
+            occlusion_context=occlusion_context,
         )
         assert isinstance(sample, FrameLabel)
         projected = project_yolo_landmarks_to_image(
@@ -177,6 +189,8 @@ class ProjectionRejectionTests(unittest.TestCase):
         self.registration = load_registration_from_payload(identity_registration_payload())
         self.pose = ObjectPose(origin=np.array([0.0, 0.0, 0.8]), rotation=np.eye(3))
         self.cad_model = synthetic_triangle_model()
+        self.landmarks = synthetic_yolo_landmarks()
+        self.occlusion_context = synthetic_occlusion_context(self.cad_model, self.landmarks)
 
     def test_rejects_landmark_outside_image(self) -> None:
         landmarks = synthetic_yolo_landmarks(center=(2.0, 2.0, 0.0))
@@ -190,6 +204,7 @@ class ProjectionRejectionTests(unittest.TestCase):
             dist_coeffs=self.dist_coeffs,
             image_width=640,
             image_height=480,
+            occlusion_context=self.occlusion_context,
         )
         self.assertIs(result, SampleRejection.LANDMARKS)
 
@@ -237,6 +252,7 @@ class ProjectionRejectionTests(unittest.TestCase):
                 dist_coeffs=self.dist_coeffs,
                 image_width=640,
                 image_height=480,
+                occlusion_context=self.occlusion_context,
             )
         self.assertIs(result, SampleRejection.BBOX)
 
@@ -368,6 +384,7 @@ class LabeledImageTests(unittest.TestCase):
         label = FrameLabel(
             bbox_xyxy=(10.0, 10.0, 60.0, 60.0),
             keypoints_xy=np.array([[20.0, 20.0], [40.0, 40.0]] + [[30.0, 30.0]] * 15),
+            keypoint_visibility=default_keypoint_visibility(),
         )
         annotated = draw_yolo_pose_label(frame, label)
         self.assertFalse(np.array_equal(annotated, frame))
@@ -381,6 +398,7 @@ class LabeledImageTests(unittest.TestCase):
             label = FrameLabel(
                 bbox_xyxy=(5.0, 5.0, 30.0, 30.0),
                 keypoints_xy=np.full((17, 2), 15.0, dtype=np.float64),
+                keypoint_visibility=default_keypoint_visibility(),
             )
             rel_path = write_labeled_training_image(
                 output_dir,
@@ -420,6 +438,7 @@ class LabeledImageTests(unittest.TestCase):
         accepted_label = FrameLabel(
             bbox_xyxy=(10.0, 10.0, 100.0, 100.0),
             keypoints_xy=np.zeros((17, 2), dtype=np.float64),
+            keypoint_visibility=default_keypoint_visibility(),
         )
 
         with (
@@ -533,6 +552,7 @@ class SamplingBehaviorTests(unittest.TestCase):
                     FrameLabel(
                         bbox_xyxy=(10.0, 10.0, 100.0, 100.0),
                         keypoints_xy=np.zeros((17, 2), dtype=np.float64),
+                        keypoint_visibility=default_keypoint_visibility(),
                     ),
                 ],
             ) as build_mock,
