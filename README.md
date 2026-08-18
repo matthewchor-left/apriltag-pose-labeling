@@ -23,9 +23,8 @@ uv sync
 ```bash
 uv run object-charuco \
   --source 0 \
-  --layout 7 10 \
-  --marker-size 0.018 \
-  --output config/Camera/nexplaygroundcam/intrinsics.json
+  --board-model config/Board/charuco_h11_w8_25mm_4x4_50/board_model.json \
+  --output config/Camera/logi_hd_1080p/intrinsic.json
 ```
 
 ChArUco is the default board type (`--board-type charuco_board`). For a plain checkerboard:
@@ -34,26 +33,24 @@ ChArUco is the default board type (`--board-type charuco_board`). For a plain ch
 uv run object-charuco \
   --board-type checkerboard \
   --source 0 \
-  --layout 6 9 \
-  --output config/Camera/nexplaygroundcam/intrinsics.json
+  --layout 11 8 \
+  --output config/Camera/logi_hd_1080p/intrinsic.json
 ```
 
 Save a printable ChArUco pattern (true scale on A4, 300 DPI):
 
 ```bash
 uv run object-charuco \
-  --layout 6 9 \
-  --marker-size 0.02 \
-  --square-size 0.025 \
-  --save-board config/charuco_6x9_25mm.png
+  --board-model config/Board/charuco_h11_w8_25mm_4x4_50/board_model.json \
+  --save-board config/Board/charuco_h11_w8_25mm_4x4_50/a4_borderless.png
 ```
 
-Or load geometry from a Board Model profile (`height` × `width` is **h6 × w9** — rows × columns):
+The current Board Model profile is **h11 × w8** (height × width, rows × columns), with 25 mm squares and 20 mm markers:
 
 ```bash
 uv run object-charuco \
-  --board-model config/Board/charuco_h6_w9_25mm_4x4_50/board_model.json \
-  --save-board config/charuco_6x9_25mm.png
+  --board-model config/Board/charuco_h11_w8_25mm_4x4_50/board_model.json \
+  --save-board config/Board/charuco_h11_w8_25mm_4x4_50/a4_borderless.png
 ```
 
 `--board-model` cannot be combined with `--layout`, `--marker-size`, `--square-size`, or `--dictionary`.
@@ -69,26 +66,21 @@ Video file `--source` captures automatically at `--sample-rate-hz` (default 10 H
 
 ```bash
 uv run object-charuco \
-  --source path/to/calibration.mov \
-  --layout 7 10 \
-  --marker-size 0.018 \
+  --source data/camera_calibration.mov \
+  --board-model config/Board/charuco_h11_w8_25mm_4x4_50/board_model.json \
   --sample-rate-hz 10 \
-  --output config/Camera/nexplaygroundcam/intrinsics.json
+  --output config/Camera/logi_hd_1080p/intrinsic.json
 ```
 
 `--layout` is height × width (rows × columns). For ChArUco that is chess **square** count; for checkerboard it is **inner corner** count.
-
-## Board Model
-
-Board geometry and the **Board Reference Frame** convention live in `config/Board/<profile>/board_model.json`. The default profile `charuco_h6_w9_25mm_4x4_50` is a 6-row × 9-column ChArUco board with 25 mm squares and 20 mm markers (`4x4_50` dictionary). Profile names use **h6/w9** so height and width are not confused. Pass `--board-model` to `object-charuco` instead of individual geometry flags.
 
 ## 2. Detect object pose
 
 ```bash
 uv run object-detect \
-  --source 0 \
-  --calibration config/Camera/nexplaygroundcam/intrinsics.json \
-  --marker-model config/Model/object_01/marker_model.json \
+  --source data/playground/setup3/test_01.mov \
+  --calibration config/Camera/logi_hd_1080p/intrinsic.json \
+  --marker-model config/Model/playground/setup3/calibration_01/marker_model.json \
   --dictionary 36h11 \
   --detection-sensitivity relaxed
 ```
@@ -108,36 +100,38 @@ registration is fitted in memory from matching named, meshless GLB landmarks and
 
 ```bash
 uv run object-detect \
-  --source 0 \
-  --calibration config/Camera/nexplaygroundcam/intrinsics.json \
-  --marker-model config/Model/remote1/marker_model.json \
+  --source data/playground/setup3/test_01.mov \
+  --calibration config/Camera/logi_hd_1080p/intrinsic.json \
+  --marker-model config/Model/playground/setup3/calibration_01/marker_model.json \
   --dictionary 36h11 \
   --detection-sensitivity relaxed \
   --overlay-object-model \
-  --object-model config/Model/remote1/object_model.json \
+  --object-model config/Model/playground/setup3/calibration_01/object_model.json \
   --overlay-cad-model \
   --side2side-cad-model \
   --cad-model config/Model/CAD/nexplayground_sim.glb
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--overlay-cad-model` | Semi-transparent `--cad-model` GLB on camera frame (requires `--visualize`) |
-| `--side2side-cad-model` | Side-by-side opaque CAD pane (requires `--preview` and `--cad-model`) |
-| `--cad-model` | GLB path; required with either CAD flag. Uses sibling `cad_registration.json`, or auto-fits from `--object-model` when absent |
 
-## Core API (no visualization)
+| Flag                    | Description                                                                                                                   |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `--overlay-cad-model`   | Semi-transparent `--cad-model` GLB on camera frame (requires `--visualize`)                                                   |
+| `--side2side-cad-model` | Side-by-side opaque CAD pane (requires `--preview` and `--cad-model`)                                                         |
+| `--cad-model`           | GLB path; required with either CAD flag. Uses sibling `cad_registration.json`, or auto-fits from `--object-model` when absent |
+
+
+## Core API
 
 ```python
 import cv2
 from object_apriltag import ObjectDetector
 from object_apriltag.calibration import load_intrinsics
 
-camera_matrix, dist_coeffs, _, _, _ = load_intrinsics("config/Camera/nexplaygroundcam/intrinsics.json")
+camera_matrix, dist_coeffs, _, _, _ = load_intrinsics("config/Camera/logi_hd_1080p/intrinsic.json")
 detector = ObjectDetector(
     camera_matrix,
     dist_coeffs,
-    marker_model="config/Model/object_01/marker_model.json",
+    marker_model="config/Model/remote/marker_model.json",
 )
 
 cap = cv2.VideoCapture(2)
@@ -153,11 +147,13 @@ pose = detector.detect(frame)  # ObjectPose(origin, rotation) or None
 
 `config/Model/<object>/marker_model.json` stores sticker corner positions in the **model frame** (also `coordinate_frame: "marker_model"` in `object_model.json`). The frame stays attached to the object regardless of where the camera is.
 
-| Axis | Direction |
-|------|-----------|
+
+| Axis   | Direction                                                     |
+| ------ | ------------------------------------------------------------- |
 | **+X** | Right in the image when the reference marker faces the camera |
-| **+Y** | Down in the image |
-| **+Z** | Into the scene (away from the camera) |
+| **+Y** | Down in the image                                             |
+| **+Z** | Into the scene (away from the camera)                         |
+
 
 Corner names (`top_left`, `top_right`, …) follow **OpenCV AprilTag detection order** (image-relative), not a physical left/right label on the object. When the sticker is viewed from another angle, the same corner name still refers to the same sticker corner.
 
@@ -186,11 +182,13 @@ Marker model JSON uses top-level `marker_size_m` as the default physical edge le
 
 Point the command at a Calibration Workspace `config.json`. Video and camera-intrinsics paths inside the recipe resolve relative to the config file. Outputs are fixed lowercase siblings of the config:
 
-| Artifact | Path |
-|----------|------|
+
+| Artifact     | Path                            |
+| ------------ | ------------------------------- |
 | Marker model | `<workspace>/marker_model.json` |
 | Object model | `<workspace>/object_model.json` |
-| Diagnostics | `<workspace>/diagnostics.json` |
+| Diagnostics  | `<workspace>/diagnostics.json`  |
+
 
 ```bash
 uv run object-calibrate-marker-model \
@@ -202,12 +200,12 @@ uv run object-calibrate-marker-model \
 
 **Calibration Recipe (`config_version: 1`)** — strict JSON; unknown or missing fields are rejected:
 
-- **`inputs`** — `source` (video path) and `intrinsics` (camera JSON path), both resolved from the config directory.
-- **`detector`** — `dictionary` and `sensitivity` (`default`, `relaxed`, or `aggressive`).
-- **`markers`** — `reference_marker_id` and `anchor_marker_ids` must be `null` (automatic reference selection); non-overlapping `groups` of `{ids, size_m}` (IDs may be integers or range strings like `"22-26"`). The first group's size becomes the generated Marker Model's default size; later groups are stored as per-marker overrides.
-- **`execution`** — `mode` must be `benchmark` with `sample_rate_hz` and `frame_selection` set to `sharpest` (decode every frame, detect on the sharpest frame per time window).
-- **`solver`** — all fields required. Strategy keys (`policy`, `discrete_method`, `anchor_stop_after_expansion`, `partial_output`) must match the fixed values below (validated at load time; the runtime always uses best-effort partial calibration with rotation-consistent assignment). Quality thresholds: `min_inliers_per_edge`, `reprojection_rms_gate_px`, `pair_translation_rms_gate_ratio`, `pair_rotation_rms_gate_deg`, `huber_delta_px`, `corner_outlier_px`, `max_ba_iterations`.
-- **`object_model`** — `keypoint_sources` and `skeleton`; keypoint positions are generated from solved footprints at publication time (persisted `keypoints` are not recipe inputs).
+- `inputs` — `source` (video path) and `intrinsics` (camera JSON path), both resolved from the config directory.
+- `detector` — `dictionary` and `sensitivity` (`default`, `relaxed`, or `aggressive`).
+- `markers` — `reference_marker_id` and `anchor_marker_ids` must be `null` (automatic reference selection); non-overlapping `groups` of `{ids, size_m}` (IDs may be integers or range strings like `"22-26"`). The first group's size becomes the generated Marker Model's default size; later groups are stored as per-marker overrides.
+- `execution` — `mode` must be `benchmark` with `sample_rate_hz` and `frame_selection` set to `sharpest` (decode every frame, detect on the sharpest frame per time window).
+- `solver` — all fields required. Strategy keys (`policy`, `discrete_method`, `anchor_stop_after_expansion`, `partial_output`) must match the fixed values below (validated at load time; the runtime always uses best-effort partial calibration with rotation-consistent assignment). Quality thresholds: `min_inliers_per_edge`, `reprojection_rms_gate_px`, `pair_translation_rms_gate_ratio`, `pair_rotation_rms_gate_deg`, `huber_delta_px`, `corner_outlier_px`, `max_ba_iterations`.
+- `object_model` — `keypoint_sources` and `skeleton`; keypoint positions are generated from solved footprints at publication time (persisted `keypoints` are not recipe inputs).
 
 On refusal (quality gates, missing markers, invalid assignment), diagnostics are still written to `diagnostics.json` while model outputs are not updated. Successful publication writes marker and object models together as a pair when every `keypoint_sources` marker is present in the solved layout.
 
@@ -217,7 +215,7 @@ Example benchmark recipe excerpt:
 {
   "config_version": 1,
   "inputs": {
-    "source": "../../../../../data/playground_calibration_01.mov",
+    "source": "../../../../../data/playground/setup1/calibration_01.mov",
     "intrinsics": "../../../../../config/Camera/logi_hd_1080p/intrinsic.json"
   },
   "detector": {"dictionary": "36h11", "sensitivity": "relaxed"},
@@ -231,7 +229,7 @@ Example benchmark recipe excerpt:
   },
   "execution": {
     "mode": "benchmark",
-    "sample_rate_hz": 10.0,
+    "sample_rate_hz": 30.0,
     "frame_selection": "sharpest"
   },
   "solver": {
@@ -239,7 +237,7 @@ Example benchmark recipe excerpt:
     "discrete_method": "rotation_consistent",
     "anchor_stop_after_expansion": false,
     "partial_output": true,
-    "min_inliers_per_edge": 20,
+    "min_inliers_per_edge": 5,
     "reprojection_rms_gate_px": 2.0,
     "pair_translation_rms_gate_ratio": 0.1,
     "pair_rotation_rms_gate_deg": 5.0,
@@ -265,12 +263,14 @@ Benchmark metrics report offline processing throughput (frames read, captures ac
 
 **Quality gates** (defaults in recipe `solver`; override per workspace):
 
-| Gate | Default |
-|------|---------|
-| Global reprojection RMS | 2 px (`reprojection_rms_gate_px`) |
-| Per-marker reprojection RMS | 2 px (same gate as global) |
-| Pair translation RMS | 10% of the smaller marker size in each pair (`pair_translation_rms_gate_ratio`) |
-| Pair rotation RMS | 5° (`pair_rotation_rms_gate_deg`) |
+
+| Gate                        | Default                                                                         |
+| --------------------------- | ------------------------------------------------------------------------------- |
+| Global reprojection RMS     | 2 px (`reprojection_rms_gate_px`)                                               |
+| Per-marker reprojection RMS | 2 px (same gate as global)                                                      |
+| Pair translation RMS        | 10% of the smaller marker size in each pair (`pair_translation_rms_gate_ratio`) |
+| Pair rotation RMS           | 5° (`pair_rotation_rms_gate_deg`)                                               |
+
 
 Refused solves print diagnostics and exit after writing `diagnostics.json`; model outputs are not updated until a solve passes publication rules. Use `--force` to overwrite existing outputs. Frame resolution must match the calibration `image_size`; intrinsics are not scaled.
 
@@ -279,9 +279,11 @@ Refused solves print diagnostics and exit after writing `diagnostics.json`; mode
 `object-evaluate-marker-model` compares one or more marker-model candidates against CAD landmark geometry and held-out moving-video detection consistency. It emits separate rankings for CAD disagreement and detection consistency; there is no overall winner, pass/fail gate, or absolute accuracy claim.
 
 ```bash
-uv run object-evaluate-marker-model \
-  --manifest config/evaluation/playground_static_4_tag/manifest.json \
-  --output /tmp/playground_static_4_tag_evaluation.json
+for setup in setup1 setup3; do
+  uv run object-evaluate-marker-model \
+    --manifest "config/evaluation/playground/${setup}/manifest.json" \
+    --output "config/evaluation/playground/${setup}/report.json"
+done
 ```
 
 **Manifest (`manifest_version: 1`):** declares shared `cad_model`, `object_model`, `intrinsics`, `detector`, `held_out_videos` (each must set `held_out: true`), and `candidates` with `{name, marker_model, capture_session, solver_variant, calibration_source}`. Relative paths resolve from the repository root (parent of `config/`). Comparable candidates must share the same marker IDs and object-model landmark coverage.
@@ -289,6 +291,7 @@ uv run object-evaluate-marker-model \
 **Held-out declaration:** the manifest states which videos were excluded from calibration. The tool preserves that declaration in the report but cannot independently verify it.
 
 **Primary metrics:**
+
 - **CAD disagreement:** leave-one-marker-out CAD prediction RMSE in millimeters (lower is better). CAD is a nominal reference; disagreement combines installation, CAD/export, padding, and vision-calibration effects without an installation survey.
 - **Detection consistency:** P95 held-out corner error in pixels (lower is better), using frozen detections decoded once per held-out video.
 
@@ -299,7 +302,9 @@ uv run object-evaluate-marker-model \
 Inspect an existing model (terminal or static diagram):
 
 ```bash
-uv run object-inspect-marker-model --marker-model config/Model/remote1/marker_model.json --visualize
+uv run object-inspect-marker-model \
+  --marker-model config/Model/remote/marker_model.json \
+  --visualize
 ```
 
 ## Optional visualization
@@ -310,19 +315,22 @@ The `viz` extra adds overlays, skeleton keypoints, and matplotlib plots:
 uv sync --extra viz
 uv run object-detect \
   --source 0 \
-  --calibration config/Camera/nexplaygroundcam/intrinsics.json \
-  --marker-model config/Model/object_01/marker_model.json \
+  --calibration config/Camera/logi_hd_1080p/intrinsic.json \
+  --marker-model config/Model/remote/marker_model.json \
   --dictionary 36h11 \
   --detection-sensitivity relaxed \
   --plot-graph \
-  --object-model config/Model/object_01/object_model.json
+  --object-model config/Model/remote/object_model.json
 ```
 
 ## Development
 
 ```bash
 uv sync --extra viz
-uv run python -m unittest discover -s tests
+uv run python -m unittest \
+  tests.test_calibration_recipe \
+  tests.test_cli_calibrate_marker_model \
+  tests.test_marker_layout_calibration
 ```
 
 After changing dependencies in `pyproject.toml`, run `uv lock` to refresh `uv.lock`.
@@ -338,15 +346,23 @@ src/object_apriltag/
   viz/                 # optional overlays and plots
   cli/                 # object-detect, object-charuco, object-calibrate-marker-model, object-inspect-marker-model, object-evaluate-marker-model
 config/
-  evaluation/          # versioned marker-model evaluation manifests
+  evaluation/
+    playground/
+      setup1/ setup3/  # per-setup manifest.json and generated report.json
   Board/
-    charuco_h6_w9_25mm_4x4_50/  # board_model.json
+    charuco_h11_w8_25mm_4x4_50/  # board_model.json and printable board PNG
   Camera/
-    nexplaygroundcam/  # intrinsics.json, uvcc.json, device.json
-    cam1/ cam2/ webcam/  # empty profiles (.gitkeep)
+    logi_hd_1080p/     # intrinsic.json and camera_setting.json
   Model/
-    object_01/         # marker_model.json, eraser_model.json, object_model.json
-    object_02/         # annotation object marker + eraser
+    playground/
+      setup1/ setup2/ setup3/  # calibration workspaces
+    remote/            # config, marker model, object model, diagnostics
+    CAD/               # GLB models and registration diagnostics
+data/
+  camera_calibration.mov
+  playground/
+    setup1/ setup2/ setup3/    # calibration and held-out videos
+  remote/              # calibration.mov and test.mov
 pyproject.toml         # project metadata and dependencies
 uv.lock                # locked dependency versions (commit this)
 ```
@@ -355,25 +371,26 @@ Live camera and video file CLIs use `--source`: pass a camera device index (e.g.
 
 ## Common options
 
-| Command | Flag | Description |
-|---------|------|-------------|
-| `object-charuco` | `--board-model` | ChArUco board model JSON (exclusive with geometry flags) |
-| `object-charuco` | `--board-type` | `charuco_board` or `checkerboard` |
-| `object-charuco` | `--layout` | Board height × width (rows × columns) |
-| `object-charuco` | `--marker-size` | ArUco marker size in meters (ChArUco only) |
-| `object-charuco` | `--source` | Camera device index (e.g. `0`) or path to a video file |
-| `object-charuco` | `--output` | Intrinsics JSON path |
-| `object-charuco` | `--sample-rate-hz` | Video-file automatic capture rate (default 10 Hz); ignored for live camera |
-| `object-detect` | `--calibration` | Path to camera intrinsics JSON |
-| `object-detect` | `--marker-model` | Marker model JSON path |
-| `object-detect` | `--marker-id` | Use a specific marker id only |
-| `object-detect` | `--no-visualize` | Camera preview without overlays |
-| `object-detect` | `--overlay-cad-model` | Semi-transparent GLB CAD mesh overlay on camera frame |
-| `object-detect` | `--side2side-cad-model` | Side-by-side opaque CAD pane (`--preview` required) |
-| `object-detect` | `--cad-model` | GLB path; loads sibling `cad_registration.json` or auto-fits from `--object-model` |
-| `object-detect` / `annotation-tool` | `--source` | Camera device index (e.g. `0`) or path to a video file |
-| `object-calibrate-marker-model` | `--config` | Calibration Workspace `config.json` |
-| `object-calibrate-marker-model` | `--force` | Overwrite existing workspace `marker_model.json`, `object_model.json`, and `diagnostics.json` |
-| `object-inspect-marker-model` | `--marker-model` / `--visualize` | Print or diagram an existing marker model |
-| `object-evaluate-marker-model` | `--manifest` | Versioned evaluation manifest JSON |
-| `object-evaluate-marker-model` | `--output` | Versioned evaluation report JSON |
+
+| Command                             | Flag                             | Description                                                                                   |
+| ----------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------- |
+| `object-charuco`                    | `--board-model`                  | ChArUco board model JSON (exclusive with geometry flags)                                      |
+| `object-charuco`                    | `--board-type`                   | `charuco_board` or `checkerboard`                                                             |
+| `object-charuco`                    | `--layout`                       | Board height × width (rows × columns)                                                         |
+| `object-charuco`                    | `--marker-size`                  | ArUco marker size in meters (ChArUco only)                                                    |
+| `object-charuco`                    | `--source`                       | Camera device index (e.g. `0`) or path to a video file                                        |
+| `object-charuco`                    | `--output`                       | Intrinsics JSON path                                                                          |
+| `object-charuco`                    | `--sample-rate-hz`               | Video-file automatic capture rate (default 10 Hz); ignored for live camera                    |
+| `object-detect`                     | `--calibration`                  | Path to camera intrinsics JSON                                                                |
+| `object-detect`                     | `--marker-model`                 | Marker model JSON path                                                                        |
+| `object-detect`                     | `--marker-id`                    | Use a specific marker id only                                                                 |
+| `object-detect`                     | `--no-visualize`                 | Camera preview without overlays                                                               |
+| `object-detect`                     | `--overlay-cad-model`            | Semi-transparent GLB CAD mesh overlay on camera frame                                         |
+| `object-detect`                     | `--side2side-cad-model`          | Side-by-side opaque CAD pane (`--preview` required)                                           |
+| `object-detect`                     | `--cad-model`                    | GLB path; loads sibling `cad_registration.json` or auto-fits from `--object-model`            |
+| `object-detect` / `annotation-tool` | `--source`                       | Camera device index (e.g. `0`) or path to a video file                                        |
+| `object-calibrate-marker-model`     | `--config`                       | Calibration Workspace `config.json`                                                           |
+| `object-calibrate-marker-model`     | `--force`                        | Overwrite existing workspace `marker_model.json`, `object_model.json`, and `diagnostics.json` |
+| `object-inspect-marker-model`       | `--marker-model` / `--visualize` | Print or diagram an existing marker model                                                     |
+| `object-evaluate-marker-model`      | `--manifest`                     | Versioned evaluation manifest JSON                                                            |
+| `object-evaluate-marker-model`      | `--output`                       | Versioned evaluation report JSON                                                              |

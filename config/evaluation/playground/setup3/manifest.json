@@ -1,0 +1,43 @@
+{
+  "manifest_version": 1,
+  "cad_model": "config/Model/CAD/nexplayground_sim.glb",
+  "object_model": "config/Model/playground/setup3/calibration_01/object_model.json",
+  "intrinsics": "config/Camera/logi_hd_1080p/intrinsic.json",
+  "detector": {
+    "dictionary": "36h11",
+    "sensitivity": "relaxed"
+  },
+  "held_out_videos": [
+    {"path": "data/playground/setup3/test_01.mov", "held_out": true},
+    {"path": "data/playground/setup3/test_02.mov", "held_out": true}
+  ],
+  "candidates": [
+    {
+      "name": "calibration_01",
+      "marker_model": "config/Model/playground/setup3/calibration_01/marker_model.json",
+      "capture_session": "calibration_01",
+      "solver_variant": "rotation_consistent_sharpest_10hz",
+      "calibration_source": {
+        "video": "data/playground/setup3/calibration_01.mov"
+      }
+    },
+    {
+      "name": "calibration_02",
+      "marker_model": "config/Model/playground/setup3/calibration_02/marker_model.json",
+      "capture_session": "calibration_02",
+      "solver_variant": "rotation_consistent_sharpest_10hz",
+      "calibration_source": {
+        "video": "data/playground/setup3/calibration_02.mov"
+      }
+    },
+    {
+      "name": "calibration_03",
+      "marker_model": "config/Model/playground/setup3/calibration_03/marker_model.json",
+      "capture_session": "calibration_03",
+      "solver_variant": "rotation_consistent_sharpest_10hz",
+      "calibration_source": {
+        "video": "data/playground/setup3/calibration_03.mov"
+      }
+    }
+  ]
+}
