@@ -1,7 +1,7 @@
 {
   "config_version": 1,
   "inputs": {
-    "source": "../../../../../data/playground_calibration_02.mov",
+    "source": "../../../../../data/playground/setup1/calibration_02.mov",
     "intrinsics": "../../../../../config/Camera/logi_hd_1080p/intrinsic.json"
   },
   "detector": {

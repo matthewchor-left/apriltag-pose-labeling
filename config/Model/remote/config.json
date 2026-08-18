@@ -1,0 +1,49 @@
+{
+  "config_version": 1,
+  "inputs": {
+    "source": "../../../data/remote/calibration.mov",
+    "intrinsics": "../../Camera/logi_hd_1080p/intrinsic.json"
+  },
+  "detector": {
+    "dictionary": "36h11",
+    "sensitivity": "relaxed"
+  },
+  "markers": {
+    "reference_marker_id": null,
+    "anchor_marker_ids": null,
+    "groups": [
+      {"ids": [2, 5, 9, 12, 14, 15, 16, 17, 18, 23, 24, 25], "size_m": 0.02},
+      {"ids": [0, 1], "size_m": 0.048}
+    ]
+  },
+  "execution": {
+    "mode": "benchmark",
+    "sample_rate_hz": 2.0,
+    "frame_selection": "sharpest"
+  },
+  "solver": {
+    "policy": "best_effort",
+    "discrete_method": "rotation_consistent",
+    "anchor_stop_after_expansion": false,
+    "partial_output": true,
+    "min_inliers_per_edge": 5,
+    "reprojection_rms_gate_px": 2.0,
+    "pair_translation_rms_gate_ratio": 0.1,
+    "pair_rotation_rms_gate_deg": 5.0,
+    "huber_delta_px": 1.0,
+    "corner_outlier_px": 3.0,
+    "max_ba_iterations": 50
+  },
+  "object_model": {
+    "keypoint_sources": {
+      "green-button-top": {"marker_id": 24, "corner": "top_right", "padding_mm": 4.0},
+      "back-button-left": {"marker_id": 25, "corner": "top_right", "padding_mm": 4.0},
+      "home-button-right": {"marker_id": 23, "corner": "top_right", "padding_mm": 4.0}
+    },
+    "skeleton": [
+      ["green-button-top", "back-button-left"],
+      ["green-button-top", "home-button-right"],
+      ["back-button-left", "home-button-right"]
+    ]
+  }
+}
