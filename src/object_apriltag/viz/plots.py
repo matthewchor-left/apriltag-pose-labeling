@@ -135,6 +135,78 @@ def _draw_marker_layout_footprints_2d(ax, layout: MarkerLayout, horiz_index: int
             ax.text(point[horiz_index], point[vert_index], f" {marker_id}:{label}", fontsize=7, color=color)
 
 
+def _draw_marker_layout_footprints_3d(ax, layout: MarkerLayout) -> None:
+    """Draw marker footprints and corner markers on a 3D axis.
+
+    Args:
+        ax: Matplotlib 3D axis to draw on.
+        layout: Marker layout with footprint geometry.
+    """
+    for marker_id in sorted(layout.footprints):
+        footprint = layout.footprints[marker_id]
+        color = marker_color(marker_id, layout.reference_marker_id)
+        corners = footprint.corners()
+        xs = [point[0] for point in corners] + [corners[0][0]]
+        ys = [point[1] for point in corners] + [corners[0][1]]
+        zs = [point[2] for point in corners] + [corners[0][2]]
+        ax.plot(xs, ys, zs, color=color, linewidth=1.5, alpha=0.85)
+
+        for corner_name, point in footprint.corners_by_name().items():
+            label = CORNER_LABELS[corner_name]
+            marker_style = {"tl": "o", "tr": "^", "br": "s", "bl": "D"}[label]
+            ax.scatter(
+                point[0],
+                point[1],
+                point[2],
+                s=70,
+                c=color,
+                marker=marker_style,
+                edgecolors="white",
+                linewidths=0.6,
+            )
+            ax.text(point[0], point[1], point[2], f" {marker_id}:{label}", fontsize=7, color=color)
+
+
+def set_3d_axis_limits(ax, axis_limits: tuple[float, float, float, float, float, float]) -> None:
+    """Configure a matplotlib 3D axis for an object-frame layout view.
+
+    Args:
+        ax: Matplotlib 3D axis to configure.
+        axis_limits: Tuple of ``(xmin, xmax, ymin, ymax, zmin, zmax)`` in meters.
+    """
+    xmin, xmax, ymin, ymax, zmin, zmax = axis_limits
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
+    ax.set_zlim(zmin, zmax)
+    ax.set_box_aspect((xmax - xmin, ymax - ymin, zmax - zmin))
+    ax.set_xlabel("X (m)")
+    ax.set_ylabel("Y (m)")
+    ax.set_zlabel("Z (m)")
+
+
+def show_marker_model_plot(
+    marker_model: MarkerLayout,
+    figsize: tuple[float, float] = (8.0, 8.0),
+) -> None:
+    """Open an interactive 3D marker layout viewer.
+
+    Args:
+        marker_model: Marker layout to visualize.
+        figsize: Matplotlib figure size in inches.
+    """
+    import matplotlib.pyplot as plt
+
+    axis_limits = layout_axis_limits(marker_model)
+    with plt.style.context("dark_background"):
+        fig = plt.figure(figsize=figsize)
+        ax = fig.add_subplot(111, projection="3d")
+        _draw_marker_layout_footprints_3d(ax, marker_model)
+        set_3d_axis_limits(ax, axis_limits)
+        ax.set_title("Marker model: tl/tr/br/bl corners")
+        fig.tight_layout()
+        plt.show()
+
+
 def render_marker_model_plot(
     marker_model: MarkerLayout,
     figsize: tuple[float, float] = (10.0, 5.0),

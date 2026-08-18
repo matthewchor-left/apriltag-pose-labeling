@@ -47,7 +47,6 @@
       "skeleton": [
         ["top-center", "top-front-left"],
         ["top-center", "top-front-right"],
-        ["top-center", "top-back-right"],
         ["top-center", "left-center"],
         ["top-center", "front-center"],
         ["top-center", "right-center"],

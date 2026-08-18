@@ -8,7 +8,7 @@ from object_apriltag.viz.overlay import (
     draw_object_orientation,
     draw_object_pose,
 )
-from object_apriltag.viz.plots import LiveHud, make_side_by_side, render_marker_model_plot, render_pose_plots
+from object_apriltag.viz.plots import LiveHud, make_side_by_side, render_marker_model_plot, render_pose_plots, show_marker_model_plot
 from object_apriltag.viz.skeleton import DEFAULT_AXIS_LIMITS, DEFAULT_OBJECT_MODEL_PATH, ObjectModel, load_object_model, object_world_points_from_pose
 
 __all__ = [
@@ -26,4 +26,5 @@ __all__ = [
     "object_world_points_from_pose",
     "render_marker_model_plot",
     "render_pose_plots",
+    "show_marker_model_plot",
 ]

@@ -186,6 +186,46 @@ def apply_keypoint_sources_from_layout(
     return updated
 
 
+def keypoint_sources_for_layout(
+    layout: MarkerLayout,
+    sources: Mapping[str, tuple[int, str, float]],
+) -> dict[str, tuple[int, str, float]]:
+    """Return keypoint sources whose marker IDs are present in ``layout``.
+
+    Args:
+        layout: Solved marker layout footprint map.
+        sources: Parsed keypoint source metadata keyed by keypoint name.
+
+    Returns:
+        Subset of ``sources`` with marker IDs present in ``layout``.
+    """
+    return {
+        name: source
+        for name, source in sources.items()
+        if source[0] in layout.footprints
+    }
+
+
+def skeleton_for_keypoint_names(
+    skeleton: tuple[tuple[str, str], ...],
+    keypoint_names: frozenset[str] | set[str],
+) -> tuple[tuple[str, str], ...]:
+    """Return skeleton edges whose endpoints are all in ``keypoint_names``.
+
+    Args:
+        skeleton: Undirected skeleton edges as keypoint name pairs.
+        keypoint_names: Retained keypoint names.
+
+    Returns:
+        Skeleton edges with both endpoints present in ``keypoint_names``.
+    """
+    return tuple(
+        edge
+        for edge in skeleton
+        if edge[0] in keypoint_names and edge[1] in keypoint_names
+    )
+
+
 def missing_source_marker_ids(
     layout: MarkerLayout,
     sources: Mapping[str, tuple[int, str, float]],

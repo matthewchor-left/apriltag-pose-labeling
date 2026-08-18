@@ -5,15 +5,14 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import cv2
 import numpy as np
 
 from object_apriltag.layout import CORNER_NAMES, footprint_edge_lengths, load_marker_model
-from object_apriltag.viz import render_marker_model_plot
+from object_apriltag.viz import show_marker_model_plot
 
 
 def main() -> None:
-    """Print marker-model geometry and optionally open a static diagram window.
+    """Print marker-model geometry and optionally open an interactive 3D diagram.
 
     Raises:
         RuntimeError: ``--marker-model`` file is missing or unreadable.
@@ -22,7 +21,7 @@ def main() -> None:
         description="Inspect marker model transforms.",
         epilog=(
             "Terms:\n"
-            "  marker model diagram  Static plot of marker footprints in model coordinates.\n"
+            "  marker model diagram  Interactive 3D plot of marker footprints in model coordinates.\n"
             "  (Not the live camera view — use object-detect for that.)"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -38,7 +37,7 @@ def main() -> None:
         action=argparse.BooleanOptionalAction,
         default=False,
         help=(
-            "Open a marker model diagram window (footprints in model coordinates). "
+            "Open an interactive 3D marker model diagram (rotate/zoom with the mouse). "
             "--no-visualize: print corner coordinates and transforms to the terminal only."
         ),
     )
@@ -72,11 +71,8 @@ def main() -> None:
         print(f"  rotation det: {np.linalg.det(transform.rotation):.6f}")
 
     if args.visualize:
-        plot_bgr = render_marker_model_plot(marker_model)
-        cv2.imshow("Marker model", plot_bgr)
-        print("\nMarker model diagram open. Press any key to close.")
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+        print("\nOpening interactive marker model diagram. Close the window to exit.")
+        show_marker_model_plot(marker_model)
 
 
 if __name__ == "__main__":

@@ -85,8 +85,8 @@ def object_model_from_data(data: dict[str, Any]) -> ObjectModel:
     }
 
     skeleton_raw = data.get("skeleton")
-    if not isinstance(skeleton_raw, list) or not skeleton_raw:
-        raise ValueError("Object model must contain a non-empty 'skeleton' list.")
+    if not isinstance(skeleton_raw, list):
+        raise ValueError("Object model must contain a 'skeleton' list.")
 
     skeleton_edges: list[tuple[str, str]] = []
     for index, edge in enumerate(skeleton_raw):

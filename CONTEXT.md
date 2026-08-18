@@ -65,7 +65,7 @@ JSON file describing a ChArUco board geometry and its Board Reference Frame conv
 _Avoid_: board config, charuco layout file
 
 **Marker Model Diagram**:
-Static plot of marker footprints in model coordinates (`object-inspect-marker-model`).
+Static interactive 3D plot of marker footprints in model coordinates (`object-inspect-marker-model`).
 _Avoid_: layout diagram, layout visualization
 
 **Setup**:

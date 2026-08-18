@@ -611,17 +611,9 @@ def _observed_marker_plane_gate_passes(
         rel_errors = [candidate[3] for candidate in candidates]
         reliable[marker_id] = (mean_edge_px, normals, rel_errors)
 
-    print(
-        "[pose observability] "
-        f"markers={detected_layout_marker_ids}"
-    )
     for marker_id in sorted(reliable):
         mean_edge_px, _, rel_errors = reliable[marker_id]
         rel_text = ",".join(f"{error:.4f}" for error in rel_errors)
-        print(
-            "[pose observability] "
-            f"m{marker_id}: edge={mean_edge_px:.1f}px rel_err=[{rel_text}]"
-        )
 
     reliable_ids = sorted(reliable)
     confident_pair = False
@@ -641,10 +633,7 @@ def _observed_marker_plane_gate_passes(
                     confident_pair = True
             status = "pass" if pair_pass else "fail"
             angle_text = "n/a" if min_angle is None else f"{min_angle:.1f}"
-            print(
-                "[pose observability] "
-                f"pair({marker_a},{marker_b}): min_angle={angle_text}° {status}"
-            )
+
     return confident_pair
 
 

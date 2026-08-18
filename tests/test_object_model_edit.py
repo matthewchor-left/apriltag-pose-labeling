@@ -477,6 +477,28 @@ class GeneratedObjectModelTests(unittest.TestCase):
         sources = {"top": (1, "top_left", 0.0), "missing": (9, "top_left", 0.0)}
         self.assertEqual(missing_source_marker_ids(layout, sources), (9,))
 
+    def test_keypoint_sources_for_layout_drops_missing_markers(self) -> None:
+        from object_apriltag.object_model_edit import keypoint_sources_for_layout
+
+        layout = _synthetic_layout()
+        sources = {
+            "top": (1, "top_left", 0.0),
+            "gone": (9, "top_left", 0.0),
+        }
+        self.assertEqual(
+            keypoint_sources_for_layout(layout, sources),
+            {"top": (1, "top_left", 0.0)},
+        )
+
+    def test_skeleton_for_keypoint_names_drops_edges_with_removed_keypoints(self) -> None:
+        from object_apriltag.object_model_edit import skeleton_for_keypoint_names
+
+        skeleton = (("a", "b"), ("b", "c"))
+        self.assertEqual(
+            skeleton_for_keypoint_names(skeleton, frozenset({"a", "b"})),
+            (("a", "b"),),
+        )
+
     def test_build_rejects_missing_source_marker(self) -> None:
         from object_apriltag.object_model_edit import build_object_model_document_from_layout
 
@@ -486,6 +508,25 @@ class GeneratedObjectModelTests(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             build_object_model_document_from_layout(layout, sources, skeleton)
         self.assertIn("missing from the solved layout", str(ctx.exception))
+
+    def test_build_allows_empty_skeleton_for_isolated_keypoints(self) -> None:
+        from object_apriltag.object_model_edit import (
+            build_object_model_document_from_layout,
+            keypoint_sources_for_layout,
+            skeleton_for_keypoint_names,
+        )
+
+        layout = _synthetic_layout()
+        sources = {
+            "top": (1, "top_left", 0.0),
+            "gone": (9, "top_left", 0.0),
+        }
+        skeleton = (("top", "gone"),)
+        retained = keypoint_sources_for_layout(layout, sources)
+        filtered_skeleton = skeleton_for_keypoint_names(skeleton, frozenset(retained))
+        document = build_object_model_document_from_layout(layout, retained, filtered_skeleton)
+        self.assertEqual(set(document["keypoints"]), {"top"})
+        self.assertEqual(document["skeleton"], [])
 
 
 if __name__ == "__main__":

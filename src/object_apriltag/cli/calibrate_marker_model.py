@@ -20,8 +20,10 @@ from object_apriltag.frame_source import format_frame_source, open_frame_source,
 from object_apriltag.layout import save_marker_model
 from object_apriltag.object_model_edit import (
     build_object_model_document_from_layout,
+    keypoint_sources_for_layout,
     missing_source_marker_ids,
     save_object_model_document,
+    skeleton_for_keypoint_names,
 )
 from object_apriltag.cli.calibration_diagnostics import (
     format_omitted_marker_lines,
@@ -288,29 +290,53 @@ def apply_calibration_result(
             print(error, file=sys.stderr)
         return False
 
-    missing_markers = missing_source_marker_ids(result.layout, recipe.keypoint_sources)
+    sources = dict(recipe.keypoint_sources)
+    skeleton = recipe.skeleton
+    missing_markers = missing_source_marker_ids(result.layout, sources)
     if missing_markers:
-        print(
-            "Calibration solved but publication refused: keypoint-source markers "
-            f"missing from layout: {list(missing_markers)}"
+        allow_keypoint_omission = (
+            result.outcome == "partial" and result.partial_output
         )
-        for line in format_omitted_marker_lines(result.omitted_markers):
-            print(f"  {line}")
-        try:
-            write_calibration_diagnostics_if_requested(
-                recipe.paths.diagnostics_path,
-                result,
-                benchmark=benchmark,
+        if not allow_keypoint_omission:
+            print(
+                "Calibration solved but publication refused: keypoint-source markers "
+                f"missing from layout: {list(missing_markers)}"
             )
-        except RuntimeError as error:
-            print(error, file=sys.stderr)
-        return False
+            for line in format_omitted_marker_lines(result.omitted_markers):
+                print(f"  {line}")
+            try:
+                write_calibration_diagnostics_if_requested(
+                    recipe.paths.diagnostics_path,
+                    result,
+                    benchmark=benchmark,
+                )
+            except RuntimeError as error:
+                print(error, file=sys.stderr)
+            return False
+        sources = keypoint_sources_for_layout(result.layout, sources)
+        if not sources:
+            print(
+                "Calibration solved but publication refused: no keypoint-source markers "
+                "remain in the partial layout."
+            )
+            for line in format_omitted_marker_lines(result.omitted_markers):
+                print(f"  {line}")
+            try:
+                write_calibration_diagnostics_if_requested(
+                    recipe.paths.diagnostics_path,
+                    result,
+                    benchmark=benchmark,
+                )
+            except RuntimeError as error:
+                print(error, file=sys.stderr)
+            return False
+        skeleton = skeleton_for_keypoint_names(skeleton, frozenset(sources.keys()))
 
     try:
         object_document = build_object_model_document_from_layout(
             result.layout,
-            recipe.keypoint_sources,
-            recipe.skeleton,
+            sources,
+            skeleton,
         )
     except ValueError as error:
         print(f"Calibration solved but publication refused: {error}")

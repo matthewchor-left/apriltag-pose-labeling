@@ -240,7 +240,7 @@ uv run object-calibrate-marker-model \
 - `solver` — all fields required. Strategy keys (`policy`, `discrete_method`, `anchor_stop_after_expansion`, `partial_output`) must match the fixed values below (validated at load time; the runtime always uses best-effort partial calibration with rotation-consistent assignment). Quality thresholds: `min_inliers_per_edge`, `reprojection_rms_gate_px`, `pair_translation_rms_gate_ratio`, `pair_rotation_rms_gate_deg`, `huber_delta_px`, `corner_outlier_px`, `max_ba_iterations`.
 - `object_model` — `keypoint_sources` and `skeleton`; keypoint positions are generated from solved footprints at publication time (persisted `keypoints` are not recipe inputs).
 
-On refusal (quality gates, missing markers, invalid assignment), diagnostics are still written to `diagnostics.json` while model outputs are not updated. Successful publication writes marker and object models together as a pair when every `keypoint_sources` marker is present in the solved layout.
+On refusal (quality gates, missing markers, invalid assignment), diagnostics are still written to `diagnostics.json` while model outputs are not updated. Successful publication writes marker and object models together as a pair. Full, provisional, or partial results produced without partial output require every `keypoint_sources` marker in the solved layout; partial-output results drop keypoints and skeleton edges tied to omitted source markers before publishing the object model.
 
 Example benchmark recipe excerpt:
 

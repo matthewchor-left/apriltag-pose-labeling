@@ -564,7 +564,40 @@ class ConfigModeCliTests(unittest.TestCase):
             self.assertIn("a", object_model["keypoints"])
             self.assertNotIn("note", object_model)
 
-    def test_config_mode_missing_source_marker_writes_diagnostics_only(self) -> None:
+    def test_config_mode_partial_missing_source_marker_publishes_subset(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import apply_calibration_result
+        from object_apriltag.layout import build_marker_layout, footprint_from_dict
+        from object_apriltag.marker_layout_calibration.recipe import load_calibration_recipe
+        from object_apriltag.marker_layout_calibration.types import CalibrationResult
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace = Path(tmp_dir)
+            config_path = _write_workspace_recipe(workspace)
+            recipe = load_calibration_recipe(config_path)
+            half = 0.035
+            footprints = {0: footprint_from_dict(0, _square_corners(half))}
+            layout = build_marker_layout(0, 0.07, footprints)
+            result = CalibrationResult(
+                layout=layout,
+                quality=_quality_report_mock(),
+                failure_reason=None,
+                outcome="partial",
+                partial_output=True,
+            )
+            with mock.patch(
+                "object_apriltag.cli.calibrate_marker_model.save_calibration_diagnostics",
+                return_value=workspace / "diagnostics.json",
+            ) as diagnostics_mock:
+                saved = apply_calibration_result(recipe, result)
+            self.assertTrue(saved)
+            self.assertTrue((workspace / "marker_model.json").exists())
+            object_model = json.loads((workspace / "object_model.json").read_text(encoding="utf-8"))
+            self.assertEqual(set(object_model["keypoints"]), {"a"})
+            self.assertEqual(object_model["skeleton"], [])
+            self.assertNotIn("b", object_model["keypoint_sources"])
+            diagnostics_mock.assert_called_once()
+
+    def test_config_mode_strict_missing_source_marker_writes_diagnostics_only(self) -> None:
         from object_apriltag.cli.calibrate_marker_model import apply_calibration_result
         from object_apriltag.layout import build_marker_layout, footprint_from_dict
         from object_apriltag.marker_layout_calibration.recipe import load_calibration_recipe
@@ -576,11 +609,52 @@ class ConfigModeCliTests(unittest.TestCase):
             half = 0.035
             footprints = {0: footprint_from_dict(0, _square_corners(half))}
             layout = build_marker_layout(0, 0.07, footprints)
+            with mock.patch(
+                "object_apriltag.cli.calibrate_marker_model.save_calibration_diagnostics",
+                return_value=workspace / "diagnostics.json",
+            ) as diagnostics_mock:
+                for outcome, partial_output in (
+                    ("accepted", False),
+                    ("partial", False),
+                ):
+                    with self.subTest(
+                        outcome=outcome,
+                        partial_output=partial_output,
+                    ):
+                        result = mock.Mock(
+                            layout=layout,
+                            quality=_quality_report_mock(),
+                            failure_reason=None,
+                            outcome=outcome,
+                            partial_output=partial_output,
+                            omitted_markers=(),
+                            failed_quality_gates=(),
+                            failed_refinement_stage=None,
+                        )
+                        saved = apply_calibration_result(recipe, result)
+                        self.assertFalse(saved)
+                        self.assertFalse((workspace / "marker_model.json").exists())
+                        self.assertFalse((workspace / "object_model.json").exists())
+            self.assertEqual(diagnostics_mock.call_count, 2)
+
+    def test_config_mode_partial_no_source_markers_writes_diagnostics_only(self) -> None:
+        from object_apriltag.cli.calibrate_marker_model import apply_calibration_result
+        from object_apriltag.layout import build_marker_layout, footprint_from_dict
+        from object_apriltag.marker_layout_calibration.recipe import load_calibration_recipe
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace = Path(tmp_dir)
+            config_path = _write_workspace_recipe(workspace)
+            recipe = load_calibration_recipe(config_path)
+            half = 0.035
+            footprints = {9: footprint_from_dict(9, _square_corners(half))}
+            layout = build_marker_layout(9, 0.07, footprints)
             result = mock.Mock(
                 layout=layout,
                 quality=_quality_report_mock(),
                 failure_reason=None,
                 outcome="partial",
+                partial_output=True,
                 omitted_markers=(),
                 failed_quality_gates=(),
                 failed_refinement_stage=None,
@@ -611,6 +685,23 @@ class InspectMarkerModelRegressionTests(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertIn("Reference marker id: 19", printed)
         self.assertIn("Marker 0", printed)
+
+    def test_visualize_opens_interactive_marker_model_plot(self) -> None:
+        from object_apriltag.cli.inspect_marker_model import main
+
+        argv = [
+            "object-inspect-marker-model",
+            "--marker-model",
+            str(MARKER_MODEL),
+            "--visualize",
+        ]
+        with (
+            mock.patch("sys.argv", argv),
+            mock.patch("builtins.print"),
+            mock.patch("object_apriltag.cli.inspect_marker_model.show_marker_model_plot") as show_mock,
+        ):
+            main()
+        show_mock.assert_called_once()
 
 
 if __name__ == "__main__":
