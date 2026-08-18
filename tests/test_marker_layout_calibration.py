@@ -543,7 +543,7 @@ class MarkerLayoutCalibrationRefusalTests(unittest.TestCase):
         self.assertIsNotNone(result.failure_reason)
         assert result.quality is not None
         self.assertEqual(result.quality.input_frame_count, 25)
-        self.assertEqual(result.quality.accepted_frame_count, 0)
+        self.assertEqual(result.quality.accepted_frame_count, 25)
 
     def test_rejects_when_too_many_assignment_frames_are_inconsistent(self) -> None:
         observations = synthesize_observations(
@@ -1774,7 +1774,7 @@ class RotationConsistentAssignmentRecoveryTests(unittest.TestCase):
         )
         self.assertIsNone(result.layout)
         assert result.quality is not None
-        self.assertEqual(result.quality.accepted_frame_count, 0)
+        self.assertEqual(result.quality.accepted_frame_count, 25)
 
 class PartialOutputCalibrationTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -1924,73 +1924,167 @@ class PartialOutputCalibrationTests(unittest.TestCase):
                 marker_layout_to_dict(result.layout),
             )
 
-    def test_emit_partial_refuses_reference_only_component(self) -> None:
-        from object_apriltag.marker_layout_calibration.finalize import (
-            emit_partial_calibration_result,
-            empty_quality,
+    def test_partial_recovery_refuses_reference_only_component(self) -> None:
+        observations = _synth_pair_with_corrupt_frames(
+            25,
+            frozenset(range(25)),
+            varying_corrupt=True,
         )
-
-        observations = synthesize_observations(
-            _two_marker_poses(self.marker_size_m),
-            frame_count=25,
-            marker_size_m=self.marker_size_m,
-        )
-        result = emit_partial_calibration_result(
+        result = calibrate_marker_layout(
             observations,
             *_default_camera(),
-            requested_marker_ids=[0, 1, 2],
-            connected_ids={0},
-            omitted={1: "not_connected_to_reference", 2: "not_connected_to_reference"},
+            expected_marker_ids=[0, 1],
             reference_marker_id=self.reference_marker_id,
             marker_size_m=self.marker_size_m,
-            marker_sizes_m=uniform_marker_sizes([0, 1, 2], self.marker_size_m),
             settings=self.settings,
-            quality=empty_quality(frozenset({1, 2}), frozenset({0}), input_frame_count=25),
         )
         self.assertIsNone(result.layout)
         self.assertEqual(result.outcome, "refused")
+        self.assertTrue(result.partial_output)
         self.assertIsNotNone(result.quality)
         self.assertIn("reference", (result.failure_reason or "").lower())
 
-    def test_partial_subset_resolve_records_prefixed_solve_diagnostics(self) -> None:
-        from object_apriltag.marker_layout_calibration.finalize import (
-            emit_partial_calibration_result,
-        )
+    def test_partial_recovery_invokes_discrete_stages_exactly_once(self) -> None:
+        from object_apriltag.marker_layout_calibration import pipeline as calibration_pipeline
 
-        observations = synthesize_observations(
-            _two_marker_poses(self.marker_size_m),
-            frame_count=25,
-            marker_size_m=self.marker_size_m,
-        )
+        observations = self._observations_for_consensus_partial_recovery()
+        expected_component = {0, 1}
         diagnostics = CalibrationSolveDiagnostics()
-        result = emit_partial_calibration_result(
+
+        with (
+            mock.patch.object(
+                calibration_pipeline,
+                "estimate_frame_candidates",
+                wraps=calibration_pipeline.estimate_frame_candidates,
+            ) as ippe_mock,
+            mock.patch.object(
+                calibration_pipeline,
+                "assign_frames_rotation_consistent",
+                wraps=calibration_pipeline.assign_frames_rotation_consistent,
+            ) as assignment_mock,
+            mock.patch.object(
+                calibration_pipeline,
+                "collect_assignment_pair_hypotheses",
+                wraps=calibration_pipeline.collect_assignment_pair_hypotheses,
+            ) as hypotheses_mock,
+            mock.patch.object(
+                calibration_pipeline,
+                "estimate_pair_consensus",
+                wraps=calibration_pipeline.estimate_pair_consensus,
+            ) as consensus_mock,
+        ):
+            result = calibrate_marker_layout(
+                observations,
+                *_default_camera(),
+                expected_marker_ids=[0, 1, 2],
+                reference_marker_id=self.reference_marker_id,
+                marker_size_m=self.marker_size_m,
+                settings=self.settings,
+                solve_diagnostics=diagnostics,
+            )
+
+        self.assertEqual(ippe_mock.call_count, 1)
+        self.assertEqual(assignment_mock.call_count, 1)
+        self.assertEqual(hypotheses_mock.call_count, 1)
+        self.assertEqual(consensus_mock.call_count, 1)
+        self.assertIsNone(result.failure_reason)
+        self.assertEqual(result.outcome, "partial")
+        assert result.layout is not None
+        self.assertEqual(set(result.layout.marker_ids), expected_component)
+        self.assertIn("ippe_candidate_generation", diagnostics.solve_stages_seconds)
+        self.assertIn("rotation_consistent_assignment", diagnostics.solve_stages_seconds)
+        self.assertIn("initial_pair_consensus", diagnostics.solve_stages_seconds)
+        for stage in diagnostics.solve_stages_seconds:
+            self.assertNotIn("partial_subset_resolve", stage)
+        refinement_stages = [
+            stage
+            for stage in diagnostics.solve_stages_seconds
+            if stage.startswith("partial_subset_refinement.")
+        ]
+        self.assertTrue(refinement_stages)
+        self.assertTrue(
+            any("initial_bundle_adjustment" in stage for stage in refinement_stages)
+        )
+        for run in diagnostics.optimizer_runs:
+            self.assertNotIn("partial_subset_resolve", run["stage"])
+
+    def test_partial_recovery_keeps_first_connected_component_when_reassignment_would_shrink(
+        self,
+    ) -> None:
+        from object_apriltag.marker_layout_calibration import pipeline as calibration_pipeline
+
+        observations = self._observations_for_consensus_partial_recovery()
+        original_assign = calibration_pipeline.assign_frames_rotation_consistent
+
+        def _assign_once_then_shrink(*args, **kwargs):
+            if _assign_once_then_shrink.calls == 0:
+                _assign_once_then_shrink.calls += 1
+                return original_assign(*args, **kwargs)
+            raise AssertionError("rotation-consistent assignment must not run twice")
+
+        _assign_once_then_shrink.calls = 0
+
+        with mock.patch.object(
+            calibration_pipeline,
+            "assign_frames_rotation_consistent",
+            side_effect=_assign_once_then_shrink,
+        ):
+            result = calibrate_marker_layout(
+                observations,
+                *_default_camera(),
+                expected_marker_ids=[0, 1, 2],
+                reference_marker_id=self.reference_marker_id,
+                marker_size_m=self.marker_size_m,
+                settings=self.settings,
+            )
+
+        assert result.layout is not None
+        self.assertEqual(set(result.layout.marker_ids), {0, 1})
+
+    def test_partial_recovery_preserves_frame_indices_when_covisibility_is_lost(self) -> None:
+        observations = self._observations_for_consensus_partial_recovery()
+        result = calibrate_marker_layout(
             observations,
             *_default_camera(),
-            requested_marker_ids=[0, 1, 2],
-            connected_ids={0, 1},
-            omitted={2: "not_connected_to_reference"},
+            expected_marker_ids=[0, 1, 2],
             reference_marker_id=self.reference_marker_id,
             marker_size_m=self.marker_size_m,
-            marker_sizes_m=uniform_marker_sizes([0, 1, 2], self.marker_size_m),
+            settings=self.settings,
+        )
+        assert result.quality is not None
+        self.assertEqual(result.quality.input_frame_count, len(observations))
+        self.assertEqual(result.quality.rejected_frame_count, 0)
+        self.assertGreater(result.quality.accepted_frame_count, 0)
+
+    def test_partial_subset_refinement_records_prefixed_solve_diagnostics(self) -> None:
+        observations = self._observations_for_consensus_partial_recovery()
+        diagnostics = CalibrationSolveDiagnostics()
+        result = calibrate_marker_layout(
+            observations,
+            *_default_camera(),
+            expected_marker_ids=[0, 1, 2],
+            reference_marker_id=self.reference_marker_id,
+            marker_size_m=self.marker_size_m,
             settings=self.settings,
             solve_diagnostics=diagnostics,
         )
 
         self.assertEqual(result.outcome, "partial")
-        self.assertTrue(diagnostics.solve_stages_seconds)
-        self.assertTrue(
-            all(
-                stage.startswith("partial_subset_resolve.")
-                for stage in diagnostics.solve_stages_seconds
-            )
-        )
+        refinement_stages = [
+            stage
+            for stage in diagnostics.solve_stages_seconds
+            if stage.startswith("partial_subset_refinement.")
+        ]
+        self.assertTrue(refinement_stages)
         self.assertTrue(diagnostics.optimizer_runs)
         self.assertTrue(
             all(
-                run["stage"].startswith("partial_subset_resolve.")
+                run["stage"].startswith("partial_subset_refinement.")
                 for run in diagnostics.optimizer_runs
             )
         )
+        for stage in diagnostics.solve_stages_seconds:
+            self.assertNotIn("partial_subset_resolve", stage)
 
     def test_partial_output_validates_marker_sizes_for_emitted_subset(self) -> None:
         observations = self._raw_disconnected_observations()
@@ -2009,6 +2103,61 @@ class PartialOutputCalibrationTests(unittest.TestCase):
         self.assertAlmostEqual(result.layout.marker_sizes_m[1], marker_sizes_m[1])
         self.assertNotIn(2, result.layout.marker_sizes_m)
         self.assertNotIn(3, result.layout.marker_sizes_m)
+
+    def test_partial_frozen_recovery_uses_component_marker_sizes_map(self) -> None:
+        observations = self._observations_for_consensus_partial_recovery()
+        _apply_constant_marker_noise(observations, marker_id=1, noise_std_px=3.0, seed=0)
+        marker_sizes_m = uniform_marker_sizes([0, 1, 2], self.marker_size_m)
+        marker_sizes_m[2] = self.marker_size_m * 1.2
+        expected_component = {0, 1}
+        result = calibrate_marker_layout(
+            observations,
+            *_default_camera(),
+            expected_marker_ids=[0, 1, 2],
+            reference_marker_id=self.reference_marker_id,
+            marker_size_m=self.marker_size_m,
+            marker_sizes_m=marker_sizes_m,
+            settings=CalibrationSettings(
+                min_inliers_per_edge=20,
+                reprojection_rms_gate_px=0.001,
+                pair_rotation_rms_gate_deg=0.001,
+            ),
+        )
+        self.assertIsNotNone(result.layout)
+        assert result.layout is not None
+        self.assertEqual(result.outcome, "partial")
+        self.assertEqual(set(result.layout.marker_ids), expected_component)
+        self.assertEqual(set(result.layout.marker_sizes_m), expected_component)
+        self.assertNotIn(2, result.layout.marker_sizes_m)
+        self.assertTrue(result.failed_quality_gates)
+        omitted = {record.marker_id: record.reason for record in result.omitted_markers}
+        self.assertEqual(omitted[2], "not_connected_to_reference")
+
+    def _observations_for_consensus_partial_recovery(self) -> list[FrameObservation]:
+        marker_poses = _line_marker_poses(3, marker_size_m=self.marker_size_m)
+        observations: list[FrameObservation] = []
+        for frame_index in range(25):
+            frame_observation = synthesize_observations(
+                marker_poses,
+                frame_count=1,
+                marker_size_m=self.marker_size_m,
+                visible_markers=lambda _, visible=(0, 1): visible,
+                seed=frame_index,
+            )[0]
+            observations.append(
+                FrameObservation(frame_id=frame_index, markers=frame_observation.markers)
+            )
+        bridge_frame = synthesize_observations(
+            marker_poses,
+            frame_count=1,
+            marker_size_m=self.marker_size_m,
+            visible_markers=lambda _: (1, 2),
+            seed=99,
+        )[0]
+        observations.append(
+            FrameObservation(frame_id=25, markers=bridge_frame.markers)
+        )
+        return observations
 
     def _observations_with_marker_only_in_rejected_frames(
         self,
@@ -2042,47 +2191,110 @@ class PartialOutputCalibrationTests(unittest.TestCase):
         return observations
 
 
-    def test_partial_after_missing_accepted_frames_emits_subset(self) -> None:
-        from object_apriltag.marker_layout_calibration.finalize import partial_after_missing_accepted_frames_or_refuse
-
-        observations = synthesize_observations(
-            _two_marker_poses(self.marker_size_m),
-            frame_count=25,
-            marker_size_m=self.marker_size_m,
-        )
-        pair_consensus = {
-            (0, 1): _make_pair_consensus(0, 1, range(25)),
-        }
-        quality = calibrate_marker_layout(
+    def test_partial_after_consensus_failure_emits_frozen_component(self) -> None:
+        observations = self._observations_for_consensus_partial_recovery()
+        result = calibrate_marker_layout(
             observations,
             *_default_camera(),
-            expected_marker_ids=[0, 1],
+            expected_marker_ids=[0, 1, 2],
             reference_marker_id=self.reference_marker_id,
             marker_size_m=self.marker_size_m,
-            settings=self.settings,
-        ).quality
-        assert quality is not None
-        result = partial_after_missing_accepted_frames_or_refuse(
-            observations,
-            *_default_camera(),
-            pair_consensus,
-            quality,
-            "Expected marker IDs have no accepted-frame observations after rejection: [2].",
-            requested_marker_ids=[0, 1, 2],
-            omitted_markers={},
-            markers_in_accepted_frames={0, 1},
-            missing_after_rejection=[2],
-            reference_marker_id=self.reference_marker_id,
-            marker_size_m=self.marker_size_m,
-            marker_sizes_m=uniform_marker_sizes([0, 1, 2], self.marker_size_m),
             settings=self.settings,
         )
         self.assertIsNone(result.failure_reason)
         self.assertEqual(result.outcome, "partial")
         assert result.layout is not None
         self.assertEqual(set(result.layout.marker_ids), {0, 1})
+        assert result.quality is not None
+        self.assertEqual(result.quality.input_frame_count, len(observations))
+        self.assertGreater(result.quality.accepted_frame_count, 0)
+        self.assertEqual(result.quality.rejected_frame_count, 0)
         omitted = {record.marker_id: record.reason for record in result.omitted_markers}
-        self.assertEqual(omitted, {2: "no_accepted_frame_observations"})
+        self.assertEqual(omitted[2], "not_connected_to_reference")
+
+    def test_partial_after_pruning_disconnect_emits_without_second_discrete_pass(
+        self,
+    ) -> None:
+        from object_apriltag.marker_layout_calibration import pipeline as calibration_pipeline
+        from object_apriltag.marker_layout_calibration.continuous_refinement import (
+            ContinuousLayoutRefinement,
+            LayoutRefinementOutcome,
+        )
+
+        marker_poses = _line_marker_poses(3, marker_size_m=self.marker_size_m)
+        observations = synthesize_observations(
+            marker_poses,
+            frame_count=25,
+            marker_size_m=self.marker_size_m,
+        )
+
+        class _PruningDisconnectRefinement(ContinuousLayoutRefinement):
+            def run(self, state):
+                outcome = super().run(state)
+                if outcome.early_result is not None:
+                    return outcome
+                pruned_consensus = {
+                    pair: edge
+                    for pair, edge in outcome.state.pair_consensus.items()
+                    if 2 not in pair
+                }
+                disconnected_state = outcome.state.with_poses(
+                    outcome.state.marker_poses,
+                    outcome.state.frame_poses,
+                    outcome.state.inlier_mask,
+                    pruned_consensus,
+                )
+                return LayoutRefinementOutcome(
+                    disconnected_state,
+                    outcome.pruning_drops,
+                    None,
+                )
+
+        with (
+            mock.patch.object(
+                calibration_pipeline,
+                "estimate_frame_candidates",
+                wraps=calibration_pipeline.estimate_frame_candidates,
+            ) as ippe_mock,
+            mock.patch.object(
+                calibration_pipeline,
+                "assign_frames_rotation_consistent",
+                wraps=calibration_pipeline.assign_frames_rotation_consistent,
+            ) as assignment_mock,
+            mock.patch.object(
+                calibration_pipeline,
+                "collect_assignment_pair_hypotheses",
+                wraps=calibration_pipeline.collect_assignment_pair_hypotheses,
+            ) as hypotheses_mock,
+            mock.patch.object(
+                calibration_pipeline,
+                "estimate_pair_consensus",
+                wraps=calibration_pipeline.estimate_pair_consensus,
+            ) as consensus_mock,
+            mock.patch.object(
+                calibration_pipeline,
+                "ContinuousLayoutRefinement",
+                _PruningDisconnectRefinement,
+            ),
+        ):
+            result = calibrate_marker_layout(
+                observations,
+                *_default_camera(),
+                expected_marker_ids=[0, 1, 2],
+                reference_marker_id=self.reference_marker_id,
+                marker_size_m=self.marker_size_m,
+                settings=self.settings,
+            )
+
+        self.assertEqual(ippe_mock.call_count, 1)
+        self.assertEqual(assignment_mock.call_count, 1)
+        self.assertEqual(hypotheses_mock.call_count, 1)
+        self.assertEqual(consensus_mock.call_count, 1)
+        self.assertEqual(result.outcome, "partial")
+        assert result.layout is not None
+        self.assertEqual(set(result.layout.marker_ids), {0, 1})
+        omitted = {record.marker_id: record.reason for record in result.omitted_markers}
+        self.assertEqual(omitted.get(2), "not_connected_after_pruning")
 
 
 

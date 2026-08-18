@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 import cv2
 import numpy as np
@@ -29,12 +30,13 @@ from object_apriltag.marker_layout_calibration.discrete_graph import (
 from object_apriltag.marker_layout_calibration.finalize import (
     accepted_calibration_result,
     check_quality_gates,
-    emit_partial_calibration_result,
+    connectivity_omission_reason,
     empty_quality,
     finalize_solved_calibration,
     maybe_wrap_partial_success,
-    partial_after_missing_accepted_frames_or_refuse,
-    partial_from_pair_consensus_or_refuse,
+    omitted_marker_records,
+    quality_for_partial_output,
+    wrap_subset_as_partial,
 )
 from object_apriltag.marker_layout_calibration.input import (
     object_points_by_marker as build_object_points_by_marker,
@@ -66,6 +68,8 @@ from object_apriltag.marker_layout_calibration.pose_initialization import (
 )
 from object_apriltag.marker_layout_calibration.solve_primitives import (
     CalibrationSolveDiagnostics,
+    MarkerCandidate,
+    MarkerPair,
     PairConsensus,
     connected_marker_ids,
     covisible_frame_count,
@@ -80,11 +84,12 @@ from object_apriltag.marker_layout_calibration.solve_quality import (
 )
 from object_apriltag.marker_layout_calibration.types import (
     AssignmentRejectionSummary,
-    DroppedPairEdge,
-    FrameAssignmentRejectionRecord,
+    CalibrationQualityReport,
     CalibrationResult,
     CalibrationSettings,
+    DroppedPairEdge,
     FrameAssignmentRejection,
+    FrameAssignmentRejectionRecord,
     FrameObservation,
     RestoredPairEdge,
 )
@@ -128,6 +133,326 @@ def _reconcile_auto_reference_after_consensus(
     return selected, refreshed_failure
 
 
+@dataclass(frozen=True)
+class _FrozenDiscreteState:
+    """First-pass discrete solve state reused for continuous-only partial recovery."""
+
+    normalized_observations: list[tuple[str | int, dict[int, np.ndarray]]]
+    assigned_candidates: dict[int, dict[int, MarkerCandidate]]
+    pair_consensus: dict[MarkerPair, PairConsensus]
+    reference_marker_id: int
+    assignment_rejection_summary: AssignmentRejectionSummary | None
+    assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...]
+    dropped_edges: tuple[DroppedPairEdge, ...]
+    restored_pair_edges: tuple[RestoredPairEdge, ...]
+    input_frame_count: int
+    rejected_frame_count: int
+    expected_ids: list[int]
+    requested_marker_ids: list[int]
+    camera_matrix: np.ndarray
+    dist_coeffs: np.ndarray
+    settings: CalibrationSettings
+    marker_sizes_m: Mapping[int, float]
+    marker_size_m: float
+    object_points_by_marker: dict[int, np.ndarray]
+    solve_diagnostics: CalibrationSolveDiagnostics | None
+
+
+def _filter_assignments_to_component(
+    assigned_candidates: Mapping[int, Mapping[int, MarkerCandidate]],
+    connected_ids: set[int],
+) -> tuple[dict[int, dict[int, MarkerCandidate]], frozenset[int]]:
+    """Keep original frame indices with at least two assigned markers in the component."""
+    filtered: dict[int, dict[int, MarkerCandidate]] = {}
+    accepted_frames: set[int] = set()
+    for frame_index, assignment in assigned_candidates.items():
+        component_assignment = {
+            marker_id: candidate
+            for marker_id, candidate in assignment.items()
+            if marker_id in connected_ids
+        }
+        if len(component_assignment) >= 2:
+            filtered[frame_index] = component_assignment
+            accepted_frames.add(frame_index)
+    return filtered, frozenset(accepted_frames)
+
+
+def _filter_consensus_endpoints_to_component(
+    pair_consensus: Mapping[MarkerPair, PairConsensus],
+    connected_ids: set[int],
+) -> dict[MarkerPair, PairConsensus]:
+    """Reuse pair transforms and inlier hypotheses; filter by endpoint membership only."""
+    return {
+        pair: edge
+        for pair, edge in pair_consensus.items()
+        if edge.marker_a in connected_ids and edge.marker_b in connected_ids
+    }
+
+
+def _refuse_partial_recovery(
+    *,
+    requested_marker_ids: Sequence[int],
+    connected_ids: set[int],
+    omitted: Mapping[int, str],
+    quality: CalibrationQualityReport | None,
+    failure_reason: str,
+) -> CalibrationResult:
+    return CalibrationResult(
+        None,
+        quality,
+        failure_reason,
+        outcome="refused",
+        calibration_policy="best_effort",
+        partial_output=True,
+        omitted_markers=omitted_marker_records(
+            requested_marker_ids,
+            connected_ids,
+            omitted,
+        ),
+    )
+
+
+def _recover_partial_from_frozen(
+    frozen: _FrozenDiscreteState,
+    *,
+    connected_ids: set[int],
+    omitted: Mapping[int, str],
+    parent_quality: CalibrationQualityReport | None = None,
+) -> CalibrationResult:
+    """Run continuous-only recovery on a frozen reference-connected component."""
+    emitted_ids = sorted(connected_ids & set(frozen.requested_marker_ids))
+    non_reference = [
+        marker_id for marker_id in emitted_ids if marker_id != frozen.reference_marker_id
+    ]
+    if frozen.reference_marker_id not in connected_ids or not non_reference:
+        merged_omitted = dict(omitted)
+        for marker_id in frozen.requested_marker_ids:
+            if marker_id not in connected_ids and marker_id not in merged_omitted:
+                merged_omitted[marker_id] = "not_connected_to_reference"
+        return _refuse_partial_recovery(
+            requested_marker_ids=frozen.requested_marker_ids,
+            connected_ids=connected_ids,
+            omitted=merged_omitted,
+            quality=parent_quality,
+            failure_reason=(
+                "Partial subset recovery skipped: reference marker "
+                f"{frozen.reference_marker_id} has no connected non-reference markers."
+            ),
+        )
+
+    merged_omitted = dict(omitted)
+    for marker_id in frozen.requested_marker_ids:
+        if marker_id not in connected_ids and marker_id not in merged_omitted:
+            merged_omitted[marker_id] = "not_connected_to_reference"
+
+    component_ids = sorted(connected_ids & set(frozen.expected_ids))
+    component_marker_sizes_m = {
+        marker_id: frozen.marker_sizes_m[marker_id] for marker_id in component_ids
+    }
+    component_object_points_by_marker = {
+        marker_id: frozen.object_points_by_marker[marker_id] for marker_id in component_ids
+    }
+    filtered_assignments, subset_frames = _filter_assignments_to_component(
+        frozen.assigned_candidates,
+        connected_ids,
+    )
+    if not subset_frames:
+        return _refuse_partial_recovery(
+            requested_marker_ids=frozen.requested_marker_ids,
+            connected_ids=connected_ids,
+            omitted=merged_omitted,
+            quality=parent_quality,
+            failure_reason=(
+                "Partial subset recovery skipped: no accepted frames retain "
+                "covisibility for the selected marker component."
+            ),
+        )
+
+    restored_pair_edges = list(frozen.restored_pair_edges)
+    subset_consensus = _filter_consensus_endpoints_to_component(
+        frozen.pair_consensus,
+        connected_ids,
+    )
+    subset_consensus, support_failure, support_drops = restrict_pair_consensus_to_frames(
+        subset_consensus,
+        subset_frames,
+        component_ids,
+        frozen.reference_marker_id,
+        frozen.settings,
+        marker_sizes_m=component_marker_sizes_m,
+        best_effort=True,
+        restored_pair_edges=restored_pair_edges,
+    )
+    dropped_edges = list(frozen.dropped_edges)
+    dropped_edges.extend(support_drops)
+    if support_failure is not None:
+        return _refuse_partial_recovery(
+            requested_marker_ids=frozen.requested_marker_ids,
+            connected_ids=connected_ids,
+            omitted=merged_omitted,
+            quality=parent_quality,
+            failure_reason=support_failure,
+        )
+
+    ref_rotation, ref_translation = reference_gauge_pose(
+        component_marker_sizes_m[frozen.reference_marker_id]
+    )
+    marker_poses = initialize_marker_poses(
+        frozen.reference_marker_id,
+        ref_rotation,
+        ref_translation,
+        component_ids,
+        subset_consensus,
+    )
+    frame_poses = initialize_frame_poses(
+        filtered_assignments,
+        marker_poses,
+        frozen.input_frame_count,
+    )
+    corner_observations = build_corner_observations(
+        frozen.normalized_observations,
+        component_ids,
+    )
+    inlier_mask = mask_corner_observations_for_frames(corner_observations, subset_frames)
+    non_reference_ids = [
+        marker_id for marker_id in component_ids if marker_id != frozen.reference_marker_id
+    ]
+    refinement_diagnostics = (
+        frozen.solve_diagnostics.scoped("partial_subset_refinement")
+        if frozen.solve_diagnostics is not None
+        else None
+    )
+    refinement_context = build_layout_refinement_context(
+        reference_marker_id=frozen.reference_marker_id,
+        non_reference_ids=non_reference_ids,
+        expected_ids=component_ids,
+        accepted_frames=subset_frames,
+        object_points_by_marker=component_object_points_by_marker,
+        camera_matrix=frozen.camera_matrix,
+        dist_coeffs=frozen.dist_coeffs,
+        settings=frozen.settings,
+        marker_sizes_m=component_marker_sizes_m,
+        marker_size_m=frozen.marker_size_m,
+        restored_pair_edges=restored_pair_edges,
+        input_frame_count=frozen.input_frame_count,
+        rejected_frame_count=frozen.rejected_frame_count,
+        accepted_frame_count=len(subset_frames),
+        assignment_rejection_summary=frozen.assignment_rejection_summary,
+        assignment_rejection_records=frozen.assignment_rejection_records,
+        dropped_edges=dropped_edges,
+        solve_diagnostics=refinement_diagnostics,
+    )
+    subset_result = _run_continuous_refinement(
+        refinement_context=refinement_context,
+        corner_observations=corner_observations,
+        marker_poses=marker_poses,
+        frame_poses=frame_poses,
+        inlier_mask=inlier_mask,
+        pair_consensus=subset_consensus,
+        dropped_edges=dropped_edges,
+        camera_matrix=frozen.camera_matrix,
+        dist_coeffs=frozen.dist_coeffs,
+        requested_marker_ids=frozen.requested_marker_ids,
+        omitted_markers=merged_omitted,
+        reference_marker_id=frozen.reference_marker_id,
+        marker_size_m=frozen.marker_size_m,
+        marker_sizes_m=component_marker_sizes_m,
+        settings=frozen.settings,
+        partial_output=True,
+        expected_ids=component_ids,
+        object_points_by_marker=component_object_points_by_marker,
+        input_frame_count=frozen.input_frame_count,
+        rejected_frame_count=frozen.rejected_frame_count,
+        accepted_frame_count=len(subset_frames),
+    )
+    if subset_result.layout is None:
+        return CalibrationResult(
+            None,
+            subset_result.quality or parent_quality,
+            subset_result.failure_reason,
+            outcome="refused",
+            calibration_policy="best_effort",
+            partial_output=True,
+            omitted_markers=omitted_marker_records(
+                frozen.requested_marker_ids,
+                set(emitted_ids),
+                merged_omitted,
+            ),
+        )
+    return wrap_subset_as_partial(
+        subset_result,
+        requested_marker_ids=frozen.requested_marker_ids,
+        emitted_marker_ids=set(emitted_ids),
+        omitted=merged_omitted,
+    )
+
+
+def _emit_partial_from_refined_state(
+    *,
+    marker_poses: Mapping[int, tuple[np.ndarray, np.ndarray]],
+    quality: CalibrationQualityReport,
+    connected_ids: set[int],
+    requested_marker_ids: Sequence[int],
+    omitted_markers: Mapping[int, str],
+    reference_marker_id: int,
+    marker_size_m: float,
+    marker_sizes_m: Mapping[int, float],
+    failed_quality_gates: tuple[str, ...] = (),
+    selected_checkpoint_stage: str | None = None,
+    failed_refinement_stage: str | None = None,
+) -> CalibrationResult:
+    """Emit or refuse a partial layout from the current refined solve state."""
+    emitted_ids = sorted(connected_ids & set(requested_marker_ids))
+    non_reference = [marker_id for marker_id in emitted_ids if marker_id != reference_marker_id]
+    merged = dict(omitted_markers)
+    for marker_id in requested_marker_ids:
+        if marker_id not in connected_ids:
+            merged.setdefault(marker_id, "not_connected_after_pruning")
+    if reference_marker_id not in connected_ids or not non_reference:
+        return _refuse_partial_recovery(
+            requested_marker_ids=requested_marker_ids,
+            connected_ids=connected_ids,
+            omitted=merged,
+            quality=quality,
+            failure_reason=(
+                "Partial output skipped after pruning: reference marker "
+                f"{reference_marker_id} has no connected non-reference markers."
+            ),
+        )
+
+    emitted_footprints = footprints_from_poses(
+        {marker_id: marker_poses[marker_id] for marker_id in emitted_ids if marker_id in marker_poses},
+        marker_sizes_m,
+    )
+    emitted_sizes = {marker_id: marker_sizes_m[marker_id] for marker_id in emitted_footprints}
+    layout = build_marker_layout(
+        reference_marker_id=reference_marker_id,
+        marker_size_m=marker_size_m,
+        footprints=emitted_footprints,
+        marker_sizes_m=emitted_sizes,
+    )
+    return CalibrationResult(
+        layout,
+        quality_for_partial_output(
+            quality,
+            requested_marker_ids=requested_marker_ids,
+            emitted_marker_ids=set(emitted_ids),
+        ),
+        None,
+        outcome="partial",
+        calibration_policy="best_effort",
+        failed_quality_gates=failed_quality_gates,
+        selected_checkpoint_stage=selected_checkpoint_stage,
+        failed_refinement_stage=failed_refinement_stage,
+        omitted_markers=omitted_marker_records(
+            requested_marker_ids,
+            set(emitted_ids),
+            merged,
+        ),
+        partial_output=True,
+    )
+
+
 def calibrate_marker_layout(
     observations: Sequence[FrameObservation],
     camera_matrix: np.ndarray,
@@ -139,8 +464,6 @@ def calibrate_marker_layout(
     marker_sizes_m: Mapping[int, float] | None = None,
     solve_diagnostics: CalibrationSolveDiagnostics | None = None,
     keypoint_sources: Mapping[str, tuple[int, str, float]] | None = None,
-    *,
-    _subset_resolve: bool = False,
 ) -> CalibrationResult:
     """Run the rotation-consistent marker-layout calibration pipeline.
 
@@ -161,15 +484,13 @@ def calibrate_marker_layout(
         solve_diagnostics: Optional mutable container for per-stage timing and optimizer stats.
         keypoint_sources: Object-model keypoint derivation map used for automatic
             reference selection when ``reference_marker_id`` is omitted.
-        _subset_resolve: Internal flag for connected-subset re-solves that must not
-            emit another partial layout.
 
     Returns:
         ``CalibrationResult`` with layout, quality report, and outcome metadata on success,
         refusal, partial, or provisional paths.
     """
     best_effort = True
-    partial_output = not _subset_resolve
+    partial_output = True
 
     settings = settings or CalibrationSettings()
     settings_failure = validate_settings(settings)
@@ -364,45 +685,6 @@ def calibrate_marker_layout(
             restored_pair_edges=restored_pair_edges,
         )
     dropped_edges = list(dropped_pair_edges)
-    reference_marker_id, pair_failure = _reconcile_auto_reference_after_consensus(
-        auto_reference=auto_reference,
-        pair_consensus=pair_consensus,
-        expected_ids=expected_ids,
-        reference_marker_id=reference_marker_id,
-        keypoint_sources=keypoint_sources,
-        connectivity_stage="initial_consensus",
-        connectivity_failure=pair_failure,
-    )
-    if pair_failure is not None:
-        missing = missing_from_graph(pair_consensus, expected_ids, reference_marker_id)
-        return partial_from_pair_consensus_or_refuse(
-            observations,
-            camera_matrix,
-            dist_coeffs,
-            pair_consensus,
-            quality_from_pairs(
-                pair_consensus,
-                expected_ids,
-                reference_marker_id,
-                missing,
-                input_frame_count=len(normalized_observations),
-                rejected_frame_count=0,
-                accepted_frame_count=0,
-                observation_count=0,
-                dropped_pair_edges=tuple(dropped_edges),
-                restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
-            ),
-            pair_failure,
-            requested_marker_ids=requested_marker_ids,
-            omitted_markers=omitted_markers,
-            connectivity_stage="initial_consensus",
-            reference_marker_id=reference_marker_id,
-            marker_size_m=marker_size_m,
-            marker_sizes_m=marker_sizes_m,
-            settings=settings,
-            solve_diagnostics=solve_diagnostics,
-        )
-
     rejected_frames = rotation_result.rejected_frames
     assignment_rejections = tuple(
         FrameAssignmentRejection(reason="rotation_inconsistent")
@@ -419,6 +701,36 @@ def calibrate_marker_layout(
     rejected_frame_count = len(rejected_frames)
     accepted_frames = frozenset(assigned_candidates)
     accepted_frame_count = len(accepted_frames)
+    reference_marker_id, pair_failure = _reconcile_auto_reference_after_consensus(
+        auto_reference=auto_reference,
+        pair_consensus=pair_consensus,
+        expected_ids=expected_ids,
+        reference_marker_id=reference_marker_id,
+        keypoint_sources=keypoint_sources,
+        connectivity_stage="initial_consensus",
+        connectivity_failure=pair_failure,
+    )
+    frozen_discrete_state = _FrozenDiscreteState(
+        normalized_observations=normalized_observations,
+        assigned_candidates=assigned_candidates,
+        pair_consensus=dict(pair_consensus),
+        reference_marker_id=reference_marker_id,
+        assignment_rejection_summary=assignment_rejection_summary,
+        assignment_rejection_records=assignment_rejection_records,
+        dropped_edges=tuple(dropped_edges),
+        restored_pair_edges=tuple(restored_pair_edges),
+        input_frame_count=input_frame_count,
+        rejected_frame_count=rejected_frame_count,
+        expected_ids=list(expected_ids),
+        requested_marker_ids=requested_marker_ids,
+        camera_matrix=camera_matrix,
+        dist_coeffs=dist_coeffs,
+        settings=settings,
+        marker_sizes_m=marker_sizes_m,
+        marker_size_m=marker_size_m,
+        object_points_by_marker=object_points_by_marker,
+        solve_diagnostics=solve_diagnostics,
+    )
     if accepted_frame_count == 0:
         return CalibrationResult(
             None,
@@ -437,6 +749,32 @@ def calibrate_marker_layout(
                 restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
             ),
             "No frames with assignable IPPE candidates remain after rejecting inconsistent samples.",
+        )
+
+    if pair_failure is not None:
+        missing = missing_from_graph(pair_consensus, expected_ids, reference_marker_id)
+        merged = dict(omitted_markers)
+        for marker_id in requested_marker_ids:
+            if marker_id not in connected_marker_ids(pair_consensus, reference_marker_id):
+                merged.setdefault(marker_id, connectivity_omission_reason("initial_consensus"))
+        return _recover_partial_from_frozen(
+            frozen_discrete_state,
+            connected_ids=connected_marker_ids(pair_consensus, reference_marker_id),
+            omitted=merged,
+            parent_quality=quality_from_pairs(
+                pair_consensus,
+                expected_ids,
+                reference_marker_id,
+                missing,
+                input_frame_count=input_frame_count,
+                rejected_frame_count=rejected_frame_count,
+                accepted_frame_count=accepted_frame_count,
+                observation_count=0,
+                assignment_rejections=assignment_rejection_summary,
+                assignment_rejection_records=assignment_rejection_records,
+                dropped_pair_edges=tuple(dropped_edges),
+                restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
+            ),
         )
 
     pair_consensus, assignment_support_failure, assignment_drops = restrict_pair_consensus_to_frames(
@@ -460,12 +798,18 @@ def calibrate_marker_layout(
         connectivity_failure=assignment_support_failure,
     )
     if assignment_support_failure is not None:
-        return partial_from_pair_consensus_or_refuse(
-            observations,
-            camera_matrix,
-            dist_coeffs,
-            pair_consensus,
-            quality_from_pairs(
+        merged = dict(omitted_markers)
+        for marker_id in requested_marker_ids:
+            if marker_id not in connected_marker_ids(pair_consensus, reference_marker_id):
+                merged.setdefault(
+                    marker_id,
+                    connectivity_omission_reason("assignment_support"),
+                )
+        return _recover_partial_from_frozen(
+            frozen_discrete_state,
+            connected_ids=connected_marker_ids(pair_consensus, reference_marker_id),
+            omitted=merged,
+            parent_quality=quality_from_pairs(
                 pair_consensus,
                 expected_ids,
                 reference_marker_id,
@@ -479,26 +823,22 @@ def calibrate_marker_layout(
                 dropped_pair_edges=tuple(dropped_edges),
                 restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
             ),
-            assignment_support_failure,
-            requested_marker_ids=requested_marker_ids,
-            omitted_markers=omitted_markers,
-            connectivity_stage="assignment_support",
-            reference_marker_id=reference_marker_id,
-            marker_size_m=marker_size_m,
-            marker_sizes_m=marker_sizes_m,
-            settings=settings,
-            solve_diagnostics=solve_diagnostics,
         )
 
     markers_in_accepted_frames = markers_in_frame_indices(normalized_observations, accepted_frames)
     missing_after_rejection = sorted(set(expected_ids) - markers_in_accepted_frames)
     if missing_after_rejection:
-        return partial_after_missing_accepted_frames_or_refuse(
-            observations,
-            camera_matrix,
-            dist_coeffs,
-            pair_consensus,
-            quality_from_pairs(
+        merged = dict(omitted_markers)
+        for marker_id in missing_after_rejection:
+            merged.setdefault(marker_id, "no_accepted_frame_observations")
+        return _recover_partial_from_frozen(
+            frozen_discrete_state,
+            connected_ids=(
+                connected_marker_ids(pair_consensus, reference_marker_id)
+                & markers_in_accepted_frames
+            ),
+            omitted=merged,
+            parent_quality=quality_from_pairs(
                 pair_consensus,
                 expected_ids,
                 reference_marker_id,
@@ -512,16 +852,6 @@ def calibrate_marker_layout(
                 dropped_pair_edges=tuple(dropped_edges),
                 restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
             ),
-            f"Expected marker IDs have no accepted-frame observations after rejection: {missing_after_rejection}.",
-            requested_marker_ids=requested_marker_ids,
-            omitted_markers=omitted_markers,
-            markers_in_accepted_frames=markers_in_accepted_frames,
-            missing_after_rejection=missing_after_rejection,
-            reference_marker_id=reference_marker_id,
-            marker_size_m=marker_size_m,
-            marker_sizes_m=marker_sizes_m,
-            settings=settings,
-            solve_diagnostics=solve_diagnostics,
         )
 
     ref_rotation, ref_translation = reference_gauge_pose(marker_sizes_m[reference_marker_id])
@@ -571,7 +901,6 @@ def calibrate_marker_layout(
         inlier_mask=inlier_mask,
         pair_consensus=pair_consensus,
         dropped_edges=dropped_edges,
-        observations=observations,
         camera_matrix=camera_matrix,
         dist_coeffs=dist_coeffs,
         requested_marker_ids=requested_marker_ids,
@@ -599,7 +928,6 @@ def _run_continuous_refinement(
     inlier_mask,
     pair_consensus,
     dropped_edges: list[DroppedPairEdge],
-    observations: Sequence[FrameObservation],
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
     requested_marker_ids: list[int],
@@ -628,7 +956,6 @@ def _run_continuous_refinement(
         inlier_mask: Boolean mask selecting active corner observations.
         pair_consensus: Pair-edge consensus after discrete graph solving.
         dropped_edges: Mutable list of dropped pair edges; refinement pruning drops are appended.
-        observations: Original frame observations for partial-output emission.
         camera_matrix: 3×3 camera intrinsics matrix.
         dist_coeffs: Lens distortion coefficients.
         requested_marker_ids: Marker IDs requested before best-effort omissions.
@@ -694,19 +1021,16 @@ def _run_continuous_refinement(
         merged = dict(omitted_markers)
         for marker_id in missing_ids:
             merged.setdefault(marker_id, "not_connected_after_pruning")
-        return emit_partial_calibration_result(
-            observations,
-            camera_matrix,
-            dist_coeffs,
-            requested_marker_ids=requested_marker_ids,
+        return _emit_partial_from_refined_state(
+            marker_poses=marker_poses,
+            quality=quality,
             connected_ids=set(connected_ids),
-            omitted=merged,
+            requested_marker_ids=requested_marker_ids,
+            omitted_markers=merged,
             reference_marker_id=reference_marker_id,
             marker_size_m=marker_size_m,
             marker_sizes_m=marker_sizes_m,
-            settings=settings,
-            quality=quality,
-            solve_diagnostics=refinement_context.solve_diagnostics,
+            failed_quality_gates=(),
         )
     finalized = finalize_solved_calibration(
         marker_poses,
@@ -847,7 +1171,7 @@ def _self_check() -> None:
     assert all_bad.failure_reason is not None
     assert all_bad.quality is not None
     assert all_bad.quality.input_frame_count == 25
-    assert all_bad.quality.accepted_frame_count == 0
+    assert all_bad.quality.accepted_frame_count == 25
 
     marker_poses = {
         0: (ref_rotation, ref_translation),

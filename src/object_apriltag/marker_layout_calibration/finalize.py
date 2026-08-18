@@ -9,12 +9,6 @@ import numpy as np
 from object_apriltag.layout import build_marker_layout
 
 from object_apriltag.marker_layout_calibration.input import object_points_by_marker
-from object_apriltag.marker_layout_calibration.solve_primitives import (
-    CalibrationSolveDiagnostics,
-    MarkerPair,
-    PairConsensus,
-    connected_marker_ids,
-)
 from object_apriltag.marker_layout_calibration.solve_quality import (
     build_quality_report,
     collect_quality_gate_failures,
@@ -25,7 +19,6 @@ from object_apriltag.marker_layout_calibration.types import (
     CalibrationQualityReport,
     CalibrationResult,
     CalibrationSettings,
-    FrameObservation,
     OmittedMarkerDiagnostic,
 )
 
@@ -165,236 +158,6 @@ def wrap_subset_as_partial(
         failed_refinement_stage=subset_result.failed_refinement_stage,
         omitted_markers=omitted_records,
         partial_output=True,
-    )
-
-
-def emit_partial_calibration_result(
-    observations: Sequence[FrameObservation],
-    camera_matrix: np.ndarray,
-    dist_coeffs: np.ndarray,
-    *,
-    requested_marker_ids: Sequence[int],
-    connected_ids: set[int],
-    omitted: Mapping[int, str],
-    reference_marker_id: int,
-    marker_size_m: float,
-    marker_sizes_m: Mapping[int, float],
-    settings: CalibrationSettings,
-    quality: CalibrationQualityReport | None = None,
-    solve_diagnostics: CalibrationSolveDiagnostics | None = None,
-) -> CalibrationResult:
-    """Re-run calibration on the connected subset when partial output is allowed.
-
-    Skips subset re-solve when the reference marker is isolated, returning ``quality``
-    when provided so diagnostics can still be exported.
-
-    Args:
-        observations: Full multi-frame corner observations.
-        camera_matrix: Camera intrinsic matrix.
-        dist_coeffs: Camera distortion coefficients.
-        requested_marker_ids: Marker IDs originally requested by the caller.
-        connected_ids: Marker IDs connected to the reference in pair consensus.
-        omitted: Known omission reasons before the subset re-solve.
-        reference_marker_id: Layout reference marker ID.
-        marker_size_m: Default marker edge length in meters.
-        marker_sizes_m: Per-marker physical sizes for the full request.
-        settings: Calibration thresholds and iteration limits.
-        quality: Optional quality report to preserve when subset re-solve is skipped.
-        solve_diagnostics: Optional timing collector shared with the parent solve.
-
-    Returns:
-        A ``partial`` result when the subset solve succeeds, or ``refused`` when
-        connectivity prerequisites are not met or the subset solve fails.
-    """
-    emitted_ids = sorted(connected_ids & set(requested_marker_ids))
-    non_reference = [marker_id for marker_id in emitted_ids if marker_id != reference_marker_id]
-    if reference_marker_id not in emitted_ids or not non_reference:
-        merged_omitted = dict(omitted)
-        for marker_id in requested_marker_ids:
-            if marker_id not in connected_ids and marker_id not in merged_omitted:
-                merged_omitted[marker_id] = "not_connected_to_reference"
-        return CalibrationResult(
-            None,
-            quality,
-            (
-                "Partial subset re-solve skipped: reference marker "
-                f"{reference_marker_id} has no connected non-reference markers."
-            ),
-            outcome="refused",
-            calibration_policy="best_effort",
-            partial_output=True,
-            omitted_markers=omitted_marker_records(
-                requested_marker_ids,
-                set(connected_ids),
-                merged_omitted,
-            ),
-        )
-
-    merged_omitted = dict(omitted)
-    for marker_id in requested_marker_ids:
-        if marker_id not in connected_ids and marker_id not in merged_omitted:
-            merged_omitted[marker_id] = "not_connected_to_reference"
-
-    emitted_sizes = {marker_id: marker_sizes_m[marker_id] for marker_id in emitted_ids}
-    from object_apriltag.marker_layout_calibration.pipeline import calibrate_marker_layout
-
-    subset_diagnostics = (
-        solve_diagnostics.scoped("partial_subset_resolve")
-        if solve_diagnostics is not None
-        else None
-    )
-    subset_result = calibrate_marker_layout(
-        observations,
-        camera_matrix,
-        dist_coeffs,
-        expected_marker_ids=emitted_ids,
-        reference_marker_id=reference_marker_id,
-        marker_size_m=marker_size_m,
-        settings=settings,
-        marker_sizes_m=emitted_sizes,
-        solve_diagnostics=subset_diagnostics,
-        _subset_resolve=True,
-    )
-    if subset_result.layout is None:
-        return CalibrationResult(
-            None,
-            subset_result.quality,
-            subset_result.failure_reason,
-            outcome="refused",
-            calibration_policy="best_effort",
-            partial_output=True,
-            omitted_markers=omitted_marker_records(
-                requested_marker_ids,
-                set(emitted_ids),
-                merged_omitted,
-            ),
-        )
-    return wrap_subset_as_partial(
-        subset_result,
-        requested_marker_ids=requested_marker_ids,
-        emitted_marker_ids=set(emitted_ids),
-        omitted=merged_omitted,
-    )
-
-
-def partial_from_pair_consensus_or_refuse(
-    observations: Sequence[FrameObservation],
-    camera_matrix: np.ndarray,
-    dist_coeffs: np.ndarray,
-    pair_consensus: dict[MarkerPair, PairConsensus],
-    quality: CalibrationQualityReport,
-    failure_message: str,
-    *,
-    requested_marker_ids: Sequence[int],
-    omitted_markers: Mapping[int, str],
-    connectivity_stage: str,
-    reference_marker_id: int,
-    marker_size_m: float,
-    marker_sizes_m: Mapping[int, float],
-    settings: CalibrationSettings,
-    solve_diagnostics: CalibrationSolveDiagnostics | None = None,
-) -> CalibrationResult:
-    """Attempt partial recovery after pair-consensus failure, or return a refused result.
-
-    Args:
-        observations: Full multi-frame corner observations.
-        camera_matrix: Camera intrinsic matrix.
-        dist_coeffs: Camera distortion coefficients.
-        pair_consensus: Pair-consensus graph at the failure point.
-        quality: Quality report accumulated before refusal.
-        failure_message: Refusal message when partial recovery is disabled.
-        requested_marker_ids: Marker IDs originally requested by the caller.
-        omitted_markers: Omission reasons already known before recovery.
-        connectivity_stage: Internal stage name for newly disconnected markers.
-        reference_marker_id: Layout reference marker ID.
-        marker_size_m: Default marker edge length in meters.
-        marker_sizes_m: Per-marker physical sizes for the full request.
-        settings: Calibration thresholds and iteration limits.
-        solve_diagnostics: Optional timing collector shared with a subset re-solve.
-
-    Returns:
-        A partial calibration result when recovery succeeds; otherwise a refused
-        result carrying ``failure_message``.
-    """
-    connected = connected_marker_ids(pair_consensus, reference_marker_id)
-    merged = dict(omitted_markers)
-    for marker_id in requested_marker_ids:
-        if marker_id not in connected and marker_id not in merged:
-            merged[marker_id] = connectivity_omission_reason(connectivity_stage)
-    return emit_partial_calibration_result(
-        observations,
-        camera_matrix,
-        dist_coeffs,
-        requested_marker_ids=requested_marker_ids,
-        connected_ids=connected,
-        omitted=merged,
-        reference_marker_id=reference_marker_id,
-        marker_size_m=marker_size_m,
-        marker_sizes_m=marker_sizes_m,
-        settings=settings,
-        quality=quality,
-        solve_diagnostics=solve_diagnostics,
-    )
-
-
-def partial_after_missing_accepted_frames_or_refuse(
-    observations: Sequence[FrameObservation],
-    camera_matrix: np.ndarray,
-    dist_coeffs: np.ndarray,
-    pair_consensus: dict[MarkerPair, PairConsensus],
-    quality: CalibrationQualityReport,
-    failure_message: str,
-    *,
-    requested_marker_ids: Sequence[int],
-    omitted_markers: Mapping[int, str],
-    markers_in_accepted_frames: set[int],
-    missing_after_rejection: Sequence[int],
-    reference_marker_id: int,
-    marker_size_m: float,
-    marker_sizes_m: Mapping[int, float],
-    settings: CalibrationSettings,
-    solve_diagnostics: CalibrationSolveDiagnostics | None = None,
-) -> CalibrationResult:
-    """Attempt partial recovery when some markers lack accepted-frame observations.
-
-    Args:
-        observations: Full multi-frame corner observations.
-        camera_matrix: Camera intrinsic matrix.
-        dist_coeffs: Camera distortion coefficients.
-        pair_consensus: Pair-consensus graph at the failure point.
-        quality: Quality report accumulated before refusal.
-        failure_message: Refusal message when partial recovery is disabled.
-        requested_marker_ids: Marker IDs originally requested by the caller.
-        omitted_markers: Omission reasons already known before recovery.
-        markers_in_accepted_frames: Marker IDs with at least one accepted frame.
-        missing_after_rejection: Marker IDs with no accepted-frame observations.
-        reference_marker_id: Layout reference marker ID.
-        marker_size_m: Default marker edge length in meters.
-        marker_sizes_m: Per-marker physical sizes for the full request.
-        settings: Calibration thresholds and iteration limits.
-        solve_diagnostics: Optional timing collector shared with a subset re-solve.
-
-    Returns:
-        A partial calibration result when recovery succeeds; otherwise a refused
-        result carrying ``failure_message``.
-    """
-    connected = connected_marker_ids(pair_consensus, reference_marker_id) & markers_in_accepted_frames
-    merged = dict(omitted_markers)
-    for marker_id in missing_after_rejection:
-        merged.setdefault(marker_id, "no_accepted_frame_observations")
-    return emit_partial_calibration_result(
-        observations,
-        camera_matrix,
-        dist_coeffs,
-        requested_marker_ids=requested_marker_ids,
-        connected_ids=connected,
-        omitted=merged,
-        reference_marker_id=reference_marker_id,
-        marker_size_m=marker_size_m,
-        marker_sizes_m=marker_sizes_m,
-        settings=settings,
-        quality=quality,
-        solve_diagnostics=solve_diagnostics,
     )
 
 
@@ -560,7 +323,9 @@ def finalize_solved_calibration(
                 reference_marker_id=reference_marker_id,
                 marker_size_m=marker_size_m,
                 footprints=footprints,
-                marker_sizes_m=dict(marker_sizes_m),
+                marker_sizes_m={
+                    marker_id: marker_sizes_m[marker_id] for marker_id in footprints
+                },
             )
             return CalibrationResult(
                 layout,

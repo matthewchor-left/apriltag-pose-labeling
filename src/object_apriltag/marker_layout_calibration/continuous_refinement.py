@@ -765,11 +765,14 @@ def _provisional_result_from_checkpoint(
         ctx.expected_ids,
     )
     failed_gate_messages = tuple(failure.message for failure in gate_failures)
+    footprints = footprints_from_poses(marker_poses, ctx.marker_sizes_m)
     layout = build_marker_layout(
         reference_marker_id=ctx.reference_marker_id,
         marker_size_m=ctx.marker_size_m,
-        footprints=footprints_from_poses(marker_poses, ctx.marker_sizes_m),
-        marker_sizes_m=dict(ctx.marker_sizes_m),
+        footprints=footprints,
+        marker_sizes_m={
+            marker_id: ctx.marker_sizes_m[marker_id] for marker_id in footprints
+        },
     )
     return CalibrationResult(
         layout,
