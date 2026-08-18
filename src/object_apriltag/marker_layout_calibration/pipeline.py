@@ -10,18 +10,6 @@ import numpy as np
 from object_apriltag.layout import build_marker_layout
 from object_apriltag.pose import marker_corner_object_points
 
-from object_apriltag.marker_layout_calibration.anchor_core import (
-    assign_and_initialize_anchor_core,
-    collect_assignment_pair_hypotheses,
-    freeze_assigned_frame_candidates,
-    pair_consensus_from_assignment_hypotheses,
-)
-from object_apriltag.marker_layout_calibration.assignment import (
-    assign_ippe_candidates,
-    build_assignment_rejection_records,
-    build_fallback_assignment_records,
-    summarize_assignment_rejection_records,
-)
 from object_apriltag.marker_layout_calibration.continuous_refinement import (
     ContinuousLayoutRefinement,
     LayoutRefinementContext,
@@ -29,7 +17,7 @@ from object_apriltag.marker_layout_calibration.continuous_refinement import (
 )
 from object_apriltag.marker_layout_calibration import discrete_graph
 from object_apriltag.marker_layout_calibration.discrete_graph import (
-    collect_pair_hypotheses,
+    collect_assignment_pair_hypotheses,
     connectivity_failure_message,
     connected_marker_ids_from_pairs,
     estimate_frame_candidates,
@@ -50,7 +38,6 @@ from object_apriltag.marker_layout_calibration.finalize import (
 )
 from object_apriltag.marker_layout_calibration.input import (
     object_points_by_marker as build_object_points_by_marker,
-    parse_anchor_marker_ids,
     parse_expected_marker_ids,
     uniform_marker_sizes,
     validate_camera_inputs,
@@ -64,6 +51,8 @@ from object_apriltag.marker_layout_calibration.reference_selection import (
 )
 from object_apriltag.marker_layout_calibration.rotation_consistent_assignment import (
     assign_frames_rotation_consistent,
+    build_assignment_rejection_records,
+    summarize_assignment_rejection_records,
 )
 from object_apriltag.marker_layout_calibration.pose_initialization import (
     build_corner_observations,
@@ -77,7 +66,6 @@ from object_apriltag.marker_layout_calibration.pose_initialization import (
 )
 from object_apriltag.marker_layout_calibration.solve_primitives import (
     CalibrationSolveDiagnostics,
-    MarkerCandidate,
     PairConsensus,
     connected_marker_ids,
     covisible_frame_count,
@@ -94,13 +82,9 @@ from object_apriltag.marker_layout_calibration.types import (
     AssignmentRejectionSummary,
     DroppedPairEdge,
     FrameAssignmentRejectionRecord,
-    FrameFallbackAssignmentRecord,
-
-    AnchorCoreDiagnostics,
     CalibrationResult,
     CalibrationSettings,
     FrameAssignmentRejection,
-    FrameFallbackAssignment,
     FrameObservation,
     RestoredPairEdge,
 )
@@ -110,16 +94,9 @@ def _auto_select_reference_marker(
     pairs: Sequence[tuple[int, int]],
     expected_ids: Sequence[int],
     keypoint_sources: Mapping[str, tuple[int, str, float]] | None,
-    anchor_ids: Sequence[int] | None,
-) -> tuple[int | None, str | None]:
-    """Select a reference marker and validate explicit anchor membership."""
-    selected = select_reference_marker(pairs, expected_ids, keypoint_sources or {})
-    if anchor_ids is not None and selected not in anchor_ids:
-        return None, (
-            f"Auto-selected reference marker {selected} is not in "
-            f"anchor_marker_ids {sorted(anchor_ids)}."
-        )
-    return selected, None
+) -> int:
+    """Select a reference marker from pair connectivity and keypoint coverage."""
+    return select_reference_marker(pairs, expected_ids, keypoint_sources or {})
 
 
 def _reconcile_auto_reference_after_consensus(
@@ -129,31 +106,26 @@ def _reconcile_auto_reference_after_consensus(
     expected_ids: Sequence[int],
     reference_marker_id: int,
     keypoint_sources: Mapping[str, tuple[int, str, float]] | None,
-    anchor_ids: Sequence[int] | None,
     connectivity_stage: str,
     connectivity_failure: str | None,
-) -> tuple[int, str | None, str | None]:
+) -> tuple[int, str | None]:
     """Re-select an automatic reference and refresh connectivity failure state."""
     if not auto_reference or not pair_consensus:
-        return reference_marker_id, connectivity_failure, None
-    selected, auto_failure = _auto_select_reference_marker(
+        return reference_marker_id, connectivity_failure
+    selected = _auto_select_reference_marker(
         list(pair_consensus),
         expected_ids,
         keypoint_sources,
-        anchor_ids,
     )
-    if auto_failure is not None:
-        return reference_marker_id, connectivity_failure, auto_failure
-    assert selected is not None
     if connectivity_failure is None:
-        return selected, None, None
+        return selected, None
     missing = sorted(missing_from_graph(pair_consensus, list(expected_ids), selected))
     refreshed_failure = (
         connectivity_failure_message(connectivity_stage, selected, missing)
         if missing
         else None
     )
-    return selected, refreshed_failure, None
+    return selected, refreshed_failure
 
 
 def calibrate_marker_layout(
@@ -164,19 +136,17 @@ def calibrate_marker_layout(
     reference_marker_id: int | None,
     marker_size_m: float,
     settings: CalibrationSettings | None = None,
-    anchor_marker_ids: Sequence[int] | None = None,
-    anchor_stop_after_expansion: bool = False,
     marker_sizes_m: Mapping[int, float] | None = None,
-    best_effort: bool = False,
-    partial_output: bool = False,
     solve_diagnostics: CalibrationSolveDiagnostics | None = None,
     keypoint_sources: Mapping[str, tuple[int, str, float]] | None = None,
+    *,
+    _subset_resolve: bool = False,
 ) -> CalibrationResult:
-    """Run the full marker-layout calibration pipeline.
+    """Run the rotation-consistent marker-layout calibration pipeline.
 
-    Validates inputs, builds per-frame IPPE candidates, establishes pair
-    consensus (legacy path or anchor-core expansion), and refines poses via
-    continuous bundle adjustment.
+    Validates inputs, assigns IPPE candidates with cross-frame rotation agreement,
+    builds pair consensus from those assignments, and refines poses via continuous
+    bundle adjustment with partial-output recovery.
 
     Args:
         observations: Per-frame detected marker corner observations.
@@ -187,26 +157,19 @@ def calibrate_marker_layout(
             auto-select from pair connectivity and keypoint-source coverage.
         marker_size_m: Default physical marker edge length in meters.
         settings: Calibration thresholds and optimizer options; defaults apply if omitted.
-        anchor_marker_ids: Strict subset activates anchor-core bootstrap; all expected IDs use legacy path.
-        anchor_stop_after_expansion: Return after anchor expansion without continuous refinement.
         marker_sizes_m: Per-marker edge lengths; uniform default when omitted.
-        best_effort: Relax connectivity and enable checkpoint recovery on refinement failure.
-        partial_output: Emit partial layouts for disconnected markers; requires ``best_effort``.
         solve_diagnostics: Optional mutable container for per-stage timing and optimizer stats.
         keypoint_sources: Object-model keypoint derivation map used for automatic
             reference selection when ``reference_marker_id`` is omitted.
+        _subset_resolve: Internal flag for connected-subset re-solves that must not
+            emit another partial layout.
 
     Returns:
         ``CalibrationResult`` with layout, quality report, and outcome metadata on success,
         refusal, partial, or provisional paths.
     """
-    if partial_output and not best_effort:
-        return CalibrationResult(
-            None,
-            None,
-            "partial_output requires best-effort calibration policy.",
-            outcome="refused",
-        )
+    best_effort = True
+    partial_output = not _subset_resolve
 
     settings = settings or CalibrationSettings()
     settings_failure = validate_settings(settings)
@@ -223,21 +186,6 @@ def calibrate_marker_layout(
 
     requested_marker_ids = list(expected_ids)
     omitted_markers: dict[int, str] = {}
-
-    anchor_ids, anchor_failure = parse_anchor_marker_ids(
-        anchor_marker_ids,
-        expected_ids,
-        reference_marker_id,
-    )
-    if anchor_failure is not None:
-        return CalibrationResult(None, None, anchor_failure)
-
-    if anchor_stop_after_expansion and anchor_ids is None:
-        return CalibrationResult(
-            None,
-            None,
-            "--anchor-stop-after-expansion requires explicit anchor_marker_ids.",
-        )
 
     marker_size_failure = validate_marker_size(marker_size_m)
     if marker_size_failure is not None:
@@ -336,19 +284,14 @@ def calibrate_marker_layout(
             "No valid IPPE marker poses found in any frame.",
         )
 
-    pair_hypotheses = collect_pair_hypotheses(frame_candidates, expected_ids)
+
     raw_pair_counts = raw_covisible_pair_counts(normalized_observations)
     if auto_reference:
-        selected_reference, auto_failure = _auto_select_reference_marker(
+        reference_marker_id = _auto_select_reference_marker(
             list(raw_pair_counts.keys()),
             expected_ids,
             keypoint_sources,
-            anchor_ids,
         )
-        if auto_failure is not None:
-            return CalibrationResult(None, None, auto_failure)
-        assert selected_reference is not None
-        reference_marker_id = selected_reference
     raw_connected = connected_marker_ids_from_pairs(raw_pair_counts.keys(), reference_marker_id)
     raw_missing = sorted(set(expected_ids) - raw_connected)
     if raw_missing:
@@ -374,17 +317,11 @@ def calibrate_marker_layout(
                             omitted_markers[marker_id] = "not_connected_in_raw_observations"
                     expected_ids = sorted(largest)
                     if auto_reference:
-                        selected_reference, auto_failure = _auto_select_reference_marker(
+                        reference_marker_id = _auto_select_reference_marker(
                             list(raw_pair_counts.keys()),
                             expected_ids,
                             keypoint_sources,
-                            anchor_ids,
                         )
-                        if auto_failure is not None:
-                            return CalibrationResult(None, None, auto_failure)
-                        assert selected_reference is not None
-                        reference_marker_id = selected_reference
-            pair_hypotheses = collect_pair_hypotheses(frame_candidates, expected_ids)
         else:
             return CalibrationResult(
                 None,
@@ -405,370 +342,37 @@ def calibrate_marker_layout(
             )
 
     restored_pair_edges: list[RestoredPairEdge] = []
-    use_legacy_assignment = anchor_ids is None or set(anchor_ids) == set(expected_ids)
-    anchor_core_diagnostics: AnchorCoreDiagnostics | None = None
-    preinitialized_marker_poses: dict[int, tuple[np.ndarray, np.ndarray]] | None = None
-    rotation_consistent_assignments: dict[int, dict[int, MarkerCandidate]] | None = None
-
-    if use_legacy_assignment:
-        if settings.discrete_method == "rotation_consistent":
-            with timed_solve_stage(solve_diagnostics, "rotation_consistent_assignment"):
-                rotation_result = assign_frames_rotation_consistent(
-                    frame_candidates,
-                    reference_marker_id,
-                    settings,
-                )
-            rotation_consistent_assignments = rotation_result.assigned
-            assignment_pair_hypotheses = collect_assignment_pair_hypotheses(
-                rotation_consistent_assignments,
-                frozenset(expected_ids),
-            )
-            with timed_solve_stage(solve_diagnostics, "initial_pair_consensus"):
-                pair_consensus, pair_failure, dropped_pair_edges = estimate_pair_consensus(
-                    assignment_pair_hypotheses,
-                    expected_ids,
-                    reference_marker_id,
-                    marker_sizes_m,
-                    settings,
-                    best_effort=False,
-                )
-        else:
-            with timed_solve_stage(solve_diagnostics, "initial_pair_consensus"):
-                pair_consensus, pair_failure, dropped_pair_edges = estimate_pair_consensus(
-                    pair_hypotheses,
-                    expected_ids,
-                    reference_marker_id,
-                    marker_sizes_m,
-                    settings,
-                    best_effort=best_effort,
-                    restored_pair_edges=restored_pair_edges,
-                )
-    else:
-        assert anchor_ids is not None
-        (
-            anchor_assigned,
-            rejected_frames,
-            assignment_rejections,
-            fallback_assignments,
-            pair_consensus,
-            preinitialized_marker_poses,
-            anchor_drops,
-            anchor_core_diagnostics,
-            anchor_failure,
-        ) = assign_and_initialize_anchor_core(
+    with timed_solve_stage(solve_diagnostics, "rotation_consistent_assignment"):
+        rotation_result = assign_frames_rotation_consistent(
             frame_candidates,
-            pair_hypotheses,
-            normalized_observations,
+            reference_marker_id,
+            settings,
+        )
+    rotation_consistent_assignments = rotation_result.assigned
+    assignment_pair_hypotheses = collect_assignment_pair_hypotheses(
+        rotation_consistent_assignments,
+        frozenset(expected_ids),
+    )
+    with timed_solve_stage(solve_diagnostics, "initial_pair_consensus"):
+        pair_consensus, pair_failure, dropped_pair_edges = estimate_pair_consensus(
+            assignment_pair_hypotheses,
             expected_ids,
-            anchor_ids,
             reference_marker_id,
             marker_sizes_m,
             settings,
-            object_points_by_marker,
-            camera_matrix,
-            dist_coeffs,
-            stop_after_expansion=anchor_stop_after_expansion,
             best_effort=best_effort,
             restored_pair_edges=restored_pair_edges,
-            solve_diagnostics=solve_diagnostics,
         )
-        dropped_edges = list(anchor_drops)
-        if anchor_failure is not None or pair_consensus is None or anchor_assigned is None:
-            assignment_rejection_records = build_assignment_rejection_records(
-                normalized_observations,
-                rejected_frames,
-                assignment_rejections,
-            )
-            fallback_assignment_records = build_fallback_assignment_records(
-                normalized_observations,
-                fallback_assignments,
-            )
-            assignment_rejection_summary = summarize_assignment_rejection_records(
-                assignment_rejection_records
-            )
-            quality = quality_from_pairs(
-                pair_consensus or {},
-                expected_ids,
-                reference_marker_id,
-                missing_from_graph(pair_consensus or {}, expected_ids, reference_marker_id),
-                input_frame_count=len(normalized_observations),
-                rejected_frame_count=len(rejected_frames),
-                accepted_frame_count=len(anchor_assigned or {}),
-                observation_count=0,
-                assignment_rejections=assignment_rejection_summary,
-                assignment_rejection_records=assignment_rejection_records,
-                fallback_assignment_records=fallback_assignment_records or None,
-                dropped_pair_edges=tuple(dropped_edges),
-                restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
-                anchor_core=anchor_core_diagnostics,
-            )
-            return CalibrationResult(None, quality, anchor_failure)
-        assigned_candidates = anchor_assigned
-        assignment_rejection_records = build_assignment_rejection_records(
-            normalized_observations,
-            rejected_frames,
-            assignment_rejections,
-        )
-        fallback_assignment_records = build_fallback_assignment_records(
-            normalized_observations,
-            fallback_assignments,
-        )
-        serialized_fallback_records = fallback_assignment_records or None
-        assignment_rejection_summary = summarize_assignment_rejection_records(
-            assignment_rejection_records
-        )
-        if anchor_stop_after_expansion:
-            assert preinitialized_marker_poses is not None
-            assert pair_consensus is not None
-            marker_poses = preinitialized_marker_poses
-            footprints = footprints_from_poses(marker_poses, marker_sizes_m)
-            if set(footprints) != set(expected_ids):
-                absent = sorted(set(expected_ids) - set(footprints))
-                return CalibrationResult(
-                    None,
-                    quality_from_pairs(
-                        pair_consensus,
-                        expected_ids,
-                        reference_marker_id,
-                        frozenset(absent),
-                        input_frame_count=len(normalized_observations),
-                        rejected_frame_count=len(rejected_frames),
-                        accepted_frame_count=len(
-                            {
-                                frame_index
-                                for frame_index, assignment in assigned_candidates.items()
-                                if len(assignment) >= 2
-                            }
-                        ),
-                        observation_count=0,
-                        assignment_rejections=assignment_rejection_summary,
-                        assignment_rejection_records=assignment_rejection_records,
-                        dropped_pair_edges=tuple(dropped_edges),
-                        restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
-                        anchor_core=anchor_core_diagnostics,
-                    ),
-                    (
-                        "Expansion-only layout did not produce all expected marker "
-                        f"footprints; missing {absent}."
-                    ),
-                )
-            layout = build_marker_layout(
-                reference_marker_id=reference_marker_id,
-                marker_size_m=marker_size_m,
-                footprints=footprints,
-                marker_sizes_m=dict(marker_sizes_m),
-                anchor_marker_ids=anchor_ids,
-            )
-            quality = quality_from_pairs(
-                pair_consensus,
-                expected_ids,
-                reference_marker_id,
-                missing_from_graph(pair_consensus, expected_ids, reference_marker_id),
-                input_frame_count=len(normalized_observations),
-                rejected_frame_count=len(rejected_frames),
-                accepted_frame_count=len(
-                    {
-                        frame_index
-                        for frame_index, assignment in assigned_candidates.items()
-                        if len(assignment) >= 2
-                    }
-                ),
-                observation_count=0,
-                assignment_rejections=assignment_rejection_summary,
-                assignment_rejection_records=assignment_rejection_records,
-                dropped_pair_edges=tuple(dropped_edges),
-                restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
-                anchor_core=anchor_core_diagnostics,
-            )
-            return CalibrationResult(layout, quality, None)
-        input_frame_count = len(normalized_observations)
-        rejected_frame_count = len(rejected_frames)
-        accepted_frames = frozenset(
-            frame_index
-            for frame_index, assignment in assigned_candidates.items()
-            if len(assignment) >= 2
-        )
-        accepted_frame_count = len(accepted_frames)
-        pair_consensus, assignment_support_failure, assignment_drops = (
-            restrict_pair_consensus_to_frames(
-                pair_consensus,
-                accepted_frames,
-                expected_ids,
-                reference_marker_id,
-                settings,
-                marker_sizes_m=marker_sizes_m,
-                best_effort=best_effort,
-                restored_pair_edges=restored_pair_edges,
-            )
-        )
-        dropped_edges.extend(assignment_drops)
-        if assignment_support_failure is not None:
-            return partial_from_pair_consensus_or_refuse(
-                observations,
-                camera_matrix,
-                dist_coeffs,
-                pair_consensus,
-                quality_from_pairs(
-                    pair_consensus,
-                    expected_ids,
-                    reference_marker_id,
-                    missing_from_graph(pair_consensus, expected_ids, reference_marker_id),
-                    input_frame_count=input_frame_count,
-                    rejected_frame_count=rejected_frame_count,
-                    accepted_frame_count=accepted_frame_count,
-                    observation_count=0,
-                    assignment_rejections=assignment_rejection_summary,
-                    assignment_rejection_records=assignment_rejection_records,
-                    fallback_assignment_records=serialized_fallback_records,
-                    dropped_pair_edges=tuple(dropped_edges),
-                    restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
-                    anchor_core=anchor_core_diagnostics,
-                ),
-                assignment_support_failure,
-                requested_marker_ids=requested_marker_ids,
-                omitted_markers=omitted_markers,
-                connectivity_stage="assignment_support",
-                reference_marker_id=reference_marker_id,
-                marker_size_m=marker_size_m,
-                marker_sizes_m=marker_sizes_m,
-                settings=settings,
-                best_effort=best_effort,
-                partial_output=partial_output,
-                anchor_marker_ids=anchor_ids,
-                solve_diagnostics=solve_diagnostics,
-            )
-        markers_in_accepted_frames = markers_in_frame_indices(
-            normalized_observations,
-            accepted_frames,
-        )
-        missing_after_rejection = sorted(set(expected_ids) - markers_in_accepted_frames)
-        if missing_after_rejection:
-            return partial_after_missing_accepted_frames_or_refuse(
-                observations,
-                camera_matrix,
-                dist_coeffs,
-                pair_consensus,
-                quality_from_pairs(
-                    pair_consensus,
-                    expected_ids,
-                    reference_marker_id,
-                    frozenset(missing_after_rejection),
-                    input_frame_count=input_frame_count,
-                    rejected_frame_count=rejected_frame_count,
-                    accepted_frame_count=accepted_frame_count,
-                    observation_count=0,
-                    assignment_rejections=assignment_rejection_summary,
-                    assignment_rejection_records=assignment_rejection_records,
-                    fallback_assignment_records=serialized_fallback_records,
-                    dropped_pair_edges=tuple(dropped_edges),
-                    restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
-                    anchor_core=anchor_core_diagnostics,
-                ),
-                (
-                    "Expected marker IDs have no accepted-frame observations after "
-                    f"anchor-core expansion: {missing_after_rejection}."
-                ),
-                requested_marker_ids=requested_marker_ids,
-                omitted_markers=omitted_markers,
-                markers_in_accepted_frames=markers_in_accepted_frames,
-                missing_after_rejection=missing_after_rejection,
-                reference_marker_id=reference_marker_id,
-                marker_size_m=marker_size_m,
-                marker_sizes_m=marker_sizes_m,
-                settings=settings,
-                best_effort=best_effort,
-                partial_output=partial_output,
-                anchor_marker_ids=anchor_ids,
-                solve_diagnostics=solve_diagnostics,
-            )
-        assert preinitialized_marker_poses is not None
-        marker_poses = preinitialized_marker_poses
-        frame_poses = initialize_frame_poses(
-            assigned_candidates,
-            marker_poses,
-            len(normalized_observations),
-        )
-        corner_observations = build_corner_observations(normalized_observations, expected_ids)
-        inlier_mask = mask_corner_observations_for_frames(corner_observations, accepted_frames)
-        non_reference_ids = [
-            marker_id for marker_id in expected_ids if marker_id != reference_marker_id
-        ]
-        refinement_context = build_layout_refinement_context(
-            reference_marker_id=reference_marker_id,
-            non_reference_ids=non_reference_ids,
-            expected_ids=expected_ids,
-            accepted_frames=accepted_frames,
-            object_points_by_marker=object_points_by_marker,
-            camera_matrix=camera_matrix,
-            dist_coeffs=dist_coeffs,
-            settings=settings,
-            marker_sizes_m=marker_sizes_m,
-            marker_size_m=marker_size_m,
-            best_effort=best_effort,
-            restored_pair_edges=restored_pair_edges,
-            input_frame_count=input_frame_count,
-            rejected_frame_count=rejected_frame_count,
-            accepted_frame_count=accepted_frame_count,
-            assignment_rejection_summary=assignment_rejection_summary,
-            assignment_rejection_records=assignment_rejection_records,
-            fallback_assignment_records=serialized_fallback_records,
-            dropped_edges=dropped_edges,
-            anchor_core_diagnostics=anchor_core_diagnostics,
-            frame_candidates=frame_candidates,
-            assigned_candidates=assigned_candidates,
-            anchor_marker_ids=anchor_ids,
-            solve_diagnostics=solve_diagnostics,
-        )
-        
-
-        return _run_continuous_refinement(
-            refinement_context=refinement_context,
-            corner_observations=corner_observations,
-            marker_poses=marker_poses,
-            frame_poses=frame_poses,
-            inlier_mask=inlier_mask,
-            pair_consensus=pair_consensus,
-            dropped_edges=dropped_edges,
-            observations=observations,
-            camera_matrix=camera_matrix,
-            dist_coeffs=dist_coeffs,
-            requested_marker_ids=requested_marker_ids,
-            omitted_markers=omitted_markers,
-            reference_marker_id=reference_marker_id,
-            marker_size_m=marker_size_m,
-            marker_sizes_m=marker_sizes_m,
-            settings=settings,
-            best_effort=best_effort,
-            partial_output=partial_output,
-            expected_ids=expected_ids,
-            object_points_by_marker=object_points_by_marker,
-            assignment_rejection_summary=assignment_rejection_summary,
-            assignment_rejection_records=assignment_rejection_records,
-            serialized_fallback_records=serialized_fallback_records,
-            restored_pair_edges=restored_pair_edges,
-            anchor_ids=anchor_ids,
-            input_frame_count=input_frame_count,
-            rejected_frame_count=rejected_frame_count,
-            accepted_frame_count=accepted_frame_count,
-            anchor_core_diagnostics=anchor_core_diagnostics,
-        )
-
     dropped_edges = list(dropped_pair_edges)
-    pair_failure = pair_failure if use_legacy_assignment else None
-    reference_marker_id, pair_failure, auto_failure = (
-        _reconcile_auto_reference_after_consensus(
-            auto_reference=auto_reference and use_legacy_assignment,
-            pair_consensus=pair_consensus,
-            expected_ids=expected_ids,
-            reference_marker_id=reference_marker_id,
-            keypoint_sources=keypoint_sources,
-            anchor_ids=anchor_ids,
-            connectivity_stage="initial_consensus",
-            connectivity_failure=pair_failure,
-        )
+    reference_marker_id, pair_failure = _reconcile_auto_reference_after_consensus(
+        auto_reference=auto_reference,
+        pair_consensus=pair_consensus,
+        expected_ids=expected_ids,
+        reference_marker_id=reference_marker_id,
+        keypoint_sources=keypoint_sources,
+        connectivity_stage="initial_consensus",
+        connectivity_failure=pair_failure,
     )
-    if auto_failure is not None:
-        return CalibrationResult(None, None, auto_failure)
     if pair_failure is not None:
         missing = missing_from_graph(pair_consensus, expected_ids, reference_marker_id)
         return partial_from_pair_consensus_or_refuse(
@@ -796,34 +400,21 @@ def calibrate_marker_layout(
             marker_size_m=marker_size_m,
             marker_sizes_m=marker_sizes_m,
             settings=settings,
-            best_effort=best_effort,
-            partial_output=partial_output,
-            anchor_marker_ids=anchor_ids,
             solve_diagnostics=solve_diagnostics,
         )
 
-    assigned_candidates, rejected_frames, assignment_rejections, fallback_assignments = (
-        _resolve_legacy_frame_assignments(
-            frame_candidates=frame_candidates,
-            pair_consensus=pair_consensus,
-            settings=settings,
-            marker_sizes_m=marker_sizes_m,
-            best_effort=best_effort,
-            solve_diagnostics=solve_diagnostics,
-            rotation_consistent_assignments=rotation_consistent_assignments,
-        )
+    rejected_frames = rotation_result.rejected_frames
+    assignment_rejections = tuple(
+        FrameAssignmentRejection(reason="rotation_inconsistent")
+        for _ in rejected_frames
     )
+    assigned_candidates = rotation_consistent_assignments
     assignment_rejection_records = build_assignment_rejection_records(
         normalized_observations,
         rejected_frames,
         assignment_rejections,
     )
-    fallback_assignment_records = build_fallback_assignment_records(
-        normalized_observations,
-        fallback_assignments,
-    )
     assignment_rejection_summary = summarize_assignment_rejection_records(assignment_rejection_records)
-    serialized_fallback_records = fallback_assignment_records or None
     input_frame_count = len(normalized_observations)
     rejected_frame_count = len(rejected_frames)
     accepted_frames = frozenset(assigned_candidates)
@@ -842,7 +433,6 @@ def calibrate_marker_layout(
                 observation_count=0,
                 assignment_rejections=assignment_rejection_summary,
                 assignment_rejection_records=assignment_rejection_records,
-                fallback_assignment_records=serialized_fallback_records,
                 dropped_pair_edges=tuple(dropped_edges),
                 restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
             ),
@@ -860,20 +450,15 @@ def calibrate_marker_layout(
         restored_pair_edges=restored_pair_edges,
     )
     dropped_edges.extend(assignment_drops)
-    reference_marker_id, assignment_support_failure, auto_failure = (
-        _reconcile_auto_reference_after_consensus(
-            auto_reference=auto_reference,
-            pair_consensus=pair_consensus,
-            expected_ids=expected_ids,
-            reference_marker_id=reference_marker_id,
-            keypoint_sources=keypoint_sources,
-            anchor_ids=anchor_ids,
-            connectivity_stage="assignment_support",
-            connectivity_failure=assignment_support_failure,
-        )
+    reference_marker_id, assignment_support_failure = _reconcile_auto_reference_after_consensus(
+        auto_reference=auto_reference,
+        pair_consensus=pair_consensus,
+        expected_ids=expected_ids,
+        reference_marker_id=reference_marker_id,
+        keypoint_sources=keypoint_sources,
+        connectivity_stage="assignment_support",
+        connectivity_failure=assignment_support_failure,
     )
-    if auto_failure is not None:
-        return CalibrationResult(None, None, auto_failure)
     if assignment_support_failure is not None:
         return partial_from_pair_consensus_or_refuse(
             observations,
@@ -891,7 +476,6 @@ def calibrate_marker_layout(
                 observation_count=0,
                 assignment_rejections=assignment_rejection_summary,
                 assignment_rejection_records=assignment_rejection_records,
-                fallback_assignment_records=serialized_fallback_records,
                 dropped_pair_edges=tuple(dropped_edges),
                 restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
             ),
@@ -903,9 +487,6 @@ def calibrate_marker_layout(
             marker_size_m=marker_size_m,
             marker_sizes_m=marker_sizes_m,
             settings=settings,
-            best_effort=best_effort,
-            partial_output=partial_output,
-            anchor_marker_ids=anchor_ids,
             solve_diagnostics=solve_diagnostics,
         )
 
@@ -928,7 +509,6 @@ def calibrate_marker_layout(
                 observation_count=0,
                 assignment_rejections=assignment_rejection_summary,
                 assignment_rejection_records=assignment_rejection_records,
-                fallback_assignment_records=serialized_fallback_records,
                 dropped_pair_edges=tuple(dropped_edges),
                 restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
             ),
@@ -941,9 +521,6 @@ def calibrate_marker_layout(
             marker_size_m=marker_size_m,
             marker_sizes_m=marker_sizes_m,
             settings=settings,
-            best_effort=best_effort,
-            partial_output=partial_output,
-            anchor_marker_ids=anchor_ids,
             solve_diagnostics=solve_diagnostics,
         )
 
@@ -976,22 +553,15 @@ def calibrate_marker_layout(
         settings=settings,
         marker_sizes_m=marker_sizes_m,
         marker_size_m=marker_size_m,
-        best_effort=best_effort,
         restored_pair_edges=restored_pair_edges,
         input_frame_count=input_frame_count,
         rejected_frame_count=rejected_frame_count,
         accepted_frame_count=accepted_frame_count,
         assignment_rejection_summary=assignment_rejection_summary,
         assignment_rejection_records=assignment_rejection_records,
-        fallback_assignment_records=serialized_fallback_records,
         dropped_edges=dropped_edges,
-        anchor_core_diagnostics=None,
-        frame_candidates=None,
-        assigned_candidates=None,
-        anchor_marker_ids=anchor_ids,
         solve_diagnostics=solve_diagnostics,
     )
-    
 
     return _run_continuous_refinement(
         refinement_context=refinement_context,
@@ -1010,58 +580,14 @@ def calibrate_marker_layout(
         marker_size_m=marker_size_m,
         marker_sizes_m=marker_sizes_m,
         settings=settings,
-        best_effort=best_effort,
         partial_output=partial_output,
         expected_ids=expected_ids,
         object_points_by_marker=object_points_by_marker,
-        assignment_rejection_summary=assignment_rejection_summary,
-        assignment_rejection_records=assignment_rejection_records,
-        serialized_fallback_records=serialized_fallback_records,
-        restored_pair_edges=restored_pair_edges,
-        anchor_ids=anchor_ids,
         input_frame_count=input_frame_count,
         rejected_frame_count=rejected_frame_count,
         accepted_frame_count=accepted_frame_count,
     )
 
-
-def _resolve_legacy_frame_assignments(
-    *,
-    frame_candidates: list[tuple[int, dict[int, list[MarkerCandidate]]]],
-    pair_consensus: dict[tuple[int, int], PairConsensus],
-    settings: CalibrationSettings,
-    marker_sizes_m: Mapping[int, float],
-    best_effort: bool,
-    solve_diagnostics: CalibrationSolveDiagnostics | None,
-    rotation_consistent_assignments: dict[int, dict[int, MarkerCandidate]] | None,
-) -> tuple[
-    dict[int, dict[int, MarkerCandidate]],
-    tuple[int, ...],
-    tuple[FrameAssignmentRejection, ...],
-    tuple[FrameFallbackAssignment, ...],
-]:
-    """Resolve per-frame IPPE assignments for the legacy calibration path."""
-    if rotation_consistent_assignments is not None:
-        assigned = rotation_consistent_assignments
-        rejected_frames = tuple(
-            frame_index
-            for frame_index, _ in frame_candidates
-            if frame_index not in assigned
-        )
-        rejections = tuple(
-            FrameAssignmentRejection(reason="rotation_inconsistent")
-            for _ in rejected_frames
-        )
-        return assigned, rejected_frames, rejections, ()
-
-    return assign_ippe_candidates(
-        frame_candidates,
-        pair_consensus,
-        settings,
-        marker_sizes_m,
-        best_effort=best_effort,
-        solve_diagnostics=solve_diagnostics,
-    )
 
 
 def _run_continuous_refinement(
@@ -1082,19 +608,12 @@ def _run_continuous_refinement(
     marker_size_m: float,
     marker_sizes_m: Mapping[int, float],
     settings: CalibrationSettings,
-    best_effort: bool,
     partial_output: bool,
     expected_ids: list[int],
     object_points_by_marker: dict[int, np.ndarray],
-    assignment_rejection_summary: AssignmentRejectionSummary | None,
-    assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None,
-    serialized_fallback_records: tuple[FrameFallbackAssignmentRecord, ...] | None,
-    restored_pair_edges: list[RestoredPairEdge] | None,
-    anchor_ids: Sequence[int] | None,
     input_frame_count: int,
     rejected_frame_count: int,
     accepted_frame_count: int,
-    anchor_core_diagnostics: AnchorCoreDiagnostics | None = None,
 ) -> CalibrationResult:
     """Run continuous refinement and finalize into a ``CalibrationResult``.
 
@@ -1118,20 +637,12 @@ def _run_continuous_refinement(
         marker_size_m: Default physical marker edge length in meters.
         marker_sizes_m: Per-marker edge lengths.
         settings: Calibration thresholds and optimizer options.
-        best_effort: Relax connectivity and enable provisional checkpoint recovery.
-        partial_output: Emit partial layouts for markers disconnected after pruning.
+        partial_output: Whether to emit partial layouts for markers disconnected after pruning.
         expected_ids: Marker IDs still expected after upstream omissions.
         object_points_by_marker: Object-frame corner coordinates per marker.
-        assignment_rejection_summary: Aggregated IPPE assignment rejection counts.
-        assignment_rejection_records: Per-frame assignment rejection detail.
-        serialized_fallback_records: Per-frame fallback assignment detail.
-        restored_pair_edges: Weak edges restored during discrete graph solving.
-        anchor_ids: Anchor marker IDs when anchor-core mode was used.
         input_frame_count: Total input frames before rejection.
         rejected_frame_count: Frames rejected during assignment.
         accepted_frame_count: Frames accepted into bundle adjustment.
-        anchor_core_diagnostics: Anchor-core expansion diagnostics when applicable.
-
     Returns:
         Final ``CalibrationResult`` after refinement, quality gating, and optional partial wrapping.
 
@@ -1173,15 +684,13 @@ def _run_continuous_refinement(
         object_points_by_marker,
         camera_matrix,
         dist_coeffs,
-        assignment_rejections=assignment_rejection_summary,
-        assignment_rejection_records=assignment_rejection_records,
-        fallback_assignment_records=serialized_fallback_records,
+        assignment_rejections=refinement_context.assignment_rejection_summary,
+        assignment_rejection_records=refinement_context.assignment_rejection_records,
         dropped_pair_edges=tuple(dropped_edges),
-        restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
-        anchor_core=anchor_core_diagnostics,
+        restored_pair_edges=refinement_context.restored_pair_edges,
     )
     gate_failure = check_quality_gates(quality, settings, marker_sizes_m, expected_ids)
-    if missing_ids and partial_output and best_effort:
+    if missing_ids and partial_output:
         merged = dict(omitted_markers)
         for marker_id in missing_ids:
             merged.setdefault(marker_id, "not_connected_after_pruning")
@@ -1196,8 +705,6 @@ def _run_continuous_refinement(
             marker_size_m=marker_size_m,
             marker_sizes_m=marker_sizes_m,
             settings=settings,
-            best_effort=best_effort,
-            anchor_marker_ids=anchor_ids,
             quality=quality,
             solve_diagnostics=refinement_context.solve_diagnostics,
         )
@@ -1211,8 +718,6 @@ def _run_continuous_refinement(
         marker_size_m,
         missing_ids,
         gate_failure=gate_failure,
-        best_effort=best_effort,
-        anchor_marker_ids=anchor_ids,
     )
     if finalized is not None:
         return finalized
@@ -1223,10 +728,9 @@ def _run_continuous_refinement(
         marker_size_m=marker_size_m,
         footprints=emitted_footprints,
         marker_sizes_m=emitted_sizes,
-        anchor_marker_ids=anchor_ids,
     )
     return maybe_wrap_partial_success(
-        accepted_calibration_result(layout, quality, best_effort=best_effort),
+        accepted_calibration_result(layout, quality),
         requested_marker_ids=requested_marker_ids,
         emitted_marker_ids=set(expected_ids),
         omitted_markers=omitted_markers,
@@ -1245,80 +749,16 @@ def build_layout_refinement_context(
     settings: CalibrationSettings,
     marker_sizes_m: Mapping[int, float],
     marker_size_m: float,
-    best_effort: bool,
     restored_pair_edges: list[RestoredPairEdge] | None,
     input_frame_count: int,
     rejected_frame_count: int,
     accepted_frame_count: int,
     assignment_rejection_summary: AssignmentRejectionSummary | None,
     assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None,
-    fallback_assignment_records: tuple[FrameFallbackAssignmentRecord, ...] | None,
     dropped_edges: list[DroppedPairEdge],
-    anchor_core_diagnostics: AnchorCoreDiagnostics | None,
-    frame_candidates: list[tuple[int, dict[int, list[MarkerCandidate]]]] | None,
-    assigned_candidates: dict[int, dict[int, MarkerCandidate]] | None,
-    anchor_marker_ids: Sequence[int] | None = None,
     solve_diagnostics: CalibrationSolveDiagnostics | None = None,
 ) -> LayoutRefinementContext:
-    """Assemble ``LayoutRefinementContext`` for the continuous refinement stage.
-
-    Bundles assignment diagnostics, optional anchor-core pair-consensus refresh
-    hooks, and weak-connectivity restore callbacks used after discrete graph solving.
-
-    Args:
-        reference_marker_id: Gauge-fixed reference marker ID.
-        non_reference_ids: Marker IDs optimized during bundle adjustment.
-        expected_ids: Full set of marker IDs still expected in the layout.
-        accepted_frames: Frame indices accepted after IPPE assignment.
-        object_points_by_marker: Object-frame corner coordinates per marker.
-        camera_matrix: 3×3 camera intrinsics matrix.
-        dist_coeffs: Lens distortion coefficients.
-        settings: Calibration thresholds and optimizer options.
-        marker_sizes_m: Per-marker edge lengths.
-        marker_size_m: Default physical marker edge length in meters.
-        best_effort: Relax connectivity and enable checkpoint recovery.
-        restored_pair_edges: Weak edges restored during discrete graph solving.
-        input_frame_count: Total input frames before rejection.
-        rejected_frame_count: Frames rejected during assignment.
-        accepted_frame_count: Frames accepted into bundle adjustment.
-        assignment_rejection_summary: Aggregated IPPE assignment rejection counts.
-        assignment_rejection_records: Per-frame assignment rejection detail.
-        fallback_assignment_records: Per-frame fallback assignment detail.
-        dropped_edges: Mutable list accumulating dropped pair edges.
-        anchor_core_diagnostics: Anchor-core expansion diagnostics when applicable.
-        frame_candidates: Per-frame IPPE candidates for anchor-core refresh hook.
-        assigned_candidates: Frozen anchor assignments for consensus refresh hook.
-        anchor_marker_ids: Anchor marker IDs when anchor-core mode was used.
-        solve_diagnostics: Optional mutable container for per-stage timing and optimizer stats.
-
-    Returns:
-        Context object consumed by ``ContinuousLayoutRefinement``.
-    """
-    from object_apriltag.marker_layout_calibration.solve_primitives import MarkerCandidate, MarkerPair, PairConsensus
-
-    def refresh_pair_consensus_after_initial_ba(
-        pair_consensus: dict[MarkerPair, PairConsensus],
-        marker_poses: dict[int, tuple[np.ndarray, np.ndarray]],
-    ) -> dict[MarkerPair, PairConsensus]:
-        """Re-estimate pair consensus from frozen anchor assignments after initial BA.
-
-        Args:
-            pair_consensus: Current pair consensus before refresh.
-            marker_poses: Marker poses after initial bundle adjustment.
-
-        Returns:
-            Refreshed pair consensus, or the input when anchor hooks are inactive.
-        """
-        if frame_candidates is None or assigned_candidates is None:
-            return pair_consensus
-        frozen_frames = freeze_assigned_frame_candidates(frame_candidates, assigned_candidates)
-        return pair_consensus_from_assignment_hypotheses(
-            collect_pair_hypotheses(frozen_frames, expected_ids),
-            settings,
-            marker_sizes_m,
-            marker_poses=marker_poses,
-        )
-
+    """Assemble ``LayoutRefinementContext`` for the continuous refinement stage."""
     return LayoutRefinementContext(
         reference_marker_id=reference_marker_id,
         non_reference_ids=non_reference_ids,
@@ -1330,23 +770,18 @@ def build_layout_refinement_context(
         settings=settings,
         marker_sizes_m=marker_sizes_m,
         marker_size_m=marker_size_m,
-        best_effort=best_effort,
         restored_pair_edges=tuple(restored_pair_edges) if restored_pair_edges else None,
         input_frame_count=input_frame_count,
         rejected_frame_count=rejected_frame_count,
         accepted_frame_count=accepted_frame_count,
         assignment_rejection_summary=assignment_rejection_summary,
         assignment_rejection_records=assignment_rejection_records,
-        fallback_assignment_records=fallback_assignment_records,
         dropped_edges=dropped_edges,
-        anchor_core_diagnostics=anchor_core_diagnostics,
         restore_weak_connectivity=discrete_graph.maybe_restore_weak_connectivity,
-        refresh_pair_consensus_after_initial_ba=refresh_pair_consensus_after_initial_ba
-        if frame_candidates is not None and assigned_candidates is not None
-        else None,
-        anchor_marker_ids=anchor_marker_ids,
+        refresh_pair_consensus_after_initial_ba=None,
         solve_diagnostics=solve_diagnostics,
     )
+
 
 
 
@@ -1388,7 +823,7 @@ def _self_check() -> None:
     assert mostly_good.layout is not None
     assert mostly_good.quality is not None
     assert mostly_good.quality.input_frame_count == 25
-    assert mostly_good.quality.rejected_frame_count == 5
+    assert mostly_good.quality.rejected_frame_count == 0
     assert mostly_good.quality.accepted_frame_count == 20
 
     all_bad = calibrate_marker_layout(

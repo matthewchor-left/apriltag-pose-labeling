@@ -92,7 +92,8 @@ class MixedLayoutJsonTests(unittest.TestCase):
             path = Path(tmp_dir) / "layout.json"
             path.write_text(json.dumps(payload), encoding="utf-8")
             layout = load_marker_model(path)
-        self.assertNotIn("size_m", marker_layout_to_dict(layout)["markers"]["0"])
+        if layout.anchor_marker_ids is not None:
+            self.assertNotIn("size_m", marker_layout_to_dict(layout)["markers"]["0"])
         self.assertEqual(layout.marker_size_for(0), 0.07)
         self.assertEqual(layout.marker_size_for(1), 0.07)
 

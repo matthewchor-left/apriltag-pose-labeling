@@ -52,14 +52,12 @@ from object_apriltag.marker_layout_calibration.solve_quality import (
 
 if TYPE_CHECKING:
     from object_apriltag.marker_layout_calibration.types import (
-        AnchorCoreDiagnostics,
         AssignmentRejectionSummary,
         CalibrationQualityReport,
         CalibrationResult,
         CalibrationSettings,
         DroppedPairEdge,
         FrameAssignmentRejectionRecord,
-        FrameFallbackAssignmentRecord,
         RestoredPairEdge,
     )
 
@@ -154,19 +152,15 @@ class LayoutRefinementContext:
     settings: CalibrationSettings
     marker_sizes_m: Mapping[int, float]
     marker_size_m: float
-    best_effort: bool
     restored_pair_edges: tuple[RestoredPairEdge, ...] | None
     input_frame_count: int
     rejected_frame_count: int
     accepted_frame_count: int
     assignment_rejection_summary: AssignmentRejectionSummary | None
     assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None
-    fallback_assignment_records: tuple[FrameFallbackAssignmentRecord, ...] | None
     dropped_edges: list[DroppedPairEdge]
-    anchor_core_diagnostics: AnchorCoreDiagnostics | None
     restore_weak_connectivity: WeakConnectivityRestore
     refresh_pair_consensus_after_initial_ba: PairConsensusRefresh | None = None
-    anchor_marker_ids: Sequence[int] | None = None
     solve_diagnostics: CalibrationSolveDiagnostics | None = None
 
 
@@ -299,8 +293,8 @@ class ContinuousLayoutRefinement:
     ) -> LayoutRefinementOutcome:
         """Build a refinement outcome after a stage failure.
 
-        Tries checkpoint recovery when ``best_effort`` is enabled; otherwise
-        returns a refused ``CalibrationResult`` with pair-quality diagnostics.
+        Tries checkpoint recovery before returning a refused ``CalibrationResult``
+        with pair-quality diagnostics.
 
         Args:
             state: Solve state before the failed stage.
@@ -341,10 +335,8 @@ class ContinuousLayoutRefinement:
             observation_count=observation_count,
             assignment_rejections=ctx.assignment_rejection_summary,
             assignment_rejection_records=ctx.assignment_rejection_records,
-            fallback_assignment_records=ctx.fallback_assignment_records,
             dropped_pair_edges=tuple(ctx.dropped_edges),
             restored_pair_edges=ctx.restored_pair_edges,
-            anchor_core=ctx.anchor_core_diagnostics,
         )
         return LayoutRefinementOutcome(
             state.with_poses(marker_poses, frame_poses, inlier_mask, pair_consensus),
@@ -366,12 +358,10 @@ class ContinuousLayoutRefinement:
             dropped_pair_edges: Pair edges dropped before the failure.
 
         Returns:
-            Provisional ``CalibrationResult`` when ``best_effort`` and a valid checkpoint exist;
+            Provisional ``CalibrationResult`` when a valid checkpoint exists;
             otherwise ``None``.
         """
         ctx = self._ctx
-        if not ctx.best_effort:
-            return None
         checkpoint = _latest_valid_optimization_checkpoint(
             self._checkpoints,
             expected_ids=ctx.expected_ids,
@@ -765,10 +755,8 @@ def _provisional_result_from_checkpoint(
         ctx.dist_coeffs,
         assignment_rejections=ctx.assignment_rejection_summary,
         assignment_rejection_records=ctx.assignment_rejection_records,
-        fallback_assignment_records=ctx.fallback_assignment_records,
         dropped_pair_edges=dropped_pair_edges,
         restored_pair_edges=ctx.restored_pair_edges,
-        anchor_core=ctx.anchor_core_diagnostics,
     )
     gate_failures = collect_quality_gate_failures(
         quality,
@@ -782,7 +770,6 @@ def _provisional_result_from_checkpoint(
         marker_size_m=ctx.marker_size_m,
         footprints=footprints_from_poses(marker_poses, ctx.marker_sizes_m),
         marker_sizes_m=dict(ctx.marker_sizes_m),
-        anchor_marker_ids=ctx.anchor_marker_ids,
     )
     return CalibrationResult(
         layout,
@@ -967,7 +954,7 @@ def _prune_and_refit(
             ctx.settings,
             allowed_frames=remaining_frames,
             marker_sizes_m=ctx.marker_sizes_m,
-            best_effort=ctx.best_effort,
+            best_effort=True,
             restored_pair_edges=list(ctx.restored_pair_edges) if ctx.restored_pair_edges else None,
             restore_weak_connectivity=ctx.restore_weak_connectivity,
         )

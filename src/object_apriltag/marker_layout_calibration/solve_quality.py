@@ -118,10 +118,8 @@ def build_quality_report(
     *,
     assignment_rejections: object | None = None,
     assignment_rejection_records: object | None = None,
-    fallback_assignment_records: object | None = None,
     dropped_pair_edges: object | None = None,
     restored_pair_edges: object | None = None,
-    anchor_core: object | None = None,
 ) -> CalibrationQualityReport:
     """Build a full calibration quality report from bundle-adjustment state.
 
@@ -142,10 +140,8 @@ def build_quality_report(
         dist_coeffs: Camera distortion coefficients.
         assignment_rejections: Optional aggregated assignment rejection summary.
         assignment_rejection_records: Optional per-frame rejection records.
-        fallback_assignment_records: Optional fallback assignment records.
         dropped_pair_edges: Optional dropped pair-edge audit records.
         restored_pair_edges: Optional restored pair-edge audit records.
-        anchor_core: Optional anchor-core diagnostics payload.
 
     Returns:
         ``CalibrationQualityReport`` with reprojection, pair RMS, connectivity,
@@ -195,10 +191,8 @@ def build_quality_report(
         unused_expected_ids=frozenset(set(expected_ids) - observed_ids),
         assignment_rejections=assignment_rejections,
         assignment_rejection_records=assignment_rejection_records,
-        fallback_assignment_records=fallback_assignment_records,
         dropped_pair_edges=dropped_pair_edges,
         restored_pair_edges=restored_pair_edges,
-        anchor_core=anchor_core,
     )
 
 
@@ -214,10 +208,8 @@ def quality_from_pairs(
     *,
     assignment_rejections: object | None = None,
     assignment_rejection_records: object | None = None,
-    fallback_assignment_records: object | None = None,
     dropped_pair_edges: object | None = None,
     restored_pair_edges: object | None = None,
-    anchor_core: object | None = None,
 ) -> CalibrationQualityReport:
     """Build a pair-only quality report without reprojection metrics.
 
@@ -232,10 +224,8 @@ def quality_from_pairs(
         observation_count: Total corner observation count when BA is unavailable.
         assignment_rejections: Optional aggregated assignment rejection summary.
         assignment_rejection_records: Optional per-frame rejection records.
-        fallback_assignment_records: Optional fallback assignment records.
         dropped_pair_edges: Optional dropped pair-edge audit records.
         restored_pair_edges: Optional restored pair-edge audit records.
-        anchor_core: Optional anchor-core diagnostics payload.
 
     Returns:
         ``CalibrationQualityReport`` with pair RMS and connectivity fields;
@@ -260,10 +250,8 @@ def quality_from_pairs(
         unused_expected_ids=frozenset(set(expected_ids) - connected),
         assignment_rejections=assignment_rejections,
         assignment_rejection_records=assignment_rejection_records,
-        fallback_assignment_records=fallback_assignment_records,
         dropped_pair_edges=dropped_pair_edges,
         restored_pair_edges=restored_pair_edges,
-        anchor_core=anchor_core,
     )
 
 

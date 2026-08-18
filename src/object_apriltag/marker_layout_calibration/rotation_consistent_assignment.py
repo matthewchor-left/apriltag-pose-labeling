@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -10,9 +11,18 @@ import numpy as np
 from object_apriltag.marker_layout_calibration.discrete_graph import transform_high_in_low
 from object_apriltag.marker_layout_calibration.solve_primitives import (
     MarkerCandidate,
+    MarkerPair,
     rotation_geodesic_deg,
 )
-from object_apriltag.marker_layout_calibration.types import CalibrationSettings
+from object_apriltag.marker_layout_calibration.types import (
+    AssignmentRejectionCauseCount,
+    AssignmentRejectionCauseStats,
+    AssignmentRejectionSummary,
+    CalibrationSettings,
+    FrameAssignmentRejection,
+    FrameAssignmentRejectionRecord,
+    MeasurementDistribution,
+)
 
 
 @dataclass(frozen=True)
@@ -260,3 +270,159 @@ def _filter_reference_branch_outliers(
         else:
             rejected.append(frame_index)
     return filtered, tuple(rejected)
+
+def json_safe_float(value: float | None) -> float | None:
+    if value is None:
+        return None
+    numeric = float(value)
+    if not np.isfinite(numeric):
+        return None
+    return numeric
+
+
+def measurement_distribution(values: Sequence[float]) -> MeasurementDistribution | None:
+    if not values:
+        return None
+    array = np.asarray(values, dtype=np.float64)
+    finite = array[np.isfinite(array)]
+    if finite.size == 0:
+        return None
+    return MeasurementDistribution(
+        min=json_safe_float(float(np.min(finite))),
+        median=json_safe_float(float(np.median(finite))),
+        p95=json_safe_float(float(np.percentile(finite, 95))),
+        max=json_safe_float(float(np.max(finite))),
+    )
+
+
+def summarize_assignment_rejections(
+    rejections: Sequence[FrameAssignmentRejection],
+) -> AssignmentRejectionSummary:
+    if rejections and not isinstance(rejections[0], FrameAssignmentRejection):
+        raise TypeError(
+            "summarize_assignment_rejections expects FrameAssignmentRejection inputs; "
+            "use summarize_assignment_rejection_records for FrameAssignmentRejectionRecord."
+        )
+    by_reason: dict[str, int] = {}
+    by_pair: dict[MarkerPair, int] = {}
+    cause_counts: dict[tuple[str, MarkerPair | None], int] = {}
+    for rejection in rejections:
+        by_reason[rejection.reason] = by_reason.get(rejection.reason, 0) + 1
+        if rejection.marker_pair is not None:
+            by_pair[rejection.marker_pair] = by_pair.get(rejection.marker_pair, 0) + 1
+        cause_key = (rejection.reason, rejection.marker_pair)
+        cause_counts[cause_key] = cause_counts.get(cause_key, 0) + 1
+    top_causes = tuple(
+        AssignmentRejectionCauseCount(reason=reason, marker_pair=pair, count=count)
+        for (reason, pair), count in sorted(
+            cause_counts.items(),
+            key=lambda item: (-item[1], item[0][0], item[0][1] or (-1, -1)),
+        )
+    )
+    return AssignmentRejectionSummary(
+        total_rejected=len(rejections),
+        by_reason=tuple(sorted(by_reason.items())),
+        by_pair=tuple(sorted(by_pair.items())),
+        top_causes=top_causes,
+        by_cause=(),
+    )
+
+
+_ASSIGNMENT_REJECTION_SAMPLE_FRAME_IDS = 10
+
+
+def summarize_assignment_rejection_records(
+    records: Sequence[FrameAssignmentRejectionRecord],
+) -> AssignmentRejectionSummary:
+    if records and not isinstance(records[0], FrameAssignmentRejectionRecord):
+        raise TypeError(
+            "summarize_assignment_rejection_records expects FrameAssignmentRejectionRecord inputs; "
+            "use summarize_assignment_rejections for FrameAssignmentRejection."
+        )
+    by_reason: dict[str, int] = {}
+    by_pair: dict[MarkerPair, int] = {}
+    cause_counts: dict[tuple[str, MarkerPair | None], int] = {}
+    cause_groups: dict[tuple[str, MarkerPair | None], list[FrameAssignmentRejectionRecord]] = {}
+    for record in records:
+        by_reason[record.reason] = by_reason.get(record.reason, 0) + 1
+        if record.marker_pair is not None:
+            by_pair[record.marker_pair] = by_pair.get(record.marker_pair, 0) + 1
+        cause_key = (record.reason, record.marker_pair)
+        cause_counts[cause_key] = cause_counts.get(cause_key, 0) + 1
+        cause_groups.setdefault(cause_key, []).append(record)
+    top_causes = tuple(
+        AssignmentRejectionCauseCount(reason=reason, marker_pair=pair, count=count)
+        for (reason, pair), count in sorted(
+            cause_counts.items(),
+            key=lambda item: (-item[1], item[0][0], item[0][1] or (-1, -1)),
+        )
+    )
+    by_cause: list[AssignmentRejectionCauseStats] = []
+    for (reason, pair), group in sorted(
+        cause_groups.items(),
+        key=lambda item: (-len(item[1]), item[0][0], item[0][1] or (-1, -1)),
+    ):
+        sorted_group = sorted(group, key=lambda record: record.frame_index)
+        translation_errors = [v for v in (r.translation_error_m for r in group) if v is not None]
+        rotation_errors = [v for v in (r.rotation_error_deg for r in group) if v is not None]
+        translation_gate = next((r.translation_gate_m for r in group if r.translation_gate_m is not None), None)
+        rotation_gate = next((r.rotation_gate_deg for r in group if r.rotation_gate_deg is not None), None)
+        translation_ratios = [
+            error / translation_gate
+            for error in translation_errors
+            if translation_gate is not None and translation_gate > 0.0
+        ]
+        rotation_ratios = [
+            error / rotation_gate
+            for error in rotation_errors
+            if rotation_gate is not None and rotation_gate > 0.0
+        ]
+        by_cause.append(
+            AssignmentRejectionCauseStats(
+                reason=reason,
+                marker_pair=pair,
+                count=len(group),
+                sample_frame_ids=tuple(
+                    record.frame_id for record in sorted_group[:_ASSIGNMENT_REJECTION_SAMPLE_FRAME_IDS]
+                ),
+                translation_error_m=measurement_distribution(translation_errors),
+                rotation_error_deg=measurement_distribution(rotation_errors),
+                translation_gate_m=json_safe_float(translation_gate),
+                rotation_gate_deg=json_safe_float(rotation_gate),
+                translation_error_ratio=measurement_distribution(translation_ratios),
+                rotation_error_ratio=measurement_distribution(rotation_ratios),
+            )
+        )
+    return AssignmentRejectionSummary(
+        total_rejected=len(records),
+        by_reason=tuple(sorted(by_reason.items())),
+        by_pair=tuple(sorted(by_pair.items())),
+        top_causes=top_causes,
+        by_cause=tuple(by_cause),
+    )
+
+
+def build_assignment_rejection_records(
+    normalized_observations: Sequence[tuple[str | int, dict[int, np.ndarray]]],
+    rejected_frame_indices: Sequence[int],
+    rejections: Sequence[FrameAssignmentRejection],
+) -> tuple[FrameAssignmentRejectionRecord, ...]:
+    records: list[FrameAssignmentRejectionRecord] = []
+    for frame_index, rejection in zip(rejected_frame_indices, rejections, strict=True):
+        frame_id, markers = normalized_observations[frame_index]
+        visible_marker_ids = tuple(sorted(int(marker_id) for marker_id in markers))
+        records.append(
+            FrameAssignmentRejectionRecord(
+                frame_index=frame_index,
+                frame_id=frame_id,
+                visible_marker_ids=visible_marker_ids,
+                reason=rejection.reason,
+                marker_pair=rejection.marker_pair,
+                translation_error_m=json_safe_float(rejection.translation_error_m),
+                rotation_error_deg=json_safe_float(rejection.rotation_error_deg),
+                translation_gate_m=json_safe_float(rejection.translation_gate_m),
+                rotation_gate_deg=json_safe_float(rejection.rotation_gate_deg),
+            )
+        )
+    return tuple(records)
+

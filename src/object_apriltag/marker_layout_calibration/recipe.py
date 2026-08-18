@@ -10,7 +10,6 @@ from typing import Any, Literal
 
 from object_apriltag.frame_source import FrameSource
 from object_apriltag.marker_layout_calibration.input import (
-    parse_anchor_marker_ids,
     parse_marker_id_spec,
     validate_marker_size,
 )
@@ -19,15 +18,8 @@ from object_apriltag.object_model_edit import parse_keypoint_sources
 
 CALIBRATION_RECIPE_VERSION = 1
 
-BENCHMARK_FRAME_SELECTION_UNIFORM = "uniform"
 BENCHMARK_FRAME_SELECTION_SHARPEST = "sharpest"
-INTERACTIVE_CAPTURE_MANUAL = "manual"
-INTERACTIVE_CAPTURE_AUTO = "auto"
-INTERACTIVE_PREVIEW_NONE = "none"
-INTERACTIVE_PREVIEW_KEYPOINT_SOURCES = "keypoint_sources"
-SOLVER_POLICY_STRICT = "strict"
 SOLVER_POLICY_BEST_EFFORT = "best_effort"
-DISCRETE_METHOD_PAIR_CONSENSUS = "pair_consensus"
 DISCRETE_METHOD_ROTATION_CONSISTENT = "rotation_consistent"
 
 
@@ -46,16 +38,7 @@ class BenchmarkExecution:
     """Headless benchmark execution settings."""
 
     sample_rate_hz: float
-    frame_selection: Literal["uniform", "sharpest"]
-
-
-@dataclass(frozen=True)
-class InteractiveExecution:
-    """Live or looping-video interactive capture settings."""
-
-    capture: Literal["manual", "auto"]
-    sample_rate_hz: float | None
-    preview: Literal["none", "keypoint_sources"]
+    frame_selection: Literal["sharpest"]
 
 
 @dataclass(frozen=True)
@@ -69,31 +52,15 @@ class CalibrationRecipe:
     sensitivity: str
     expected_marker_ids: tuple[int, ...]
     marker_sizes_m: dict[int, float]
-    reference_marker_id: int | None
     default_marker_size_m: float
-    anchor_marker_ids: tuple[int, ...] | None
-    execution: BenchmarkExecution | InteractiveExecution
+    execution: BenchmarkExecution
     settings: CalibrationSettings
-    policy: Literal["strict", "best_effort"]
-    anchor_stop_after_expansion: bool
-    partial_output: bool
     keypoint_sources: dict[str, tuple[int, str, float]]
     skeleton: tuple[tuple[str, str], ...]
 
 
 def load_calibration_recipe(config_path: str | Path) -> CalibrationRecipe:
-    """Load and validate a Calibration Recipe JSON file.
-
-    Args:
-        config_path: Path to ``config.json`` in a Calibration Workspace.
-
-    Returns:
-        Parsed ``CalibrationRecipe``.
-
-    Raises:
-        FileNotFoundError: When the config file does not exist.
-        ValueError: When the JSON is malformed or fails validation.
-    """
+    """Load and validate a Calibration Recipe JSON file."""
     path = Path(config_path).resolve()
     if not path.is_file():
         raise FileNotFoundError(f"Calibration recipe not found: {path}")
@@ -136,18 +103,9 @@ def _parse_recipe_payload(payload: dict[str, Any], config_path: Path) -> Calibra
 
     source, intrinsics_path = _parse_inputs(payload["inputs"], workspace_dir=workspace_dir)
     dictionary, sensitivity = _parse_detector(payload["detector"])
-    (
-        expected_ids,
-        marker_sizes_m,
-        reference_marker_id,
-        default_marker_size_m,
-        anchor_marker_ids,
-    ) = _parse_markers(payload["markers"])
+    expected_ids, marker_sizes_m, default_marker_size_m = _parse_markers(payload["markers"])
     execution = _parse_execution(payload["execution"])
-    settings, policy, anchor_stop, partial_output = _parse_solver(
-        payload["solver"],
-        anchor_marker_ids=anchor_marker_ids,
-    )
+    settings = _parse_solver(payload["solver"])
     keypoint_sources, skeleton = _parse_object_model(
         payload["object_model"],
         expected_marker_ids=expected_ids,
@@ -161,14 +119,9 @@ def _parse_recipe_payload(payload: dict[str, Any], config_path: Path) -> Calibra
         sensitivity=sensitivity,
         expected_marker_ids=expected_ids,
         marker_sizes_m=marker_sizes_m,
-        reference_marker_id=reference_marker_id,
         default_marker_size_m=default_marker_size_m,
-        anchor_marker_ids=anchor_marker_ids,
         execution=execution,
         settings=settings,
-        policy=policy,
-        anchor_stop_after_expansion=anchor_stop,
-        partial_output=partial_output,
         keypoint_sources=keypoint_sources,
         skeleton=skeleton,
     )
@@ -190,16 +143,15 @@ def _resolve_config_path(path_text: str, *, workspace_dir: Path, field: str) -> 
 
 
 def _parse_source_value(raw: Any, *, workspace_dir: Path) -> FrameSource:
-    """Parse a recipe source string into a camera index or video path."""
+    """Parse a recipe source string into a video path."""
     if not isinstance(raw, str):
-        raise ValueError("inputs.source must be a non-empty string.")
+        raise ValueError("inputs.source must be a non-empty video path string.")
     stripped = raw.strip()
     if not stripped:
-        raise ValueError("inputs.source must be a non-empty string.")
-    try:
-        return int(stripped)
-    except ValueError:
-        return _resolve_config_path(stripped, workspace_dir=workspace_dir, field="inputs.source")
+        raise ValueError("inputs.source must be a non-empty video path string.")
+    if stripped.isdigit():
+        raise ValueError("inputs.source must be a video file path, not a camera index.")
+    return _resolve_config_path(stripped, workspace_dir=workspace_dir, field="inputs.source")
 
 
 def _parse_inputs(raw: Any, *, workspace_dir: Path) -> tuple[FrameSource, Path]:
@@ -257,14 +209,8 @@ def _parse_marker_id_entries(raw_ids: Any, field: str) -> list[int]:
     return marker_ids
 
 
-def _parse_markers(raw: Any) -> tuple[
-    tuple[int, ...],
-    dict[int, float],
-    int | None,
-    float,
-    tuple[int, ...] | None,
-]:
-    """Parse marker inventory groups, reference marker, and optional anchors."""
+def _parse_markers(raw: Any) -> tuple[tuple[int, ...], dict[int, float], float]:
+    """Parse marker inventory groups and enforce automatic reference/anchor selection."""
     if not isinstance(raw, dict):
         raise ValueError("markers must be an object.")
     _require_exact_keys(
@@ -272,10 +218,11 @@ def _parse_markers(raw: Any) -> tuple[
         "markers",
         frozenset({"reference_marker_id", "groups", "anchor_marker_ids"}),
     )
-    reference_marker_id = _parse_optional_marker_id(
-        raw["reference_marker_id"],
-        "markers.reference_marker_id",
-    )
+    if raw["reference_marker_id"] is not None:
+        raise ValueError("markers.reference_marker_id must be null for automatic selection.")
+    if raw["anchor_marker_ids"] is not None:
+        raise ValueError("markers.anchor_marker_ids must be null.")
+
     groups_raw = raw["groups"]
     if not isinstance(groups_raw, list) or not groups_raw:
         raise ValueError("markers.groups must be a non-empty array.")
@@ -310,131 +257,35 @@ def _parse_markers(raw: Any) -> tuple[
 
     if not used_ids:
         raise ValueError("markers.groups must declare at least one marker ID.")
-    if reference_marker_id is not None and reference_marker_id not in used_ids:
-        raise ValueError(
-            f"markers.reference_marker_id {reference_marker_id} is not present in markers.groups."
-        )
     assert default_marker_size_m is not None
-
-    expected_ids = tuple(sorted(used_ids))
-    anchor_marker_ids = _parse_anchor_marker_ids_field(
-        raw["anchor_marker_ids"],
-        expected_ids=expected_ids,
-        reference_marker_id=reference_marker_id,
-    )
-    return expected_ids, marker_sizes_m, reference_marker_id, default_marker_size_m, anchor_marker_ids
+    return tuple(sorted(used_ids)), marker_sizes_m, default_marker_size_m
 
 
-def _parse_anchor_marker_ids_field(
-    raw: Any,
-    *,
-    expected_ids: tuple[int, ...],
-    reference_marker_id: int | None,
-) -> tuple[int, ...] | None:
-    """Parse explicit anchor marker IDs or ``null`` for automatic anchor selection."""
-    if raw is None:
-        return None
-    if not isinstance(raw, list):
-        raise ValueError("markers.anchor_marker_ids must be null or an array of marker IDs.")
-    tokens: list[str] = []
-    for index, entry in enumerate(raw):
-        if isinstance(entry, bool):
-            raise ValueError(f"markers.anchor_marker_ids[{index}] must be an integer or range string.")
-        if isinstance(entry, int):
-            tokens.append(str(entry))
-            continue
-        if isinstance(entry, str) and entry.strip():
-            tokens.append(entry.strip())
-            continue
-        raise ValueError(
-            f"markers.anchor_marker_ids[{index}] must be an integer or range string."
-        )
-    if not tokens:
-        raise ValueError("markers.anchor_marker_ids must not be an empty array; use null instead.")
-    parsed, failure = parse_marker_id_spec(tokens)
-    if failure is not None:
-        raise ValueError(f"markers.anchor_marker_ids: {failure}")
-    assert parsed is not None
-    anchor_ids, anchor_failure = parse_anchor_marker_ids(
-        parsed,
-        expected_ids,
-        reference_marker_id,
-    )
-    if anchor_failure is not None:
-        raise ValueError(anchor_failure)
-    return anchor_ids
-
-
-def _parse_execution(raw: Any) -> BenchmarkExecution | InteractiveExecution:
-    """Parse discriminated ``execution`` settings."""
+def _parse_execution(raw: Any) -> BenchmarkExecution:
+    """Parse benchmark-only execution settings."""
     if not isinstance(raw, dict):
         raise ValueError("execution must be an object.")
-    mode = raw.get("mode")
-    if mode == "benchmark":
-        _require_exact_keys(
-            raw,
-            "execution",
-            frozenset({"mode", "sample_rate_hz", "frame_selection"}),
+    _require_exact_keys(
+        raw,
+        "execution",
+        frozenset({"mode", "sample_rate_hz", "frame_selection"}),
+    )
+    if raw["mode"] != "benchmark":
+        raise ValueError("execution.mode must be 'benchmark'.")
+    sample_rate_hz = _parse_positive_float(raw["sample_rate_hz"], "execution.sample_rate_hz")
+    frame_selection = raw["frame_selection"]
+    if frame_selection != BENCHMARK_FRAME_SELECTION_SHARPEST:
+        raise ValueError(
+            f"execution.frame_selection must be '{BENCHMARK_FRAME_SELECTION_SHARPEST}'."
         )
-        sample_rate_hz = _parse_positive_float(raw["sample_rate_hz"], "execution.sample_rate_hz")
-        frame_selection = raw["frame_selection"]
-        if frame_selection not in (
-            BENCHMARK_FRAME_SELECTION_UNIFORM,
-            BENCHMARK_FRAME_SELECTION_SHARPEST,
-        ):
-            raise ValueError(
-                "execution.frame_selection must be "
-                f"'{BENCHMARK_FRAME_SELECTION_UNIFORM}' or "
-                f"'{BENCHMARK_FRAME_SELECTION_SHARPEST}'."
-            )
-        return BenchmarkExecution(
-            sample_rate_hz=sample_rate_hz,
-            frame_selection=frame_selection,
-        )
-    if mode == "interactive":
-        capture = raw.get("capture")
-        if capture not in (INTERACTIVE_CAPTURE_MANUAL, INTERACTIVE_CAPTURE_AUTO):
-            raise ValueError(
-                "execution.capture must be "
-                f"'{INTERACTIVE_CAPTURE_MANUAL}' or '{INTERACTIVE_CAPTURE_AUTO}'."
-            )
-        if capture == INTERACTIVE_CAPTURE_AUTO:
-            _require_exact_keys(
-                raw,
-                "execution",
-                frozenset({"mode", "capture", "preview", "sample_rate_hz"}),
-            )
-            sample_rate_hz = _parse_positive_float(
-                raw["sample_rate_hz"],
-                "execution.sample_rate_hz",
-            )
-        else:
-            _require_exact_keys(
-                raw,
-                "execution",
-                frozenset({"mode", "capture", "preview"}),
-            )
-            sample_rate_hz = None
-        preview = raw["preview"]
-        if preview not in (INTERACTIVE_PREVIEW_NONE, INTERACTIVE_PREVIEW_KEYPOINT_SOURCES):
-            raise ValueError(
-                "execution.preview must be "
-                f"'{INTERACTIVE_PREVIEW_NONE}' or '{INTERACTIVE_PREVIEW_KEYPOINT_SOURCES}'."
-            )
-        return InteractiveExecution(
-            capture=capture,
-            sample_rate_hz=sample_rate_hz,
-            preview=preview,
-        )
-    raise ValueError("execution.mode must be 'benchmark' or 'interactive'.")
+    return BenchmarkExecution(
+        sample_rate_hz=sample_rate_hz,
+        frame_selection=BENCHMARK_FRAME_SELECTION_SHARPEST,
+    )
 
 
-def _parse_solver(
-    raw: Any,
-    *,
-    anchor_marker_ids: tuple[int, ...] | None,
-) -> tuple[CalibrationSettings, Literal["strict", "best_effort"], bool, bool]:
-    """Parse solver policy, anchor-stop, partial behavior, and quality settings."""
+def _parse_solver(raw: Any) -> CalibrationSettings:
+    """Parse fixed best-effort rotation-consistent solver settings."""
     if not isinstance(raw, dict):
         raise ValueError("solver must be an object.")
     required = frozenset(
@@ -449,49 +300,28 @@ def _parse_solver(
             "huber_delta_px",
             "corner_outlier_px",
             "max_ba_iterations",
+            "discrete_method",
         }
     )
-    allowed = required | frozenset({"discrete_method"})
-    unknown = sorted(set(raw.keys()) - allowed)
+    unknown = sorted(set(raw.keys()) - required)
     if unknown:
         raise ValueError(f"solver has unknown fields: {unknown}.")
     missing = sorted(required - set(raw.keys()))
     if missing:
         raise ValueError(f"solver is missing required fields: {missing}.")
 
-    policy_raw = raw["policy"]
-    if policy_raw not in (SOLVER_POLICY_STRICT, SOLVER_POLICY_BEST_EFFORT):
+    if raw["policy"] != SOLVER_POLICY_BEST_EFFORT:
+        raise ValueError(f"solver.policy must be '{SOLVER_POLICY_BEST_EFFORT}'.")
+    if raw["anchor_stop_after_expansion"] is not False:
+        raise ValueError("solver.anchor_stop_after_expansion must be false.")
+    if raw["partial_output"] is not True:
+        raise ValueError("solver.partial_output must be true.")
+    if raw["discrete_method"] != DISCRETE_METHOD_ROTATION_CONSISTENT:
         raise ValueError(
-            f"solver.policy must be '{SOLVER_POLICY_STRICT}' or '{SOLVER_POLICY_BEST_EFFORT}'."
-        )
-    policy: Literal["strict", "best_effort"] = policy_raw
-
-    anchor_stop = _parse_bool(raw["anchor_stop_after_expansion"], "solver.anchor_stop_after_expansion")
-    partial_output = _parse_bool(raw["partial_output"], "solver.partial_output")
-
-    if anchor_stop and anchor_marker_ids is None:
-        raise ValueError(
-            "solver.anchor_stop_after_expansion requires explicit markers.anchor_marker_ids."
-        )
-    if anchor_stop and policy == SOLVER_POLICY_BEST_EFFORT:
-        raise ValueError(
-            "solver.anchor_stop_after_expansion cannot be used with solver.policy 'best_effort'."
-        )
-    if partial_output and policy != SOLVER_POLICY_BEST_EFFORT:
-        raise ValueError("solver.partial_output requires solver.policy 'best_effort'.")
-
-    discrete_method_raw = raw.get("discrete_method", DISCRETE_METHOD_PAIR_CONSENSUS)
-    if discrete_method_raw not in (
-        DISCRETE_METHOD_PAIR_CONSENSUS,
-        DISCRETE_METHOD_ROTATION_CONSISTENT,
-    ):
-        raise ValueError(
-            "solver.discrete_method must be "
-            f"'{DISCRETE_METHOD_PAIR_CONSENSUS}' or "
-            f"'{DISCRETE_METHOD_ROTATION_CONSISTENT}'."
+            f"solver.discrete_method must be '{DISCRETE_METHOD_ROTATION_CONSISTENT}'."
         )
 
-    settings = CalibrationSettings(
+    return CalibrationSettings(
         min_inliers_per_edge=_parse_positive_int(raw["min_inliers_per_edge"], "solver.min_inliers_per_edge"),
         reprojection_rms_gate_px=_parse_positive_float(
             raw["reprojection_rms_gate_px"],
@@ -508,9 +338,7 @@ def _parse_solver(
         huber_delta_px=_parse_positive_float(raw["huber_delta_px"], "solver.huber_delta_px"),
         corner_outlier_px=_parse_positive_float(raw["corner_outlier_px"], "solver.corner_outlier_px"),
         max_ba_iterations=_parse_positive_int(raw["max_ba_iterations"], "solver.max_ba_iterations"),
-        discrete_method=discrete_method_raw,
     )
-    return settings, policy, anchor_stop, partial_output
 
 
 def _parse_object_model(
@@ -586,20 +414,6 @@ def _parse_skeleton(raw: Any, field: str) -> tuple[tuple[str, str], ...]:
     return tuple(edges)
 
 
-def _parse_marker_id(raw: Any, field: str) -> int:
-    """Parse a single marker ID from JSON."""
-    if isinstance(raw, bool) or not isinstance(raw, int):
-        raise ValueError(f"{field} must be an integer marker id.")
-    return int(raw)
-
-
-def _parse_optional_marker_id(raw: Any, field: str) -> int | None:
-    """Parse a marker ID or ``null`` for automatic reference selection."""
-    if raw is None:
-        return None
-    return _parse_marker_id(raw, field)
-
-
 def _parse_bool(raw: Any, field: str) -> bool:
     """Parse a strict JSON boolean."""
     if raw is not True and raw is not False:
@@ -641,5 +455,3 @@ def _require_exact_keys(payload: dict[str, Any], field: str, allowed: frozenset[
     missing = sorted(allowed - set(payload.keys()))
     if missing:
         raise ValueError(f"{field} is missing required fields: {missing}.")
-
-

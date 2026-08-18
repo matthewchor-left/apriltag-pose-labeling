@@ -11,7 +11,6 @@ from object_apriltag.marker_layout_calibration.recipe import (
     BENCHMARK_FRAME_SELECTION_SHARPEST,
     CALIBRATION_RECIPE_VERSION,
     BenchmarkExecution,
-    InteractiveExecution,
     load_calibration_recipe,
 )
 
@@ -39,8 +38,8 @@ def _base_recipe_payload(**overrides: object) -> dict:
         "inputs": {"source": "clip.mov", "intrinsics": "intrinsics.json"},
         "detector": {"dictionary": "36h11", "sensitivity": "relaxed"},
         "markers": {
-            "reference_marker_id": 0,
-            "anchor_marker_ids": [0, 1],
+            "reference_marker_id": None,
+            "anchor_marker_ids": None,
             "groups": [
                 {"ids": [0, 1], "size_m": 0.07},
                 {"ids": ["2-3"], "size_m": 0.05},
@@ -52,9 +51,10 @@ def _base_recipe_payload(**overrides: object) -> dict:
             "frame_selection": BENCHMARK_FRAME_SELECTION_SHARPEST,
         },
         "solver": {
-            "policy": "strict",
+            "policy": "best_effort",
+            "discrete_method": "rotation_consistent",
             "anchor_stop_after_expansion": False,
-            "partial_output": False,
+            "partial_output": True,
             "min_inliers_per_edge": 20,
             "reprojection_rms_gate_px": 2.0,
             "pair_translation_rms_gate_ratio": 0.1,
@@ -139,9 +139,16 @@ class CalibrationRecipeTests(unittest.TestCase):
             load_calibration_recipe(self._write_config(payload))
         self.assertIn("missing required fields", str(ctx.exception))
 
-    def test_rejects_partial_output_without_best_effort(self) -> None:
+    def test_rejects_strict_solver_policy(self) -> None:
         payload = _base_recipe_payload()
-        payload["solver"]["partial_output"] = True
+        payload["solver"]["policy"] = "strict"
+        with self.assertRaises(ValueError) as ctx:
+            load_calibration_recipe(self._write_config(payload))
+        self.assertIn("solver.policy", str(ctx.exception))
+
+    def test_rejects_partial_output_false(self) -> None:
+        payload = _base_recipe_payload()
+        payload["solver"]["partial_output"] = False
         with self.assertRaises(ValueError) as ctx:
             load_calibration_recipe(self._write_config(payload))
         self.assertIn("partial_output", str(ctx.exception))
@@ -188,7 +195,7 @@ class CalibrationRecipeTests(unittest.TestCase):
             load_calibration_recipe(self._write_config(payload))
         self.assertIn("outside markers.groups", str(ctx.exception))
 
-    def test_parses_interactive_auto_execution(self) -> None:
+    def test_rejects_interactive_execution(self) -> None:
         payload = _base_recipe_payload()
         payload["execution"] = {
             "mode": "interactive",
@@ -196,59 +203,59 @@ class CalibrationRecipeTests(unittest.TestCase):
             "sample_rate_hz": 5.0,
             "preview": "none",
         }
-        recipe = load_calibration_recipe(self._write_config(payload))
-        self.assertIsInstance(recipe.execution, InteractiveExecution)
-        assert isinstance(recipe.execution, InteractiveExecution)
-        self.assertEqual(recipe.execution.capture, "auto")
-        self.assertEqual(recipe.execution.sample_rate_hz, 5.0)
+        with self.assertRaises(ValueError) as ctx:
+            load_calibration_recipe(self._write_config(payload))
+        self.assertIn("execution", str(ctx.exception))
+
+    def test_rejects_uniform_frame_selection(self) -> None:
+        payload = _base_recipe_payload()
+        payload["execution"]["frame_selection"] = "uniform"
+        with self.assertRaises(ValueError) as ctx:
+            load_calibration_recipe(self._write_config(payload))
+        self.assertIn("frame_selection", str(ctx.exception))
+
+    def test_rejects_camera_index_source(self) -> None:
+        payload = _base_recipe_payload()
+        payload["inputs"]["source"] = "0"
+        with self.assertRaises(ValueError) as ctx:
+            load_calibration_recipe(self._write_config(payload))
+        self.assertIn("camera index", str(ctx.exception))
+
+    def test_rejects_explicit_reference_marker_id(self) -> None:
+        payload = _base_recipe_payload()
+        payload["markers"]["reference_marker_id"] = 0
+        with self.assertRaises(ValueError) as ctx:
+            load_calibration_recipe(self._write_config(payload))
+        self.assertIn("reference_marker_id", str(ctx.exception))
+
+    def test_rejects_explicit_anchor_marker_ids(self) -> None:
+        payload = _base_recipe_payload()
+        payload["markers"]["anchor_marker_ids"] = [0, 1]
+        with self.assertRaises(ValueError) as ctx:
+            load_calibration_recipe(self._write_config(payload))
+        self.assertIn("anchor_marker_ids", str(ctx.exception))
 
     def test_loads_real_playground_setup1_workspace_configs(self) -> None:
         for workspace_name in ("calibration_01", "calibration_02", "calibration_03"):
             config_path = PLAYGROUND_SETUP1 / workspace_name / "config.json"
             recipe = load_calibration_recipe(config_path)
-            self.assertEqual(recipe.reference_marker_id, 19)
             self.assertEqual(recipe.expected_marker_ids, (0, 2, 3, 4, 19, 22, 23, 24, 25, 26, 28, 29))
             self.assertIsInstance(recipe.execution, BenchmarkExecution)
             assert isinstance(recipe.execution, BenchmarkExecution)
             self.assertEqual(recipe.execution.frame_selection, BENCHMARK_FRAME_SELECTION_SHARPEST)
-            self.assertEqual(recipe.execution.sample_rate_hz, 10.0)
-            self.assertEqual(recipe.policy, "best_effort")
-            self.assertTrue(recipe.partial_output)
+            self.assertGreater(recipe.execution.sample_rate_hz, 0.0)
             self.assertEqual(recipe.default_marker_size_m, 0.07)
-            self.assertIsNone(recipe.anchor_marker_ids)
 
-    def test_rejects_interactive_manual_with_sample_rate(self) -> None:
+    def test_rejects_missing_discrete_method(self) -> None:
         payload = _base_recipe_payload()
-        payload["execution"] = {
-            "mode": "interactive",
-            "capture": "manual",
-            "preview": "none",
-            "sample_rate_hz": 5.0,
-        }
+        del payload["solver"]["discrete_method"]
         with self.assertRaises(ValueError) as ctx:
             load_calibration_recipe(self._write_config(payload))
-        self.assertIn("unknown fields", str(ctx.exception))
-
-    def test_defaults_discrete_method_to_pair_consensus(self) -> None:
-        recipe = load_calibration_recipe(self._write_config(_base_recipe_payload()))
-        self.assertEqual(recipe.settings.discrete_method, "pair_consensus")
-
-    def test_parses_rotation_consistent_discrete_method(self) -> None:
-        payload = _base_recipe_payload()
-        payload["solver"]["discrete_method"] = "rotation_consistent"
-        recipe = load_calibration_recipe(self._write_config(payload))
-        self.assertEqual(recipe.settings.discrete_method, "rotation_consistent")
-
-    def test_parses_null_reference_marker_id(self) -> None:
-        payload = _base_recipe_payload()
-        payload["markers"]["reference_marker_id"] = None
-        payload["markers"]["anchor_marker_ids"] = None
-        recipe = load_calibration_recipe(self._write_config(payload))
-        self.assertIsNone(recipe.reference_marker_id)
+        self.assertIn("discrete_method", str(ctx.exception))
 
     def test_rejects_unknown_discrete_method(self) -> None:
         payload = _base_recipe_payload()
-        payload["solver"]["discrete_method"] = "clique_pcm"
+        payload["solver"]["discrete_method"] = "pair_consensus"
         with self.assertRaises(ValueError) as ctx:
             load_calibration_recipe(self._write_config(payload))
         self.assertIn("discrete_method", str(ctx.exception))

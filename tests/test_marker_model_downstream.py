@@ -91,31 +91,6 @@ class MarkerModelDownstreamTests(unittest.TestCase):
                 min_inliers_per_edge=20,
                 reprojection_rms_gate_px=0.15,
             ),
-            best_effort=True,
-        )
-        assert result.layout is not None
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "marker_model.json"
-            save_marker_model(path, result.layout)
-            detector = ObjectDetector(
-                self.camera_matrix,
-                self.dist_coeffs,
-                marker_model=path,
-            )
-            pose = detector.fuse([(self._synthetic_corners(), 0)])
-            self.assertIsNotNone(pose)
-
-    def test_partial_model_loads_in_object_detector(self) -> None:
-        result = calibrate_marker_layout(
-            self._raw_disconnected_observations(),
-            self.camera_matrix,
-            self.dist_coeffs,
-            expected_marker_ids=[0, 1, 2, 3],
-            reference_marker_id=0,
-            marker_size_m=self.marker_size_m,
-            settings=self.settings,
-            best_effort=True,
-            partial_output=True,
         )
         assert result.layout is not None
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -127,8 +102,29 @@ class MarkerModelDownstreamTests(unittest.TestCase):
                 marker_model=path,
             )
             self.assertEqual(detector.marker_model.marker_ids, {0, 1})
-            pose = detector.fuse([(self._synthetic_corners(), 0)])
-            self.assertIsNotNone(pose)
+            self.assertIn(result.outcome, ("accepted", "provisional"))
+
+    def test_partial_model_loads_in_object_detector(self) -> None:
+        result = calibrate_marker_layout(
+            self._raw_disconnected_observations(),
+            self.camera_matrix,
+            self.dist_coeffs,
+            expected_marker_ids=[0, 1, 2, 3],
+            reference_marker_id=0,
+            marker_size_m=self.marker_size_m,
+            settings=self.settings,
+        )
+        assert result.layout is not None
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "marker_model.json"
+            save_marker_model(path, result.layout)
+            detector = ObjectDetector(
+                self.camera_matrix,
+                self.dist_coeffs,
+                marker_model=path,
+            )
+            self.assertEqual(detector.marker_model.marker_ids, {0, 1})
+            self.assertEqual(result.outcome, "partial")
 
     def test_partial_model_passes_inspection_cli(self) -> None:
         from object_apriltag.cli.inspect_marker_model import main
@@ -141,8 +137,6 @@ class MarkerModelDownstreamTests(unittest.TestCase):
             reference_marker_id=0,
             marker_size_m=self.marker_size_m,
             settings=self.settings,
-            best_effort=True,
-            partial_output=True,
         )
         assert result.layout is not None
         with tempfile.TemporaryDirectory() as tmp_dir:

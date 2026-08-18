@@ -1,4 +1,4 @@
-"""IPPE candidates, pair consensus, connectivity repair, and live readiness."""
+"""IPPE candidates, pair consensus, and connectivity repair."""
 
 from __future__ import annotations
 
@@ -27,9 +27,7 @@ from object_apriltag.marker_layout_calibration.types import (
     CalibrationSettings,
     DroppedPairEdge,
     FrameObservation,
-    LivePairReadinessDiagnostics,
     MarkerPair,
-    PairReadinessEdge,
     RestoredPairEdge,
 )
 
@@ -237,139 +235,6 @@ def transform_high_in_low(
     return relative_marker_transform(low, high)
 
 
-def compute_live_pair_readiness(
-    observations: Sequence[FrameObservation],
-    camera_matrix: np.ndarray,
-    dist_coeffs: np.ndarray,
-    expected_marker_ids: Sequence[int],
-    reference_marker_id: int | None,
-    settings: CalibrationSettings | None = None,
-) -> LivePairReadinessDiagnostics:
-    """Estimate co-visibility pair strength and marker-graph readiness.
-
-    Args:
-        observations: Raw per-frame marker corner observations.
-        camera_matrix: Camera intrinsics matrix.
-        dist_coeffs: Camera distortion coefficients.
-        expected_marker_ids: Marker IDs expected in the layout.
-        reference_marker_id: Root marker for connectivity analysis, or ``None`` to
-            pick the marker with the largest raw co-visibility component.
-        settings: Calibration settings; defaults apply when omitted.
-
-    Returns:
-        Diagnostics with per-pair raw co-visibility counts, connected marker set,
-        and missing IDs relative to the reference.
-
-    Notes:
-        Topology-only analysis: no pose estimation or pair RMS gating beyond
-        ``min_inliers_per_edge`` on raw co-visibility counts.
-    """
-    settings = settings or CalibrationSettings()
-    settings_failure = validate_settings(settings)
-    if settings_failure is not None:
-        return LivePairReadinessDiagnostics(
-            pairs=(),
-            connected_marker_ids=frozenset(),
-            missing_marker_ids=frozenset(),
-            sample_count=len(observations),
-            failure_reason=settings_failure,
-        )
-
-    expected_ids, expected_failure = parse_expected_marker_ids(
-        expected_marker_ids,
-        reference_marker_id,
-    )
-    if expected_failure is not None:
-        return LivePairReadinessDiagnostics(
-            pairs=(),
-            connected_marker_ids=frozenset(),
-            missing_marker_ids=frozenset(),
-            sample_count=len(observations),
-            failure_reason=expected_failure,
-        )
-
-    camera_matrix, dist_coeffs, camera_failure = validate_camera_inputs(
-        camera_matrix,
-        dist_coeffs,
-    )
-    if camera_failure is not None:
-        return LivePairReadinessDiagnostics(
-            pairs=(),
-            connected_marker_ids=frozenset(),
-            missing_marker_ids=frozenset(),
-            sample_count=len(observations),
-            failure_reason=camera_failure,
-        )
-
-    observations_failure = validate_observations(observations, expected_ids)
-    if observations_failure is not None:
-        return LivePairReadinessDiagnostics(
-            pairs=(),
-            connected_marker_ids=frozenset(),
-            missing_marker_ids=frozenset(),
-            sample_count=len(observations),
-            failure_reason=observations_failure,
-        )
-
-    normalized_observations = normalize_observations(observations, expected_ids)
-    raw_pair_counts = raw_covisible_pair_counts(normalized_observations)
-    if reference_marker_id is None:
-        if raw_pair_counts:
-            from object_apriltag.marker_layout_calibration.reference_selection import (
-                select_reference_marker,
-            )
-
-            reference_marker_id = select_reference_marker(
-                raw_pair_counts.keys(),
-                expected_ids,
-                {},
-            )
-        elif expected_ids:
-            reference_marker_id = min(expected_ids)
-    if not raw_pair_counts:
-        connected = frozenset({reference_marker_id}) if reference_marker_id is not None else frozenset()
-        missing = (
-            frozenset(set(expected_ids) - connected)
-            if reference_marker_id is not None
-            else frozenset(expected_ids)
-        )
-        return LivePairReadinessDiagnostics(
-            pairs=(),
-            connected_marker_ids=connected,
-            missing_marker_ids=missing,
-            sample_count=len(observations),
-        )
-
-    pair_reports: list[PairReadinessEdge] = []
-    passing_pairs: list[MarkerPair] = []
-    for pair, raw_count in sorted(raw_pair_counts.items()):
-        status = "pass" if raw_count >= settings.min_inliers_per_edge else "weak"
-        if status == "pass":
-            passing_pairs.append(pair)
-        pair_reports.append(
-            PairReadinessEdge(
-                marker_a=pair[0],
-                marker_b=pair[1],
-                raw_covisible_frames=raw_count,
-                robust_inlier_count=raw_count,
-                translation_rms_m=None,
-                rotation_rms_deg=None,
-                status=status,
-            )
-        )
-
-    connected = frozenset(
-        connected_marker_ids_from_pairs(passing_pairs, reference_marker_id)
-    )
-    missing = frozenset(set(expected_ids) - connected)
-    return LivePairReadinessDiagnostics(
-        pairs=tuple(pair_reports),
-        connected_marker_ids=connected,
-        missing_marker_ids=missing,
-        sample_count=len(observations),
-    )
-
-
 def largest_connected_component_from_pairs(
     pairs: Iterable[MarkerPair],
     candidate_ids: Iterable[int],
@@ -522,47 +387,25 @@ def best_pair_consensus(
     )
 
 
-def classify_pair_readiness(
-    edge: PairConsensus | None,
-    settings: CalibrationSettings,
-    marker_sizes_m: Mapping[int, float],
-    pair: MarkerPair,
-) -> tuple[str, int, float | None, float | None]:
-    """Classify pair readiness using inlier count and RMS gates.
-
-    Args:
-        edge: Robust pair consensus, or ``None`` when consensus failed.
-        settings: Calibration gates for inlier count and pair RMS.
-        marker_sizes_m: Physical edge lengths keyed by marker ID.
-        pair: Low-to-high marker ID pair.
-
-    Returns:
-        Tuple of status label (``pass``, ``weak``, or ``fail``), robust inlier
-        count, translation RMS in meters, and rotation RMS in degrees.
-    """
-    robust_count = len(edge.inlier_frames) if edge is not None else 0
-    if edge is None or robust_count < settings.min_inliers_per_edge:
-        return "weak", robust_count, None, None
-
-    diagnostics = edge_diagnostics(pair, edge)
-    translation_gate = pair_translation_gate(settings, marker_sizes_m, pair)
-    rotation_gate = settings.pair_rotation_rms_gate_deg
-    if (
-        diagnostics.translation_rms_m <= translation_gate
-        and diagnostics.rotation_rms_deg <= rotation_gate
-    ):
-        return (
-            "pass",
-            diagnostics.inlier_count,
-            diagnostics.translation_rms_m,
-            diagnostics.rotation_rms_deg,
-        )
-    return (
-        "fail",
-        diagnostics.inlier_count,
-        diagnostics.translation_rms_m,
-        diagnostics.rotation_rms_deg,
-    )
+def collect_assignment_pair_hypotheses(
+    assigned_candidates: dict[int, dict[int, MarkerCandidate]],
+    marker_ids: frozenset[int],
+) -> dict[MarkerPair, list[tuple[np.ndarray, np.ndarray, int]]]:
+    """Collect per-frame pair hypotheses from frozen IPPE assignments."""
+    hypotheses: dict[MarkerPair, list[tuple[np.ndarray, np.ndarray, int]]] = {}
+    for frame_index, assignment in assigned_candidates.items():
+        visible = sorted(marker_id for marker_id in assignment if marker_id in marker_ids)
+        for index_a, marker_low in enumerate(visible):
+            for marker_high in visible[index_a + 1 :]:
+                pair = (marker_low, marker_high)
+                rotation_ba, translation_ba = transform_high_in_low(
+                    assignment[marker_low],
+                    assignment[marker_high],
+                )
+                hypotheses.setdefault(pair, []).append(
+                    (rotation_ba, translation_ba, frame_index)
+                )
+    return hypotheses
 
 
 def collect_pair_hypotheses(

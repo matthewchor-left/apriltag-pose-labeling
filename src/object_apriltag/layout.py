@@ -482,13 +482,15 @@ def marker_layout_to_dict(layout: MarkerLayout) -> dict[str, Any]:
         if size_m != layout.marker_size_m:
             payload["size_m"] = size_m
         markers[str(marker_id)] = payload
-    return {
+    payload: dict[str, Any] = {
         "reference_marker_id": layout.reference_marker_id,
         "units": layout.units,
         "marker_size_m": layout.marker_size_m,
         "markers": markers,
-        **({"anchor_marker_ids": list(layout.anchor_marker_ids)}),
     }
+    if layout.anchor_marker_ids is not None:
+        payload["anchor_marker_ids"] = list(layout.anchor_marker_ids)
+    return payload
 
 
 def resolve_marker_sizes(

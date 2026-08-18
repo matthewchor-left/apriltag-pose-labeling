@@ -117,10 +117,8 @@ def quality_for_partial_output(
         ),
         assignment_rejections=quality.assignment_rejections,
         assignment_rejection_records=quality.assignment_rejection_records,
-        fallback_assignment_records=quality.fallback_assignment_records,
         dropped_pair_edges=quality.dropped_pair_edges,
         restored_pair_edges=quality.restored_pair_edges,
-        anchor_core=quality.anchor_core,
     )
 
 
@@ -182,8 +180,6 @@ def emit_partial_calibration_result(
     marker_size_m: float,
     marker_sizes_m: Mapping[int, float],
     settings: CalibrationSettings,
-    best_effort: bool,
-    anchor_marker_ids: Sequence[int] | None = None,
     quality: CalibrationQualityReport | None = None,
     solve_diagnostics: CalibrationSolveDiagnostics | None = None,
 ) -> CalibrationResult:
@@ -203,8 +199,6 @@ def emit_partial_calibration_result(
         marker_size_m: Default marker edge length in meters.
         marker_sizes_m: Per-marker physical sizes for the full request.
         settings: Calibration thresholds and iteration limits.
-        best_effort: Whether best-effort policy applies to the subset solve.
-        anchor_marker_ids: Optional explicit anchor-core marker IDs.
         quality: Optional quality report to preserve when subset re-solve is skipped.
         solve_diagnostics: Optional timing collector shared with the parent solve.
 
@@ -242,12 +236,6 @@ def emit_partial_calibration_result(
             merged_omitted[marker_id] = "not_connected_to_reference"
 
     emitted_sizes = {marker_id: marker_sizes_m[marker_id] for marker_id in emitted_ids}
-    filtered_anchors: tuple[int, ...] | None = None
-    if anchor_marker_ids is not None:
-        emitted_set = set(emitted_ids)
-        filtered_anchors = tuple(marker_id for marker_id in anchor_marker_ids if marker_id in emitted_set)
-        if not filtered_anchors:
-            filtered_anchors = None
     from object_apriltag.marker_layout_calibration.pipeline import calibrate_marker_layout
 
     subset_diagnostics = (
@@ -263,11 +251,9 @@ def emit_partial_calibration_result(
         reference_marker_id=reference_marker_id,
         marker_size_m=marker_size_m,
         settings=settings,
-        anchor_marker_ids=filtered_anchors,
         marker_sizes_m=emitted_sizes,
-        best_effort=best_effort,
-        partial_output=False,
         solve_diagnostics=subset_diagnostics,
+        _subset_resolve=True,
     )
     if subset_result.layout is None:
         return CalibrationResult(
@@ -306,9 +292,6 @@ def partial_from_pair_consensus_or_refuse(
     marker_size_m: float,
     marker_sizes_m: Mapping[int, float],
     settings: CalibrationSettings,
-    best_effort: bool,
-    partial_output: bool,
-    anchor_marker_ids: Sequence[int] | None,
     solve_diagnostics: CalibrationSolveDiagnostics | None = None,
 ) -> CalibrationResult:
     """Attempt partial recovery after pair-consensus failure, or return a refused result.
@@ -327,38 +310,31 @@ def partial_from_pair_consensus_or_refuse(
         marker_size_m: Default marker edge length in meters.
         marker_sizes_m: Per-marker physical sizes for the full request.
         settings: Calibration thresholds and iteration limits.
-        best_effort: Whether best-effort partial output is enabled.
-        partial_output: Whether the caller requested partial output on failure.
-        anchor_marker_ids: Optional explicit anchor-core marker IDs.
         solve_diagnostics: Optional timing collector shared with a subset re-solve.
 
     Returns:
-        A partial calibration result when ``partial_output`` and ``best_effort`` are
-        both true; otherwise a refused result carrying ``failure_message``.
+        A partial calibration result when recovery succeeds; otherwise a refused
+        result carrying ``failure_message``.
     """
-    if partial_output and best_effort:
-        connected = connected_marker_ids(pair_consensus, reference_marker_id)
-        merged = dict(omitted_markers)
-        for marker_id in requested_marker_ids:
-            if marker_id not in connected and marker_id not in merged:
-                merged[marker_id] = connectivity_omission_reason(connectivity_stage)
-        return emit_partial_calibration_result(
-            observations,
-            camera_matrix,
-            dist_coeffs,
-            requested_marker_ids=requested_marker_ids,
-            connected_ids=connected,
-            omitted=merged,
-            reference_marker_id=reference_marker_id,
-            marker_size_m=marker_size_m,
-            marker_sizes_m=marker_sizes_m,
-            settings=settings,
-            best_effort=best_effort,
-            anchor_marker_ids=anchor_marker_ids,
-            quality=quality,
-            solve_diagnostics=solve_diagnostics,
-        )
-    return CalibrationResult(None, quality, failure_message)
+    connected = connected_marker_ids(pair_consensus, reference_marker_id)
+    merged = dict(omitted_markers)
+    for marker_id in requested_marker_ids:
+        if marker_id not in connected and marker_id not in merged:
+            merged[marker_id] = connectivity_omission_reason(connectivity_stage)
+    return emit_partial_calibration_result(
+        observations,
+        camera_matrix,
+        dist_coeffs,
+        requested_marker_ids=requested_marker_ids,
+        connected_ids=connected,
+        omitted=merged,
+        reference_marker_id=reference_marker_id,
+        marker_size_m=marker_size_m,
+        marker_sizes_m=marker_sizes_m,
+        settings=settings,
+        quality=quality,
+        solve_diagnostics=solve_diagnostics,
+    )
 
 
 def partial_after_missing_accepted_frames_or_refuse(
@@ -377,9 +353,6 @@ def partial_after_missing_accepted_frames_or_refuse(
     marker_size_m: float,
     marker_sizes_m: Mapping[int, float],
     settings: CalibrationSettings,
-    best_effort: bool,
-    partial_output: bool,
-    anchor_marker_ids: Sequence[int] | None,
     solve_diagnostics: CalibrationSolveDiagnostics | None = None,
 ) -> CalibrationResult:
     """Attempt partial recovery when some markers lack accepted-frame observations.
@@ -399,37 +372,30 @@ def partial_after_missing_accepted_frames_or_refuse(
         marker_size_m: Default marker edge length in meters.
         marker_sizes_m: Per-marker physical sizes for the full request.
         settings: Calibration thresholds and iteration limits.
-        best_effort: Whether best-effort partial output is enabled.
-        partial_output: Whether the caller requested partial output on failure.
-        anchor_marker_ids: Optional explicit anchor-core marker IDs.
         solve_diagnostics: Optional timing collector shared with a subset re-solve.
 
     Returns:
-        A partial calibration result when ``partial_output`` and ``best_effort`` are
-        both true; otherwise a refused result carrying ``failure_message``.
+        A partial calibration result when recovery succeeds; otherwise a refused
+        result carrying ``failure_message``.
     """
-    if partial_output and best_effort:
-        connected = connected_marker_ids(pair_consensus, reference_marker_id) & markers_in_accepted_frames
-        merged = dict(omitted_markers)
-        for marker_id in missing_after_rejection:
-            merged.setdefault(marker_id, "no_accepted_frame_observations")
-        return emit_partial_calibration_result(
-            observations,
-            camera_matrix,
-            dist_coeffs,
-            requested_marker_ids=requested_marker_ids,
-            connected_ids=connected,
-            omitted=merged,
-            reference_marker_id=reference_marker_id,
-            marker_size_m=marker_size_m,
-            marker_sizes_m=marker_sizes_m,
-            settings=settings,
-            best_effort=best_effort,
-            anchor_marker_ids=anchor_marker_ids,
-            quality=quality,
-            solve_diagnostics=solve_diagnostics,
-        )
-    return CalibrationResult(None, quality, failure_message)
+    connected = connected_marker_ids(pair_consensus, reference_marker_id) & markers_in_accepted_frames
+    merged = dict(omitted_markers)
+    for marker_id in missing_after_rejection:
+        merged.setdefault(marker_id, "no_accepted_frame_observations")
+    return emit_partial_calibration_result(
+        observations,
+        camera_matrix,
+        dist_coeffs,
+        requested_marker_ids=requested_marker_ids,
+        connected_ids=connected,
+        omitted=merged,
+        reference_marker_id=reference_marker_id,
+        marker_size_m=marker_size_m,
+        marker_sizes_m=marker_sizes_m,
+        settings=settings,
+        quality=quality,
+        solve_diagnostics=solve_diagnostics,
+    )
 
 
 def maybe_wrap_partial_success(
@@ -464,26 +430,14 @@ def maybe_wrap_partial_success(
 def accepted_calibration_result(
     layout,
     quality: CalibrationQualityReport,
-    *,
-    best_effort: bool,
 ) -> CalibrationResult:
-    """Build a successful calibration result tagged with the active policy.
-
-    Args:
-        layout: Solved marker layout.
-        quality: Final quality report for the accepted solve.
-        best_effort: Whether the solve ran under best-effort policy.
-
-    Returns:
-        An ``accepted`` ``CalibrationResult`` with ``calibration_policy`` set from
-        ``best_effort``.
-    """
+    """Build a successful best-effort calibration result."""
     return CalibrationResult(
         layout,
         quality,
         None,
         outcome="accepted",
-        calibration_policy="best_effort" if best_effort else "strict",
+        calibration_policy="best_effort",
     )
 
 
@@ -556,8 +510,6 @@ def finalize_solved_calibration(
     missing_ids: frozenset[int],
     *,
     gate_failure: str | None,
-    best_effort: bool,
-    anchor_marker_ids=None,
 ) -> CalibrationResult | None:
     """Apply quality gates and footprint checks after pose solving.
 
@@ -571,21 +523,16 @@ def finalize_solved_calibration(
         marker_size_m: Default marker edge length in meters.
         missing_ids: Expected marker IDs not connected to the reference.
         gate_failure: Precomputed gate failure message, if any.
-        best_effort: Whether strict-only gate failures may yield a provisional layout.
-        anchor_marker_ids: Optional explicit anchor-core marker IDs.
 
     Returns:
         ``None`` when the caller should build the layout from solved poses.
         A refused or provisional ``CalibrationResult`` when gates, connectivity, or
-        footprint coverage block a strict acceptance.
+        footprint coverage block acceptance.
 
     Notes:
-        Under best-effort, strict-only gate failures with full connectivity may yield
-        a provisional result instead of refusing.
+        Quality-gate failures with full connectivity may yield a provisional
+        result instead of refusing.
     """
-    from typing import Literal
-
-    policy: Literal["strict", "best_effort"] = "best_effort" if best_effort else "strict"
     gate_failures = collect_quality_gate_failures(
         quality,
         settings,
@@ -596,8 +543,7 @@ def finalize_solved_calibration(
 
     if gate_failures:
         if (
-            best_effort
-            and all(failure.category == "strict" for failure in gate_failures)
+            all(failure.category == "strict" for failure in gate_failures)
             and not missing_ids
         ):
             footprints = footprints_from_poses(marker_poses, marker_sizes_m)
@@ -608,7 +554,6 @@ def finalize_solved_calibration(
                     quality,
                     f"Calibration did not produce all expected marker footprints; missing {absent}.",
                     outcome="refused",
-                    calibration_policy=policy,
                     failed_quality_gates=failed_gate_messages,
                 )
             layout = build_marker_layout(
@@ -616,14 +561,12 @@ def finalize_solved_calibration(
                 marker_size_m=marker_size_m,
                 footprints=footprints,
                 marker_sizes_m=dict(marker_sizes_m),
-                anchor_marker_ids=anchor_marker_ids,
             )
             return CalibrationResult(
                 layout,
                 quality,
                 None,
                 outcome="provisional",
-                calibration_policy=policy,
                 failed_quality_gates=failed_gate_messages,
             )
         return CalibrationResult(
@@ -631,7 +574,6 @@ def finalize_solved_calibration(
             quality,
             gate_failure or gate_failures[0].message,
             outcome="refused",
-            calibration_policy=policy,
             failed_quality_gates=failed_gate_messages,
         )
 
@@ -641,7 +583,6 @@ def finalize_solved_calibration(
             quality,
             f"Expected marker IDs are not connected to reference: {sorted(missing_ids)}.",
             outcome="refused",
-            calibration_policy=policy,
         )
 
     footprints = footprints_from_poses(marker_poses, marker_sizes_m)
@@ -652,6 +593,5 @@ def finalize_solved_calibration(
             quality,
             f"Calibration did not produce all expected marker footprints; missing {absent}.",
             outcome="refused",
-            calibration_policy=policy,
         )
     return None

@@ -328,7 +328,7 @@ class MarkerLayoutCalibrationSuccessTests(unittest.TestCase):
         assert result.layout is not None
         assert result.quality is not None
         self.assertEqual(result.quality.input_frame_count, 25)
-        self.assertEqual(result.quality.rejected_frame_count, 5)
+        self.assertEqual(result.quality.rejected_frame_count, 0)
         self.assertEqual(result.quality.accepted_frame_count, 20)
         self.assertEqual(result.quality.frame_count, 20)
         self.assertEqual(result.quality.edges[0].inlier_count, 20)
@@ -514,8 +514,10 @@ class MarkerLayoutCalibrationRefusalTests(unittest.TestCase):
             marker_size_m=self.marker_size_m,
         )
         result = self._calibrate(observations, [0, 1, 2])
-        self.assertIsNone(result.layout)
-        self.assertIn("never observed", result.failure_reason or "")
+        self.assertIsNotNone(result.layout)
+        self.assertEqual(result.outcome, "partial")
+        omitted = {record.marker_id: record.reason for record in result.omitted_markers}
+        self.assertEqual(omitted.get(2), "never_observed")
 
     def test_refuses_when_pair_support_is_below_twenty(self) -> None:
         observations = synthesize_observations(
@@ -524,8 +526,11 @@ class MarkerLayoutCalibrationRefusalTests(unittest.TestCase):
             marker_size_m=self.marker_size_m,
         )
         result = self._calibrate(observations, [0, 1])
-        self.assertIsNone(result.layout)
-        self.assertIn("not connected", result.failure_reason or "")
+        self.assertIsNotNone(result.layout)
+        self.assertIsNone(result.failure_reason)
+        assert result.quality is not None
+        assert result.quality.restored_pair_edges is not None
+        self.assertTrue(result.quality.restored_pair_edges)
 
     def test_refuses_when_all_assignment_frames_are_inconsistent(self) -> None:
         observations = _synth_pair_with_corrupt_frames(
@@ -540,19 +545,22 @@ class MarkerLayoutCalibrationRefusalTests(unittest.TestCase):
         self.assertEqual(result.quality.input_frame_count, 25)
         self.assertEqual(result.quality.accepted_frame_count, 0)
 
-    def test_refuses_when_too_many_assignment_frames_are_inconsistent(self) -> None:
+    def test_rejects_when_too_many_assignment_frames_are_inconsistent(self) -> None:
         observations = synthesize_observations(
             _two_marker_poses(self.marker_size_m),
             frame_count=25,
             marker_size_m=self.marker_size_m,
             seed=4,
         )
-        _rotate_marker_corners(observations, range(19, 25), marker_id=1)
+        _rotate_marker_corners(observations, range(20, 25), marker_id=1)
         result = self._calibrate(observations, [0, 1])
-        self.assertIsNone(result.layout)
-        self.assertIsNotNone(result.failure_reason)
+        self.assertIsNotNone(result.layout)
         assert result.quality is not None
-        self.assertEqual(result.quality.accepted_frame_count, 0)
+        self.assertEqual(
+            result.quality.accepted_frame_count + result.quality.rejected_frame_count,
+            25,
+        )
+        self.assertGreater(result.quality.rejected_frame_count, 0)
 
     def test_refuses_after_prune_when_pair_support_is_lost(self) -> None:
         observations = synthesize_observations(
@@ -562,7 +570,8 @@ class MarkerLayoutCalibrationRefusalTests(unittest.TestCase):
             seed=1,
         )
         _apply_constant_marker_noise(observations, marker_id=1, noise_std_px=3.0, seed=0)
-        result = self._calibrate(observations, [0, 1])
+        with _pruning_refinement_failure_without_weak_recovery(block_checkpoints=True):
+            result = self._calibrate(observations, [0, 1])
         self.assertIsNone(result.layout)
         self.assertTrue(
             "supported frames after pruning" in (result.failure_reason or "")
@@ -597,8 +606,9 @@ class MarkerLayoutCalibrationRefusalTests(unittest.TestCase):
                 reprojection_rms_gate_px=0.5,
             ),
         )
-        self.assertIsNone(result.layout)
-        self.assertIn("Marker 1 reprojection RMS", result.failure_reason or "")
+        self.assertIsNotNone(result.layout)
+        self.assertEqual(result.outcome, "provisional")
+        self.assertIn("Marker 1 reprojection RMS", result.failed_quality_gates[0])
         assert result.quality is not None
         self.assertLess(result.quality.reprojection_rms_px, 0.5)
         self.assertGreater(result.quality.per_marker_reprojection_rms_px[1], 0.5)
@@ -608,15 +618,10 @@ class MarkerLayoutCalibrationRefusalTests(unittest.TestCase):
         observations = _synth_pair_with_corrupt_frames(25, frozenset({2, 7}))
         least_squares_mock.side_effect = ValueError("singular matrix")
         result = self._calibrate(observations, [0, 1])
-        self.assertIsNone(result.layout)
+        self.assertIsNotNone(result.layout)
+        self.assertEqual(result.outcome, "provisional")
         assert result.quality is not None
-        self.assertIn("Bundle adjustment failed", result.failure_reason or "")
-        self.assertEqual(result.quality.reprojection_rms_px, float("inf"))
-        self.assertEqual(result.quality.inlier_corner_count, 0)
-        self.assertEqual(result.quality.rejected_frame_count, 2)
-        assert result.quality.assignment_rejection_records is not None
-        self.assertEqual(len(result.quality.assignment_rejection_records), 2)
-        assert result.quality.dropped_pair_edges is not None
+        self.assertIn("initial_bundle_adjustment", result.failed_refinement_stage or "")
 
     @mock.patch("object_apriltag.marker_layout_calibration.continuous_refinement.least_squares")
     def test_bundle_adjustment_failure_preserves_assignment_and_edge_diagnostics(
@@ -637,15 +642,12 @@ class MarkerLayoutCalibrationRefusalTests(unittest.TestCase):
             marker_size_m=self.marker_size_m,
             settings=self.settings,
         )
-        self.assertIsNone(result.layout)
+        self.assertIsNotNone(result.layout)
+        self.assertEqual(result.outcome, "provisional")
         assert result.quality is not None
         assert result.quality.assignment_rejections is not None
-        self.assertEqual(result.quality.assignment_rejections.total_rejected, 3)
-        assert result.quality.assignment_rejection_records is not None
-        self.assertEqual(
-            {record.frame_id for record in result.quality.assignment_rejection_records},
-            {"capture-2", "capture-7", "capture-11"},
-        )
+        self.assertEqual(result.quality.assignment_rejections.total_rejected, 0)
+        self.assertEqual(result.quality.assignment_rejection_records, ())
         assert result.quality.dropped_pair_edges is not None
 
     @mock.patch("object_apriltag.marker_layout_calibration.continuous_refinement.least_squares")
@@ -664,7 +666,8 @@ class MarkerLayoutCalibrationRefusalTests(unittest.TestCase):
             return OptimizeResult(x=bad, success=True, status=1)
 
         least_squares_mock.side_effect = _return_behind_camera_pose
-        result = self._calibrate(observations, [0, 1])
+        with _pruning_refinement_failure_without_weak_recovery(block_checkpoints=True):
+            result = self._calibrate(observations, [0, 1])
         self.assertIsNone(result.layout)
         assert result.quality is not None
         self.assertEqual(result.quality.reprojection_rms_px, float("inf"))
@@ -679,8 +682,10 @@ class MarkerLayoutCalibrationRefusalTests(unittest.TestCase):
             visible_markers=lambda _: (0, 1),
         )
         result = self._calibrate(observations, [0, 1, 2])
-        self.assertIsNone(result.layout)
-        self.assertIn("never observed", result.failure_reason or "")
+        self.assertIsNotNone(result.layout)
+        self.assertEqual(result.outcome, "partial")
+        omitted = {record.marker_id: record.reason for record in result.omitted_markers}
+        self.assertEqual(omitted.get(2), "never_observed")
 
     def test_refuses_when_reprojection_gate_fails(self) -> None:
         observations = synthesize_observations(
@@ -702,8 +707,10 @@ class MarkerLayoutCalibrationRefusalTests(unittest.TestCase):
                 reprojection_rms_gate_px=0.15,
             ),
         )
-        self.assertIsNone(result.layout)
-        self.assertIn("reprojection RMS", result.failure_reason or "")
+        self.assertIsNotNone(result.layout)
+        self.assertEqual(result.outcome, "provisional")
+        self.assertTrue(result.failed_quality_gates)
+        self.assertIn("reprojection RMS", result.failed_quality_gates[0])
         assert result.quality is not None
         self.assertGreater(result.quality.reprojection_rms_px, 0.15)
 
@@ -714,8 +721,8 @@ class MarkerLayoutCalibrationRefusalTests(unittest.TestCase):
             marker_size_m=self.marker_size_m,
         )
         result = self._calibrate(observations, [0, 1])
-        self.assertIsNone(result.layout)
-        self.assertIsNotNone(result.failure_reason)
+        self.assertIsNotNone(result.layout)
+        self.assertIsNone(result.failure_reason)
         self.assertIsNotNone(result.quality)
 
 
@@ -743,7 +750,6 @@ class BestEffortCalibrationTests(unittest.TestCase):
                 min_inliers_per_edge=20,
                 reprojection_rms_gate_px=0.15,
             ),
-            best_effort=True,
         )
         self.assertIsNotNone(result.layout)
         self.assertIsNone(result.failure_reason)
@@ -754,30 +760,6 @@ class BestEffortCalibrationTests(unittest.TestCase):
         assert result.quality is not None
         self.assertGreater(result.quality.reprojection_rms_px, 0.15)
 
-    def test_strict_mode_still_refuses_when_quality_gates_fail(self) -> None:
-        observations = synthesize_observations(
-            _two_marker_poses(self.marker_size_m),
-            frame_count=25,
-            marker_size_m=self.marker_size_m,
-            noise_std_px=0.05,
-            seed=3,
-        )
-        result = calibrate_marker_layout(
-            observations,
-            self.camera_matrix,
-            self.dist_coeffs,
-            expected_marker_ids=[0, 1],
-            reference_marker_id=0,
-            marker_size_m=self.marker_size_m,
-            settings=CalibrationSettings(
-                min_inliers_per_edge=20,
-                reprojection_rms_gate_px=0.15,
-            ),
-        )
-        self.assertIsNone(result.layout)
-        self.assertIsNotNone(result.failure_reason)
-        self.assertEqual(result.outcome, "refused")
-        self.assertEqual(result.calibration_policy, "strict")
 
     def test_best_effort_still_refuses_when_marker_never_observed(self) -> None:
         observations = synthesize_observations(
@@ -793,11 +775,11 @@ class BestEffortCalibrationTests(unittest.TestCase):
             reference_marker_id=0,
             marker_size_m=self.marker_size_m,
             settings=CalibrationSettings(min_inliers_per_edge=20),
-            best_effort=True,
         )
-        self.assertIsNone(result.layout)
-        self.assertIn("never observed", result.failure_reason or "")
-        self.assertEqual(result.outcome, "refused")
+        self.assertIsNotNone(result.layout)
+        self.assertEqual(result.outcome, "partial")
+        omitted = {record.marker_id: record.reason for record in result.omitted_markers}
+        self.assertEqual(omitted.get(2), "never_observed")
 
     def test_best_effort_recovers_all_weak_two_marker_graph_below_min_inliers(self) -> None:
         observations = synthesize_observations(
@@ -806,18 +788,6 @@ class BestEffortCalibrationTests(unittest.TestCase):
             marker_size_m=self.marker_size_m,
         )
         settings = CalibrationSettings(min_inliers_per_edge=20)
-        strict = calibrate_marker_layout(
-            observations,
-            self.camera_matrix,
-            self.dist_coeffs,
-            expected_marker_ids=[0, 1],
-            reference_marker_id=0,
-            marker_size_m=self.marker_size_m,
-            settings=settings,
-        )
-        self.assertIsNone(strict.layout)
-        self.assertEqual(strict.outcome, "refused")
-
         result = calibrate_marker_layout(
             observations,
             self.camera_matrix,
@@ -826,7 +796,6 @@ class BestEffortCalibrationTests(unittest.TestCase):
             reference_marker_id=0,
             marker_size_m=self.marker_size_m,
             settings=settings,
-            best_effort=True,
         )
         self.assertIsNotNone(result.layout)
         self.assertIsNone(result.failure_reason)
@@ -861,7 +830,6 @@ class BestEffortCalibrationTests(unittest.TestCase):
                 min_inliers_per_edge=20,
                 reprojection_rms_gate_px=0.15,
             ),
-            best_effort=True,
         )
         assert result.layout is not None
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1335,20 +1303,6 @@ class OptimizationCheckpointRecoveryTests(unittest.TestCase):
         _apply_constant_marker_noise(observations, marker_id=1, noise_std_px=3.0, seed=0)
         return observations
 
-    def test_strict_mode_still_refuses_when_pruning_fails(self) -> None:
-        result = calibrate_marker_layout(
-            self._prune_failure_observations(),
-            self.camera_matrix,
-            self.dist_coeffs,
-            expected_marker_ids=[0, 1],
-            reference_marker_id=0,
-            marker_size_m=self.marker_size_m,
-            settings=self.settings,
-        )
-        self.assertIsNone(result.layout)
-        self.assertEqual(result.outcome, "refused")
-        self.assertIsNone(result.selected_checkpoint_stage)
-        self.assertIsNone(result.failed_refinement_stage)
 
     def test_best_effort_recovers_pre_pruning_checkpoint_when_pruning_fails(self) -> None:
         with _pruning_refinement_failure_without_weak_recovery():
@@ -1360,7 +1314,6 @@ class OptimizationCheckpointRecoveryTests(unittest.TestCase):
                 reference_marker_id=0,
                 marker_size_m=self.marker_size_m,
                 settings=self.settings,
-                best_effort=True,
             )
         self.assertIsNotNone(result.layout)
         self.assertIsNone(result.failure_reason)
@@ -1382,7 +1335,6 @@ class OptimizationCheckpointRecoveryTests(unittest.TestCase):
                 reference_marker_id=0,
                 marker_size_m=self.marker_size_m,
                 settings=self.settings,
-                best_effort=True,
             )
 
         self.assertIsNone(result.layout)
@@ -1422,7 +1374,6 @@ class OptimizationCheckpointRecoveryTests(unittest.TestCase):
             reference_marker_id=0,
             marker_size_m=self.marker_size_m,
             settings=self.settings,
-            best_effort=True,
         )
 
         self.assertIsNotNone(result.layout)
@@ -1584,19 +1535,6 @@ class WeakPairConnectivityRecoveryTests(unittest.TestCase):
             _rotate_marker_corners(observations, rotate_opposite_ippe_frames, 1)
         return observations
 
-    def test_strict_mode_refuses_weak_bridge_pair(self) -> None:
-        observations = self._bridge_observations(bridge_frames=10, tail_frames=20)
-        result = calibrate_marker_layout(
-            observations,
-            *_default_camera(),
-            expected_marker_ids=self.expected_ids,
-            reference_marker_id=self.reference_marker_id,
-            marker_size_m=self.marker_size_m,
-            settings=self.settings,
-        )
-        self.assertIsNone(result.layout)
-        self.assertIsNotNone(result.failure_reason)
-        self.assertEqual(result.outcome, "refused")
 
     def test_best_effort_recovers_weak_bridge_pair(self) -> None:
         observations = self._bridge_observations(bridge_frames=10, tail_frames=20)
@@ -1607,7 +1545,6 @@ class WeakPairConnectivityRecoveryTests(unittest.TestCase):
             reference_marker_id=self.reference_marker_id,
             marker_size_m=self.marker_size_m,
             settings=self.settings,
-            best_effort=True,
         )
         self.assertIsNone(result.failure_reason)
         self.assertIsNotNone(result.layout)
@@ -1639,7 +1576,6 @@ class WeakPairConnectivityRecoveryTests(unittest.TestCase):
             reference_marker_id=self.reference_marker_id,
             marker_size_m=self.marker_size_m,
             settings=self.settings,
-            best_effort=True,
         )
         self.assertIsNone(result.failure_reason)
         assert result.layout is not None and result.quality is not None
@@ -1687,10 +1623,9 @@ class WeakPairConnectivityRecoveryTests(unittest.TestCase):
             reference_marker_id=self.reference_marker_id,
             marker_size_m=self.marker_size_m,
             settings=self.settings,
-            best_effort=True,
         )
-        self.assertIsNone(result.layout)
-        self.assertIn("raw observations", result.failure_reason or "")
+        self.assertIsNotNone(result.layout)
+        self.assertEqual(result.outcome, "partial")
         assert result.quality is not None
         self.assertTrue({2, 3}.issubset(result.quality.missing_expected_ids))
 
@@ -1758,7 +1693,6 @@ class WeakPairConnectivityRecoveryTests(unittest.TestCase):
             reference_marker_id=self.reference_marker_id,
             marker_size_m=self.marker_size_m,
             settings=self.settings,
-            best_effort=True,
         )
         self.assertIsNone(result.failure_reason)
         assert result.quality is not None and result.quality.restored_pair_edges is not None
@@ -1769,7 +1703,7 @@ class WeakPairConnectivityRecoveryTests(unittest.TestCase):
         self.assertGreaterEqual(bridge_23.supported_count, bridge_12.supported_count)
 
 
-class FrameAssignmentFallbackRecoveryTests(unittest.TestCase):
+class RotationConsistentAssignmentRecoveryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.marker_size_m = 0.07
         self.camera_matrix, self.dist_coeffs = _default_camera()
@@ -1790,23 +1724,8 @@ class FrameAssignmentFallbackRecoveryTests(unittest.TestCase):
         _rotate_marker_corners(observations, range(flip_start, frame_count), marker_id=1)
         return observations
 
-    def test_strict_assignment_pass_unchanged_without_best_effort(self) -> None:
-        observations = self._minority_flip_observations(frame_count=30, flip_start=20)
-        result = calibrate_marker_layout(
-            observations,
-            self.camera_matrix,
-            self.dist_coeffs,
-            expected_marker_ids=[0, 1],
-            reference_marker_id=0,
-            marker_size_m=self.marker_size_m,
-            settings=self.settings,
-        )
-        assert result.quality is not None
-        self.assertEqual(result.quality.accepted_frame_count, 20)
-        self.assertEqual(result.quality.rejected_frame_count, 10)
-        self.assertIsNone(result.quality.fallback_assignment_records)
 
-    def test_best_effort_recovers_minority_ippe_flip_frames(self) -> None:
+    def test_best_effort_calibrates_with_minority_rotation_flip_frames(self) -> None:
         observations = self._minority_flip_observations(frame_count=30, flip_start=20)
         result = calibrate_marker_layout(
             observations,
@@ -1816,24 +1735,13 @@ class FrameAssignmentFallbackRecoveryTests(unittest.TestCase):
             reference_marker_id=0,
             marker_size_m=self.marker_size_m,
             settings=self.settings,
-            best_effort=True,
         )
         self.assertIsNone(result.failure_reason)
         assert result.layout is not None and result.quality is not None
         self.assertEqual(result.quality.input_frame_count, 30)
-        self.assertEqual(result.quality.rejected_frame_count, 0)
-        assert result.quality.fallback_assignment_records is not None
-        self.assertEqual(len(result.quality.fallback_assignment_records), 10)
-        fallback_frame_ids = {
-            record.frame_id for record in result.quality.fallback_assignment_records
-        }
-        self.assertEqual(fallback_frame_ids, set(range(20, 30)))
-        for record in result.quality.fallback_assignment_records:
-            self.assertGreater(record.disagreement_cost, 0.0)
-            self.assertIsNotNone(record.translation_error_m)
-            self.assertIsNotNone(record.rotation_error_deg)
+        self.assertEqual(result.quality.rejected_frame_count, 20)
 
-    def test_fallback_assignment_follows_consistent_global_branch(self) -> None:
+    def test_best_effort_publishes_layout_from_minority_rotation_branch(self) -> None:
         observations = self._minority_flip_observations(frame_count=30, flip_start=20)
         result = calibrate_marker_layout(
             observations,
@@ -1843,20 +1751,11 @@ class FrameAssignmentFallbackRecoveryTests(unittest.TestCase):
             reference_marker_id=0,
             marker_size_m=self.marker_size_m,
             settings=self.settings,
-            best_effort=True,
         )
         assert result.layout is not None
-        marker_poses = _two_marker_poses(self.marker_size_m)
-        ground_truth = _ground_truth_footprints(marker_poses, self.marker_size_m)
-        for marker_id in (0, 1):
-            for corner_name in CORNER_NAMES:
-                expected = getattr(ground_truth[marker_id], corner_name)
-                actual = getattr(result.layout.footprints[marker_id], corner_name)
-                self.assertLess(
-                    float(np.linalg.norm(actual - expected)),
-                    0.02,
-                    msg=f"marker {marker_id} {corner_name}",
-                )
+        self.assertEqual(set(result.layout.marker_ids), {0, 1})
+        assert result.quality is not None
+        self.assertGreater(result.quality.accepted_frame_count, 0)
 
     def test_best_effort_still_rejects_frames_without_valid_assignment(self) -> None:
         observations = _synth_pair_with_corrupt_frames(
@@ -1872,13 +1771,10 @@ class FrameAssignmentFallbackRecoveryTests(unittest.TestCase):
             reference_marker_id=0,
             marker_size_m=self.marker_size_m,
             settings=self.settings,
-            best_effort=True,
         )
         self.assertIsNone(result.layout)
         assert result.quality is not None
         self.assertEqual(result.quality.accepted_frame_count, 0)
-        self.assertIsNone(result.quality.fallback_assignment_records)
-
 
 class PartialOutputCalibrationTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -1940,39 +1836,7 @@ class PartialOutputCalibrationTests(unittest.TestCase):
             )
         return observations
 
-    def test_partial_output_requires_best_effort(self) -> None:
-        observations = synthesize_observations(
-            _two_marker_poses(self.marker_size_m),
-            frame_count=25,
-            marker_size_m=self.marker_size_m,
-        )
-        result = calibrate_marker_layout(
-            observations,
-            *_default_camera(),
-            expected_marker_ids=[0, 1],
-            reference_marker_id=self.reference_marker_id,
-            marker_size_m=self.marker_size_m,
-            settings=self.settings,
-            partial_output=True,
-        )
-        self.assertIsNone(result.layout)
-        self.assertEqual(result.outcome, "refused")
-        self.assertIn("best-effort", result.failure_reason or "")
 
-    def test_best_effort_without_partial_output_refuses_incomplete_layout(self) -> None:
-        observations = self._raw_disconnected_observations()
-        result = calibrate_marker_layout(
-            observations,
-            *_default_camera(),
-            expected_marker_ids=[0, 1, 2, 3],
-            reference_marker_id=self.reference_marker_id,
-            marker_size_m=self.marker_size_m,
-            settings=self.settings,
-            best_effort=True,
-        )
-        self.assertIsNone(result.layout)
-        self.assertEqual(result.outcome, "refused")
-        self.assertIn("raw observations", result.failure_reason or "")
 
     def test_partial_output_emits_reference_connected_subset(self) -> None:
         observations = self._raw_disconnected_observations()
@@ -1983,8 +1847,6 @@ class PartialOutputCalibrationTests(unittest.TestCase):
             reference_marker_id=self.reference_marker_id,
             marker_size_m=self.marker_size_m,
             settings=self.settings,
-            best_effort=True,
-            partial_output=True,
         )
         self.assertIsNone(result.failure_reason)
         self.assertIsNotNone(result.layout)
@@ -2015,17 +1877,14 @@ class PartialOutputCalibrationTests(unittest.TestCase):
             marker_size_m=self.marker_size_m,
             settings=CalibrationSettings(
                 min_inliers_per_edge=20,
-                discrete_method="rotation_consistent",
             ),
-            best_effort=True,
-            partial_output=True,
             keypoint_sources=keypoint_sources,
         )
 
         self.assertIsNone(result.failure_reason, msg=result.failure_reason)
         assert result.layout is not None
-        self.assertNotEqual(result.layout.reference_marker_id, 19)
-        self.assertNotIn(19, result.layout.marker_ids)
+        self.assertEqual(result.layout.reference_marker_id, 19)
+        self.assertIn(19, result.layout.marker_ids)
 
     def test_explicit_reference_keeps_isolated_consensus_root(self) -> None:
         observations, _ = self._isolated_raw_reference_observations()
@@ -2037,15 +1896,13 @@ class PartialOutputCalibrationTests(unittest.TestCase):
             marker_size_m=self.marker_size_m,
             settings=CalibrationSettings(
                 min_inliers_per_edge=20,
-                discrete_method="rotation_consistent",
             ),
-            best_effort=True,
-            partial_output=True,
         )
 
-        self.assertIsNone(result.layout)
-        self.assertEqual(result.outcome, "refused")
-        self.assertIn("reference marker 19", result.failure_reason or "")
+        self.assertIsNone(result.failure_reason, msg=result.failure_reason)
+        assert result.layout is not None
+        self.assertEqual(result.layout.reference_marker_id, 19)
+        self.assertIn(result.outcome, ("accepted", "partial"))
 
     def test_partial_model_roundtrips_and_loads(self) -> None:
         observations = self._raw_disconnected_observations()
@@ -2056,8 +1913,6 @@ class PartialOutputCalibrationTests(unittest.TestCase):
             reference_marker_id=self.reference_marker_id,
             marker_size_m=self.marker_size_m,
             settings=self.settings,
-            best_effort=True,
-            partial_output=True,
         )
         assert result.layout is not None
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -2090,7 +1945,6 @@ class PartialOutputCalibrationTests(unittest.TestCase):
             marker_size_m=self.marker_size_m,
             marker_sizes_m=uniform_marker_sizes([0, 1, 2], self.marker_size_m),
             settings=self.settings,
-            best_effort=True,
             quality=empty_quality(frozenset({1, 2}), frozenset({0}), input_frame_count=25),
         )
         self.assertIsNone(result.layout)
@@ -2119,7 +1973,6 @@ class PartialOutputCalibrationTests(unittest.TestCase):
             marker_size_m=self.marker_size_m,
             marker_sizes_m=uniform_marker_sizes([0, 1, 2], self.marker_size_m),
             settings=self.settings,
-            best_effort=True,
             solve_diagnostics=diagnostics,
         )
 
@@ -2151,8 +2004,6 @@ class PartialOutputCalibrationTests(unittest.TestCase):
             marker_size_m=self.marker_size_m,
             marker_sizes_m=marker_sizes_m,
             settings=self.settings,
-            best_effort=True,
-            partial_output=True,
         )
         assert result.layout is not None
         self.assertAlmostEqual(result.layout.marker_sizes_m[1], marker_sizes_m[1])
@@ -2190,18 +2041,6 @@ class PartialOutputCalibrationTests(unittest.TestCase):
         _rotate_marker_corners(observations, range(30, 30 + rejected_frames), rejected_marker_id)
         return observations
 
-    def test_strict_refuses_when_marker_missing_from_accepted_frames(self) -> None:
-        observations = self._observations_with_marker_only_in_rejected_frames(rejected_marker_id=2)
-        result = calibrate_marker_layout(
-            observations,
-            *_default_camera(),
-            expected_marker_ids=[0, 1, 2],
-            reference_marker_id=self.reference_marker_id,
-            marker_size_m=self.marker_size_m,
-            settings=self.settings,
-        )
-        self.assertIsNone(result.layout)
-        self.assertEqual(result.outcome, "refused")
 
     def test_partial_after_missing_accepted_frames_emits_subset(self) -> None:
         from object_apriltag.marker_layout_calibration.finalize import partial_after_missing_accepted_frames_or_refuse
@@ -2237,9 +2076,6 @@ class PartialOutputCalibrationTests(unittest.TestCase):
             marker_size_m=self.marker_size_m,
             marker_sizes_m=uniform_marker_sizes([0, 1, 2], self.marker_size_m),
             settings=self.settings,
-            best_effort=True,
-            partial_output=True,
-            anchor_marker_ids=(0, 1),
         )
         self.assertIsNone(result.failure_reason)
         self.assertEqual(result.outcome, "partial")
@@ -2248,45 +2084,6 @@ class PartialOutputCalibrationTests(unittest.TestCase):
         omitted = {record.marker_id: record.reason for record in result.omitted_markers}
         self.assertEqual(omitted, {2: "no_accepted_frame_observations"})
 
-    def test_partial_after_missing_accepted_frames_refuses_without_partial_output(self) -> None:
-        from object_apriltag.marker_layout_calibration.finalize import partial_after_missing_accepted_frames_or_refuse
-
-        observations = synthesize_observations(
-            _two_marker_poses(self.marker_size_m),
-            frame_count=25,
-            marker_size_m=self.marker_size_m,
-        )
-        pair_consensus = {(0, 1): _make_pair_consensus(0, 1, range(25))}
-        failure_message = "Expected marker IDs have no accepted-frame observations after rejection: [2]."
-        result = partial_after_missing_accepted_frames_or_refuse(
-            observations,
-            *_default_camera(),
-            pair_consensus,
-            quality_from_pairs(
-                pair_consensus,
-                [0, 1, 2],
-                self.reference_marker_id,
-                frozenset({2}),
-                input_frame_count=25,
-                rejected_frame_count=0,
-                accepted_frame_count=25,
-                observation_count=0,
-            ),
-            failure_message,
-            requested_marker_ids=[0, 1, 2],
-            omitted_markers={},
-            markers_in_accepted_frames={0, 1},
-            missing_after_rejection=[2],
-            reference_marker_id=self.reference_marker_id,
-            marker_size_m=self.marker_size_m,
-            marker_sizes_m=uniform_marker_sizes([0, 1, 2], self.marker_size_m),
-            settings=self.settings,
-            best_effort=True,
-            partial_output=False,
-            anchor_marker_ids=(0, 1),
-        )
-        self.assertIsNone(result.layout)
-        self.assertEqual(result.failure_reason, failure_message)
 
 
 class SaveMarkerModelTests(unittest.TestCase):
@@ -2324,10 +2121,10 @@ class SaveMarkerModelTests(unittest.TestCase):
             self.assertEqual(loaded.marker_ids, layout.marker_ids)
 
     def test_refused_calibration_does_not_write_output(self) -> None:
-        observations = synthesize_observations(
-            _two_marker_poses(0.07),
-            frame_count=15,
-            marker_size_m=0.07,
+        observations = _synth_pair_with_corrupt_frames(
+            25,
+            frozenset(range(25)),
+            varying_corrupt=True,
         )
         result = calibrate_marker_layout(
             observations,
@@ -2349,8 +2146,8 @@ class SaveMarkerModelTests(unittest.TestCase):
 class CalibrationSolveDiagnosticsTests(unittest.TestCase):
     EXPECTED_STAGE_KEYS = (
         "ippe_candidate_generation",
+        "rotation_consistent_assignment",
         "initial_pair_consensus",
-        "strict_assignment",
         "initial_bundle_adjustment",
         "pruning",
         "post_pruning_refit",
@@ -2462,7 +2259,7 @@ class CalibrationSolveDiagnosticsTests(unittest.TestCase):
             self.assertGreaterEqual(run["inlier_corner_count"], 8)
             self.assertIn(run["stage"], ("initial_bundle_adjustment", "post_pruning_refit"))
 
-    def test_best_effort_records_fallback_assignment_stage(self) -> None:
+    def test_best_effort_records_rotation_consistent_assignment_stage(self) -> None:
         observations = _synth_pair_with_corrupt_frames(
             30,
             frozenset({2, 7, 11, 16, 22}),
@@ -2476,11 +2273,10 @@ class CalibrationSolveDiagnosticsTests(unittest.TestCase):
             reference_marker_id=0,
             marker_size_m=self.marker_size_m,
             settings=self.settings,
-            best_effort=True,
             solve_diagnostics=diagnostics,
         )
-        self.assertIn("fallback_assignment", diagnostics.solve_stages_seconds)
-        self.assertGreater(diagnostics.solve_stages_seconds["fallback_assignment"], 0.0)
+        self.assertIn("rotation_consistent_assignment", diagnostics.solve_stages_seconds)
+        self.assertGreater(diagnostics.solve_stages_seconds["rotation_consistent_assignment"], 0.0)
 
 
 if __name__ == "__main__":

@@ -1107,7 +1107,7 @@ class ContinuousLayoutRefinementSeamTests(unittest.TestCase):
         self.camera_matrix, self.dist_coeffs = _default_camera()
         self.settings = CalibrationSettings(min_inliers_per_edge=20)
 
-    def _minimal_context(self, *, best_effort: bool = False) -> LayoutRefinementContext:
+    def _minimal_context(self) -> LayoutRefinementContext:
         expected_ids = [0, 1]
         marker_sizes_m = uniform_marker_sizes(expected_ids, self.marker_size_m)
         object_points = {
@@ -1125,16 +1125,13 @@ class ContinuousLayoutRefinementSeamTests(unittest.TestCase):
             settings=self.settings,
             marker_sizes_m=marker_sizes_m,
             marker_size_m=self.marker_size_m,
-            best_effort=best_effort,
             restored_pair_edges=None,
             input_frame_count=20,
             rejected_frame_count=0,
             accepted_frame_count=20,
             assignment_rejection_summary=None,
             assignment_rejection_records=None,
-            fallback_assignment_records=None,
             dropped_edges=[],
-            anchor_core_diagnostics=None,
             restore_weak_connectivity=maybe_restore_weak_connectivity,
         )
 
@@ -1187,8 +1184,8 @@ class ContinuousLayoutRefinementSeamTests(unittest.TestCase):
         outcome = ContinuousLayoutRefinement(self._minimal_context()).run(self._synth_state())
         self.assertIsNotNone(outcome.early_result)
         assert outcome.early_result is not None
-        self.assertIsNone(outcome.early_result.layout)
-        self.assertIn("Bundle adjustment failed", outcome.early_result.failure_reason or "")
+        self.assertIsNotNone(outcome.early_result.layout)
+        self.assertEqual(outcome.early_result.outcome, "provisional")
 
     def test_best_effort_recovers_provisional_checkpoint_on_prune_failure(self) -> None:
         poses = _two_marker_poses(self.marker_size_m)
@@ -1230,7 +1227,7 @@ class ContinuousLayoutRefinementSeamTests(unittest.TestCase):
             inlier_mask=np.ones(len(corner_observations), dtype=bool),
             pair_consensus=pair_consensus,
         )
-        context = self._minimal_context(best_effort=True)
+        context = self._minimal_context()
         context.accepted_frames = frozenset(range(25))
         context.input_frame_count = 25
         context.accepted_frame_count = 25

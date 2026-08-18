@@ -123,45 +123,6 @@ def parse_expected_marker_ids(
     return expected_ids, None
 
 
-def parse_anchor_marker_ids(
-    anchor_marker_ids: Sequence[int] | None,
-    expected_ids: Sequence[int],
-    reference_marker_id: int | None,
-) -> tuple[tuple[int, ...] | None, str | None]:
-    """Validate explicit anchor-core marker IDs against the expected layout.
-
-    Args:
-        anchor_marker_ids: Optional explicit anchor-core subset; ``None`` selects
-            anchors automatically.
-        expected_ids: Full set of marker IDs requested for calibration.
-        reference_marker_id: Marker ID that must appear in anchor markers when
-            anchors are explicit; ``None`` skips that check until auto-selection.
-
-    Returns:
-        ``(sorted_anchor_ids, None)`` when explicit anchors are valid,
-        ``(None, None)`` when ``anchor_marker_ids`` is ``None``, or
-        ``(None, error_message)`` on validation failure.
-    """
-    if anchor_marker_ids is None:
-        return None, None
-    try:
-        anchors = [int(marker_id) for marker_id in anchor_marker_ids]
-    except (TypeError, ValueError):
-        return None, "anchor_marker_ids must contain integer marker IDs."
-    if len(anchors) < 2:
-        return None, "anchor_marker_ids must contain at least two marker IDs."
-    if len(anchors) != len(set(anchors)):
-        duplicates = sorted({marker_id for marker_id in anchors if anchors.count(marker_id) > 1})
-        return None, f"anchor_marker_ids contains duplicates: {duplicates}."
-    expected_set = set(int(marker_id) for marker_id in expected_ids)
-    missing = sorted(set(anchors) - expected_set)
-    if missing:
-        return None, f"anchor_marker_ids are not subset of expected_marker_ids; extra {missing}."
-    if reference_marker_id is not None and int(reference_marker_id) not in anchors:
-        return None, f"reference_marker_id {reference_marker_id} must appear in anchor_marker_ids."
-    return tuple(sorted(anchors)), None
-
-
 def validate_marker_size(marker_size_m: float) -> str | None:
     """Check that a marker edge length is a finite positive number.
 

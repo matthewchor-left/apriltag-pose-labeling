@@ -104,7 +104,7 @@ _Avoid_: clique assignment, PCM assignment
 Per-pair seed-and-expand selection of a single relative-transform cluster from IPPE cross-product hypotheses.
 _Avoid_: pair voting, independent pair mean
 
-**Anchor Core**:
+**Anchor Core** _(removed; historical)_:
 A small explicit subset of markers (including the reference marker) used to bootstrap IPPE assignment with `2^k` exhaustive search, then expand the remaining markers hierarchically from conditioned pose hypotheses before final corner bundle adjustment.
 _Avoid_: anchor set, bootstrap markers
 

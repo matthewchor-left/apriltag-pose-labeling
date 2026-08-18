@@ -12,8 +12,6 @@ from typing import Any, Callable
 import numpy as np
 
 from object_apriltag.marker_layout_calibration import (
-    AnchorCoreBootstrapDiagnostics,
-    AnchorCoreDiagnostics,
     AssignmentRejectionCauseStats,
     AssignmentRejectionSummary,
     CalibrationQualityReport,
@@ -21,14 +19,12 @@ from object_apriltag.marker_layout_calibration import (
     DroppedPairEdge,
     EdgeDiagnostics,
     FrameAssignmentRejectionRecord,
-    FrameFallbackAssignmentRecord,
-    MarkerExpansionRecord,
     MeasurementDistribution,
     OmittedMarkerDiagnostic,
     RestoredPairEdge,
 )
 
-CALIBRATION_DIAGNOSTICS_VERSION = 8
+CALIBRATION_DIAGNOSTICS_VERSION = 9
 
 
 def format_reprojection_rms_px(value: float) -> str:
@@ -165,64 +161,6 @@ def format_restored_pair_edge(edge: RestoredPairEdge) -> str:
     )
 
 
-def format_fallback_assignment_record(record: FrameFallbackAssignmentRecord) -> str:
-    """Summarize a per-frame pose assignment kept after primary assignment failed.
-
-    Args:
-        record: Fallback assignment record from the quality report.
-
-    Returns:
-        Single-line summary with frame ID, cost, and error metrics.
-    """
-    pair_text = ""
-    if record.marker_pair is not None:
-        pair_text = f" pair=({record.marker_pair[0]},{record.marker_pair[1]})"
-    return " ".join(
-        [
-            f"fallback assignment frame={record.frame_id}",
-            f"cost={_format_optional_float(record.disagreement_cost, precision=4)}",
-            pair_text.strip(),
-            f"tr_err_m={_format_optional_float(record.translation_error_m)}",
-            f"rot_err_deg={_format_optional_float(record.rotation_error_deg, precision=1)}",
-        ]
-    ).strip()
-
-
-def format_anchor_core_lines(anchor_core: AnchorCoreDiagnostics) -> list[str]:
-    """Expand anchor-core bootstrap/expansion diagnostics into console-ready lines.
-
-    Args:
-        anchor_core: Anchor-core diagnostic block from the quality report.
-
-    Returns:
-        Ordered console lines for bootstrap, expansion steps, and unresolved IDs.
-    """
-    lines = [
-        f"anchor core mode={anchor_core.mode} anchors={list(anchor_core.configured_anchor_ids)}",
-        (
-            "anchor bootstrap: "
-            f"status={anchor_core.bootstrap.status} "
-            f"frames={anchor_core.bootstrap.frames_accepted}/"
-            f"{anchor_core.bootstrap.frames_considered}"
-        ),
-    ]
-    if anchor_core.bootstrap.failure_reason:
-        lines.append(f"anchor bootstrap failure: {anchor_core.bootstrap.failure_reason}")
-    for record in anchor_core.expansion:
-        detail = (
-            f"expansion marker {record.marker_id} {record.status} "
-            f"support={record.support_frames}"
-        )
-        if record.reason:
-            detail += f" reason={record.reason}"
-        lines.append(detail)
-    if anchor_core.unresolved_ids:
-        lines.append(f"anchor unresolved: {sorted(anchor_core.unresolved_ids)}")
-    if anchor_core.stopped_after_expansion:
-        lines.append("anchor core stopped after expansion (no full reassignment or BA)")
-    return lines
-
-
 def format_omitted_marker_diagnostic(record: OmittedMarkerDiagnostic) -> str:
     """Format one omitted-marker reason for console output.
 
@@ -258,7 +196,7 @@ def format_quality_diagnostics_lines(quality: CalibrationQualityReport) -> list[
         quality: Post-solve calibration quality report.
 
     Returns:
-        Ordered console lines for reprojection, pair edges, rejections, and anchor core.
+        Ordered console lines for reprojection, pair edges, and rejections.
     """
     lines = [
         f"reprojection RMS: {format_reprojection_rms_px(quality.reprojection_rms_px)}",
@@ -289,11 +227,6 @@ def format_quality_diagnostics_lines(quality: CalibrationQualityReport) -> list[
     if isinstance(quality.restored_pair_edges, tuple):
         for edge in quality.restored_pair_edges:
             lines.append(format_restored_pair_edge(edge))
-    if isinstance(quality.fallback_assignment_records, tuple):
-        for record in quality.fallback_assignment_records:
-            lines.append(format_fallback_assignment_record(record))
-    if quality.anchor_core is not None and isinstance(quality.anchor_core, AnchorCoreDiagnostics):
-        lines.extend(format_anchor_core_lines(quality.anchor_core))
     return lines
 
 
@@ -536,7 +469,7 @@ def _restored_pair_edge_to_dict(edge: RestoredPairEdge) -> dict[str, Any]:
 def _quality_report_to_dict(quality: CalibrationQualityReport) -> dict[str, Any]:
     """Serialize core quality metrics for the diagnostics JSON document.
 
-    Extended diagnostics (rejections, dropped edges, anchor core) are serialized
+    Extended diagnostics (rejections, dropped edges) are serialized
     in sibling top-level keys of the full document.
 
     Args:
@@ -615,105 +548,6 @@ def _serialize_restored_pair_edges(
     return [_restored_pair_edge_to_dict(edge) for edge in edges]
 
 
-def _fallback_assignment_record_to_dict(
-    record: FrameFallbackAssignmentRecord,
-) -> dict[str, Any]:
-    """Serialize one fallback assignment record for JSON export.
-
-    Args:
-        record: Fallback assignment record from the quality report.
-
-    Returns:
-        JSON-serializable dict with frame metadata and error metrics.
-    """
-    return {
-        "frame_index": record.frame_index,
-        "frame_id": record.frame_id,
-        "visible_marker_ids": list(record.visible_marker_ids),
-        "disagreement_cost": _json_safe_float(record.disagreement_cost),
-        "marker_pair": _marker_pair_to_list(record.marker_pair),
-        "translation_error_m": _json_safe_float(record.translation_error_m),
-        "rotation_error_deg": _json_safe_float(record.rotation_error_deg),
-    }
-
-
-def _serialize_fallback_assignment_records(
-    records: tuple[FrameFallbackAssignmentRecord, ...] | None,
-) -> list[dict[str, Any]] | None:
-    """Serialize fallback-assignment records.
-
-    Args:
-        records: Optional fallback-assignment record tuple.
-
-    Returns:
-        List of serialized records, or ``None`` when absent.
-    """
-    if records is None:
-        return None
-    return [_fallback_assignment_record_to_dict(record) for record in records]
-
-
-def _anchor_core_bootstrap_to_dict(
-    bootstrap: AnchorCoreBootstrapDiagnostics,
-) -> dict[str, Any]:
-    """Serialize anchor-core bootstrap acceptance counts and failure reason.
-
-    Args:
-        bootstrap: Anchor-core bootstrap diagnostic block.
-
-    Returns:
-        JSON-serializable dict with status and frame acceptance counts.
-    """
-    return {
-        "status": bootstrap.status,
-        "frames_considered": bootstrap.frames_considered,
-        "frames_accepted": bootstrap.frames_accepted,
-        "failure_reason": bootstrap.failure_reason,
-    }
-
-
-def _marker_expansion_record_to_dict(record: MarkerExpansionRecord) -> dict[str, Any]:
-    """Serialize one hierarchical marker-expansion step for JSON export.
-
-    Args:
-        record: Marker expansion step from anchor-core diagnostics.
-
-    Returns:
-        JSON-serializable dict with marker ID, status, and support frames.
-    """
-    return {
-        "marker_id": record.marker_id,
-        "status": record.status,
-        "support_frames": record.support_frames,
-        "reason": record.reason,
-        "stage": record.stage,
-    }
-
-
-def _anchor_core_to_dict(anchor_core: AnchorCoreDiagnostics | None) -> dict[str, Any] | None:
-    """Serialize anchor-core diagnostics.
-
-    Args:
-        anchor_core: Optional anchor-core diagnostic block from the quality report.
-
-    Returns:
-        JSON-serializable anchor-core dict, or ``None`` when anchor mode was not used.
-    """
-    if anchor_core is None:
-        return None
-    return {
-        "mode": anchor_core.mode,
-        "configured_anchor_ids": list(anchor_core.configured_anchor_ids),
-        "bootstrap": _anchor_core_bootstrap_to_dict(anchor_core.bootstrap),
-        "expansion": [
-            _marker_expansion_record_to_dict(record) for record in anchor_core.expansion
-        ],
-        "final_solved_ids": sorted(anchor_core.final_solved_ids),
-        "unresolved_ids": sorted(anchor_core.unresolved_ids),
-        "stopped_after_expansion": anchor_core.stopped_after_expansion,
-    }
-
-
 def _omitted_marker_to_dict(record: OmittedMarkerDiagnostic) -> dict[str, Any]:
     """Serialize one omitted-marker diagnostic entry.
 
@@ -734,7 +568,7 @@ def build_calibration_diagnostics_document(
     *,
     succeeded: bool,
     failure_reason: str | None,
-    calibration_policy: str = "strict",
+    calibration_policy: str = "best_effort",
     outcome: str = "refused",
     failed_quality_gates: tuple[str, ...] | list[str] = (),
     selected_checkpoint_stage: str | None = None,
@@ -788,10 +622,6 @@ def build_calibration_diagnostics_document(
         ),
         "dropped_pair_edges": _serialize_dropped_pair_edges(quality.dropped_pair_edges),
         "restored_pair_edges": _serialize_restored_pair_edges(quality.restored_pair_edges),
-        "fallback_assignment_records": _serialize_fallback_assignment_records(
-            quality.fallback_assignment_records
-        ),
-        "anchor_core": _anchor_core_to_dict(quality.anchor_core),
     }
 
 

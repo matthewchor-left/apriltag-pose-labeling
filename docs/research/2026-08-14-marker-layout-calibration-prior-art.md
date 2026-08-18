@@ -6,14 +6,14 @@ Date: 2026-08-14
 
 **This pipeline is not novel as a problem.** Recovering unknown rigid poses of square planar fiducials from co-visible observations, then refining them with corner-level bundle adjustment, is the UCO “planar marker mapping” problem ([Muñoz-Salinas et al. 2018, MarkerMapper](https://arxiv.org/abs/1606.00151), [Sarmadi et al. 2019](https://arxiv.org/abs/2103.09141)). Robotics practice independently rediscovered a weaker form as AprilTag **bundle calibration** ([apriltag_ros](https://wiki.ros.org/apriltag_ros/Tutorials/Bundle%20calibration)).
 
-**This pipeline is distinctive as a product.** Relative to MarkerMapper / `apriltag_ros`, the current solver already has:
+**This pipeline is distinctive as a product.** Relative to MarkerMapper / `apriltag_ros`, the current solver has:
 
 - combinatorial IPPE-branch assignment rather than “pick lowest reprojection error”
-- optional anchor-core hierarchical expansion
 - transform chaining (tags need not co-appear with the reference marker)
 - mixed marker sizes
-- hard quality gates and structured refuse/partial outcomes
-- live pair-readiness HUD
+- hard quality gates and structured refuse/partial/provisional outcomes
+
+Earlier experiments also explored anchor-core hierarchical expansion and a live pair-readiness HUD; those paths were removed in favor of a single best-effort rotation-consistent partial solver.
 
 **Do not rebuild MarkerMapper, TagSLAM, or GTSAM.** Those stacks solve a broader SLAM/map problem. Highest-payoff imports for *this* codebase are discrete-front-end robustness and capture guidance, not a new optimizer.
 
@@ -165,7 +165,7 @@ Payoff vs cost for ~4–20 tags, SciPy BA, live CLI. Do not implement all of the
 
 2. **Next-pair / next-view HUD hint**
    From dropped edges (`insufficient_observed_frames`, `insufficient_inlier_frames`) and raw connectivity, print one sentence: “Need more co-visible frames of 2–5” or “Need a more oblique view of 0–3.” AprilCal scoring is optional later; the discrete hint is already almost in `LivePairReadinessDiagnostics`.
-   *Code:* [`calibrate_marker_model.py`](../../src/object_apriltag/cli/calibrate_marker_model.py), [`live_pair_readiness_worker.py`](../../src/object_apriltag/cli/live_pair_readiness_worker.py).
+   *Code:* [`calibrate_marker_model.py`](../../src/object_apriltag/cli/calibrate_marker_model.py).
 
 3. **Per-frame reprojection RMS in diagnostics JSON**
    “Worst 5 frames” to delete or recapture. Standard in OpenCV/Kalibr. Does not change the solver.

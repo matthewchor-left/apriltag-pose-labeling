@@ -13,8 +13,6 @@ if TYPE_CHECKING:
 
 MarkerPair = tuple[int, int]
 
-DiscreteAssignmentMethod = Literal["pair_consensus", "rotation_consistent"]
-
 
 @dataclass(frozen=True)
 class FrameObservation:
@@ -35,7 +33,6 @@ class CalibrationSettings:
     huber_delta_px: float = 1.0
     corner_outlier_px: float = 3.0
     max_ba_iterations: int = 50
-    discrete_method: DiscreteAssignmentMethod = "pair_consensus"
 
 
 @dataclass(frozen=True)
@@ -69,44 +66,8 @@ class CalibrationQualityReport:
     unused_expected_ids: frozenset[int]
     assignment_rejections: AssignmentRejectionSummary | None = None
     assignment_rejection_records: tuple[FrameAssignmentRejectionRecord, ...] | None = None
-    fallback_assignment_records: tuple["FrameFallbackAssignmentRecord", ...] | None = None
     dropped_pair_edges: tuple[DroppedPairEdge, ...] | None = None
     restored_pair_edges: tuple[RestoredPairEdge, ...] | None = None
-    anchor_core: "AnchorCoreDiagnostics | None" = None
-
-
-@dataclass(frozen=True)
-class MarkerExpansionRecord:
-    """Outcome of one anchor-core expansion attempt for a candidate marker."""
-
-    marker_id: int
-    status: str
-    support_frames: int = 0
-    reason: str | None = None
-    stage: str = "expand"
-
-
-@dataclass(frozen=True)
-class AnchorCoreBootstrapDiagnostics:
-    """Summary of the anchor-core bootstrap phase before hierarchical expansion."""
-
-    status: str
-    frames_considered: int
-    frames_accepted: int
-    failure_reason: str | None = None
-
-
-@dataclass(frozen=True)
-class AnchorCoreDiagnostics:
-    """End-to-end anchor-core solve trace from bootstrap through expansion."""
-
-    mode: str
-    configured_anchor_ids: tuple[int, ...]
-    bootstrap: AnchorCoreBootstrapDiagnostics
-    expansion: tuple[MarkerExpansionRecord, ...]
-    final_solved_ids: frozenset[int]
-    unresolved_ids: frozenset[int]
-    stopped_after_expansion: bool = False
 
 
 @dataclass(frozen=True)
@@ -136,7 +97,7 @@ class CalibrationResult:
     quality: CalibrationQualityReport | None
     failure_reason: str | None
     outcome: Literal["accepted", "provisional", "partial", "refused"] | None = None
-    calibration_policy: Literal["strict", "best_effort"] = "strict"
+    calibration_policy: Literal["best_effort"] = "best_effort"
     failed_quality_gates: tuple[str, ...] = ()
     selected_checkpoint_stage: str | None = None
     failed_refinement_stage: str | None = None
@@ -160,30 +121,6 @@ class CalibrationResult:
         else:
             resolved = "refused"
         object.__setattr__(self, "outcome", resolved)
-
-
-@dataclass(frozen=True)
-class PairReadinessEdge:
-    """Live pair-readiness status for one marker pair before full calibration."""
-
-    marker_a: int
-    marker_b: int
-    raw_covisible_frames: int
-    robust_inlier_count: int
-    translation_rms_m: float | None
-    rotation_rms_deg: float | None
-    status: str
-
-
-@dataclass(frozen=True)
-class LivePairReadinessDiagnostics:
-    """Snapshot of marker-pair readiness and connectivity from a live observation sample."""
-
-    pairs: tuple[PairReadinessEdge, ...]
-    connected_marker_ids: frozenset[int]
-    missing_marker_ids: frozenset[int]
-    sample_count: int
-    failure_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -238,30 +175,6 @@ class FrameAssignmentRejectionRecord:
     rotation_error_deg: float | None = None
     translation_gate_m: float | None = None
     rotation_gate_deg: float | None = None
-
-
-@dataclass(frozen=True)
-class FrameFallbackAssignmentRecord:
-    """One fallback IPPE assignment chosen after primary assignment failed."""
-
-    frame_index: int
-    frame_id: str | int
-    visible_marker_ids: tuple[int, ...]
-    disagreement_cost: float
-    marker_pair: MarkerPair | None = None
-    translation_error_m: float | None = None
-    rotation_error_deg: float | None = None
-
-
-@dataclass(frozen=True)
-class FrameFallbackAssignment:
-    """Compact fallback-assignment summary for solve-time bookkeeping."""
-
-    frame_index: int
-    disagreement_cost: float
-    marker_pair: MarkerPair | None
-    translation_error_m: float
-    rotation_error_deg: float
 
 
 @dataclass(frozen=True)
