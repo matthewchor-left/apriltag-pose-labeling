@@ -34,16 +34,33 @@ def _camera() -> tuple[np.ndarray, np.ndarray]:
     )
 
 
-def _footprint_with_top_left(marker_id: int, top_left: np.ndarray, marker_size: float) -> object:
+def _footprint_with_top_left(
+    marker_id: int,
+    top_left: np.ndarray,
+    marker_size: float,
+    tilt_x_deg: float = 0.0,
+) -> object:
     top_left = np.asarray(top_left, dtype=np.float64).reshape(3)
+    deltas = {
+        "top_left": np.zeros(3, dtype=np.float64),
+        "top_right": np.array([marker_size, 0.0, 0.0], dtype=np.float64),
+        "bottom_right": np.array([marker_size, marker_size, 0.0], dtype=np.float64),
+        "bottom_left": np.array([0.0, marker_size, 0.0], dtype=np.float64),
+    }
+    if tilt_x_deg != 0.0:
+        angle = np.deg2rad(tilt_x_deg)
+        rotation = np.array(
+            [
+                [1.0, 0.0, 0.0],
+                [0.0, np.cos(angle), -np.sin(angle)],
+                [0.0, np.sin(angle), np.cos(angle)],
+            ],
+            dtype=np.float64,
+        )
+        deltas = {name: rotation @ offset for name, offset in deltas.items()}
     return footprint_from_dict(
         marker_id,
-        {
-            "top_left": top_left.tolist(),
-            "top_right": (top_left + np.array([marker_size, 0.0, 0.0])).tolist(),
-            "bottom_right": (top_left + np.array([marker_size, marker_size, 0.0])).tolist(),
-            "bottom_left": (top_left + np.array([0.0, marker_size, 0.0])).tolist(),
-        },
+        {name: (top_left + offset).tolist() for name, offset in deltas.items()},
     )
 
 
@@ -56,6 +73,7 @@ def _multi_marker_layout(
 ) -> object:
     spacing = 0.12
     sorted_ids = sorted(marker_ids)
+    tilts_deg = [0.0, 40.0, -35.0, 35.0, -30.0, 25.0]
     footprints = {}
     for index, marker_id in enumerate(sorted_ids):
         row = index // 4
@@ -64,7 +82,12 @@ def _multi_marker_layout(
             [col * spacing, row * spacing, float(index) * 0.05],
             dtype=np.float64,
         )
-        footprints[marker_id] = _footprint_with_top_left(marker_id, top_left, marker_size)
+        footprints[marker_id] = _footprint_with_top_left(
+            marker_id,
+            top_left,
+            marker_size,
+            tilt_x_deg=tilts_deg[index % len(tilts_deg)],
+        )
     return build_marker_layout(sorted_ids[0], marker_size, footprints)
 
 
@@ -73,18 +96,20 @@ def _four_marker_layout(
     perturb_marker_id: int | None = None,
 ) -> object:
     model_points = {
-        0: np.array([0.0, 0.0, 0.0], dtype=np.float64),
-        1: np.array([0.1, 0.0, 0.0], dtype=np.float64),
-        2: np.array([0.0, 0.1, 0.0], dtype=np.float64),
-        3: np.array([0.0, 0.0, 0.1], dtype=np.float64),
+        0: (np.array([0.0, 0.0, 0.0], dtype=np.float64), 0.0),
+        1: (np.array([0.1, 0.0, 0.0], dtype=np.float64), 35.0),
+        2: (np.array([0.0, 0.1, 0.0], dtype=np.float64), -25.0),
+        3: (np.array([0.0, 0.0, 0.1], dtype=np.float64), 20.0),
     }
     if perturb_marker_id is not None:
-        model_points[perturb_marker_id] = model_points[perturb_marker_id] + np.array(
-            [0.05, 0.0, 0.0]
+        point, tilt = model_points[perturb_marker_id]
+        model_points[perturb_marker_id] = (
+            point + np.array([0.05, 0.0, 0.0]),
+            tilt,
         )
     footprints = {
-        marker_id: _footprint_with_top_left(marker_id, point, marker_size)
-        for marker_id, point in model_points.items()
+        marker_id: _footprint_with_top_left(marker_id, point, marker_size, tilt_x_deg=tilt)
+        for marker_id, (point, tilt) in model_points.items()
     }
     return build_marker_layout(0, marker_size, footprints)
 

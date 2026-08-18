@@ -157,20 +157,26 @@ class LayoutReprojectionErrorTests(unittest.TestCase):
 
 
 class LiveHudLayoutReprojectionTests(unittest.TestCase):
-    def test_window_averages_means_and_tracks_max_of_maxima(self) -> None:
+    def test_window_averages_means_and_reports_current_frame_max(self) -> None:
         hud = LiveHud(reproj_window=3)
-        hud.tick(1.0, 3.0)
+        hud.tick(1.0, 10.0)
         hud.tick(2.0, 2.0)
         _, avg, max_error = hud.tick(3.0, 5.0)
         self.assertAlmostEqual(avg, 2.0)
         self.assertAlmostEqual(max_error, 5.0)
+
+    def test_current_frame_max_does_not_carry_prior_peak(self) -> None:
+        hud = LiveHud(reproj_window=3)
+        hud.tick(1.0, 10.0)
+        _, _, max_error = hud.tick(2.0, 2.0)
+        self.assertAlmostEqual(max_error, 2.0)
 
     def test_skips_reprojection_when_values_missing(self) -> None:
         hud = LiveHud(reproj_window=3)
         hud.tick(1.0, 2.0)
         _, avg, max_error = hud.tick()
         self.assertAlmostEqual(avg, 1.0)
-        self.assertAlmostEqual(max_error, 2.0)
+        self.assertIsNone(max_error)
 
 
 class ReferenceMarkerCameraPositionTests(unittest.TestCase):

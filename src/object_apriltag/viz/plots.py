@@ -239,7 +239,7 @@ class LiveHud:
         _prev_time: Timestamp of the previous ``tick`` call.
         _fps: Exponentially smoothed frames-per-second estimate.
         _reproj_means: Rolling window of mean reprojection errors.
-        _reproj_maxes: Rolling window of max reprojection errors.
+        _current_reproj_max: Max reprojection error for the most recent frame.
     """
 
     def __init__(self, reproj_window: int = 30) -> None:
@@ -251,7 +251,7 @@ class LiveHud:
         self._prev_time = time.perf_counter()
         self._fps = 0.0
         self._reproj_means: deque[float] = deque(maxlen=reproj_window)
-        self._reproj_maxes: deque[float] = deque(maxlen=reproj_window)
+        self._current_reproj_max: float | None = None
 
     def tick(
         self,
@@ -265,7 +265,8 @@ class LiveHud:
             reproj_max: Max layout reprojection error for the current frame, in pixels.
 
         Returns:
-            Tuple of smoothed FPS, rolling mean reprojection, and rolling max reprojection.
+            Tuple of smoothed FPS, rolling mean reprojection, and current-frame max
+            reprojection.
         """
         now = time.perf_counter()
         dt = now - self._prev_time
@@ -276,11 +277,12 @@ class LiveHud:
 
         if reproj_mean is not None and reproj_max is not None:
             self._reproj_means.append(reproj_mean)
-            self._reproj_maxes.append(reproj_max)
+            self._current_reproj_max = reproj_max
+        else:
+            self._current_reproj_max = None
 
         avg_reproj = sum(self._reproj_means) / len(self._reproj_means) if self._reproj_means else None
-        max_reproj = max(self._reproj_maxes) if self._reproj_maxes else None
-        return self._fps, avg_reproj, max_reproj
+        return self._fps, avg_reproj, self._current_reproj_max
 
 
 def make_side_by_side(frame_bgr: np.ndarray, plot_bgr: np.ndarray, target_height: int) -> np.ndarray:

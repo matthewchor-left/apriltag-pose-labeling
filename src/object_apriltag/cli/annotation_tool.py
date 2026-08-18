@@ -12,6 +12,7 @@ from object_apriltag.frame_source import format_frame_source, is_camera_source, 
 from object_apriltag.object_model_edit import load_object_model_document
 from object_apriltag.training_data import (
     DATASET_SPLITS,
+    LABELED_IMAGES_ALL_SAMPLES,
     generate_dataset_from_source,
     load_required_yolo_landmarks,
     require_positive_sample_rate,
@@ -97,17 +98,24 @@ def main() -> None:
     )
     parser.add_argument(
         "--labeled-images",
+        nargs="?",
         type=int,
+        const=LABELED_IMAGES_ALL_SAMPLES,
         help=(
-            "Write annotated JPEG previews for the first N saved Training Samples "
-            "under labeled-images/<split>/."
+            "Write annotated JPEG previews under labeled-images/<split>/. "
+            "Omit the numeric argument to label every saved sample; pass N to label "
+            "only the first N saved samples."
         ),
     )
     args = parser.parse_args()
 
     require_positive_sample_rate(args.sample_rate_hz)
-    if args.labeled_images is not None and args.labeled_images <= 0:
-        raise RuntimeError("--labeled-images must be a positive integer when provided.")
+    if (
+        args.labeled_images is not None
+        and args.labeled_images != LABELED_IMAGES_ALL_SAMPLES
+        and args.labeled_images <= 0
+    ):
+        raise RuntimeError("--labeled-images must be a positive integer when a limit is given.")
     if not args.calibration.exists():
         raise RuntimeError(f"Calibration file not found: {args.calibration}")
     if not args.marker_model.exists():
@@ -169,7 +177,10 @@ def main() -> None:
     print(f"Run name: {args.run_name}")
     print(f"Sample rate: {args.sample_rate_hz:g} Hz")
     if args.labeled_images is not None:
-        print(f"Labeled previews: first {args.labeled_images} saved samples")
+        if args.labeled_images == LABELED_IMAGES_ALL_SAMPLES:
+            print("Labeled previews: all saved samples")
+        else:
+            print(f"Labeled previews: first {args.labeled_images} saved samples")
     print(format_frame_source(args.source))
     if is_camera_source(args.source):
         print(f"Camera preview: target {width}x{height}; press q to stop.")

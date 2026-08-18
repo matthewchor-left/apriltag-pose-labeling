@@ -1,0 +1,142 @@
+{
+  "units": "meters",
+  "coordinate_frame": "marker_model",
+  "keypoint_sources": {
+    "top-center": {
+      "marker_id": 22,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "left-center": {
+      "marker_id": 19,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "front-center": {
+      "marker_id": 28,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "right-center": {
+      "marker_id": 23,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "top-front-left": {
+      "marker_id": 25,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "top-front-right": {
+      "marker_id": 21,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "top-back-left": {
+      "marker_id": 27,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "top-back-right": {
+      "marker_id": 24,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "back-center": {
+      "marker_id": 29,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    },
+    "top-left-center": {
+      "marker_id": 26,
+      "corner": "top_right",
+      "padding_mm": 4.0
+    }
+  },
+  "keypoints": {
+    "top-center": [
+      0.014945920125840988,
+      -0.049100517778467224,
+      0.035672780481840694
+    ],
+    "left-center": [
+      0.013999999776482582,
+      -0.013999999552965164,
+      0.0
+    ],
+    "front-center": [
+      0.05203430832765438,
+      -0.013049756899460072,
+      0.03824172468646907
+    ],
+    "right-center": [
+      0.013622864232969132,
+      -0.014299776010041777,
+      0.07352661191624411
+    ],
+    "top-front-left": [
+      0.05061067229814102,
+      -0.045556984862047886,
+      0.000384195243177227
+    ],
+    "top-front-right": [
+      0.05002096029648752,
+      -0.04919912923370534,
+      0.0720779351194255
+    ],
+    "top-back-left": [
+      -0.0231838383431012,
+      -0.04742003691062752,
+      0.0004239334659564916
+    ],
+    "top-back-right": [
+      -0.02233656876863912,
+      -0.0508793058559338,
+      0.07069407235402429
+    ],
+    "back-center": [
+      -0.022501340889335062,
+      -0.013796444471506486,
+      0.03716377909013699
+    ],
+    "top-left-center": [
+      0.013543171391847082,
+      -0.04616144585722218,
+      0.000719557354254809
+    ]
+  },
+  "skeleton": [
+    [
+      "top-center",
+      "top-front-left"
+    ],
+    [
+      "top-center",
+      "top-front-right"
+    ],
+    [
+      "top-center",
+      "top-back-left"
+    ],
+    [
+      "top-center",
+      "top-back-right"
+    ],
+    [
+      "top-center",
+      "left-center"
+    ],
+    [
+      "top-center",
+      "front-center"
+    ],
+    [
+      "top-center",
+      "right-center"
+    ],
+    [
+      "top-center",
+      "back-center"
+    ]
+  ]
+}

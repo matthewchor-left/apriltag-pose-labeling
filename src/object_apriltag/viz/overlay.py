@@ -521,7 +521,7 @@ def draw_live_hud(
         frame: BGR image to draw on.
         fps: Smoothed frames-per-second estimate.
         layout_reproj_avg: Rolling mean layout reprojection error in pixels.
-        layout_reproj_max: Rolling max layout reprojection error in pixels.
+        layout_reproj_max: Current-frame max layout reprojection error in pixels.
         reference_marker_id: Optional reference marker ID for the extra HUD line.
         reference_marker_camera_m: Optional reference marker camera position in meters.
     """

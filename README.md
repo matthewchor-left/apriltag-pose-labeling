@@ -143,14 +143,15 @@ uv run annotation-tool \
   --sample-rate-hz 2 \
   --dictionary 36h11 \
   --detection-sensitivity relaxed \
-  --labeled-images 5
+  --labeled-images
 ```
 
 Video sources run headlessly to EOF. Live camera shows a preview and stops on **q**.
-Add `--labeled-images N` to write annotated previews for the first `N` saved samples
-under `labeled-images/<split>/`. See [`docs/training-data.md`](docs/training-data.md)
-for acceptance rules, output layout, the fixed 17-landmark contract, and CAD
-self-occlusion visibility (`v=1` / `v=2`).
+Add `--labeled-images` to write annotated previews for every saved sample, or
+`--labeled-images N` for only the first `N`, under `labeled-images/<split>/`.
+See [`docs/training-data.md`](docs/training-data.md) for acceptance rules, output
+layout, the fixed 17-landmark contract, and CAD self-occlusion visibility
+(`v=1` / `v=2`).
 
 ## Core API
 
@@ -202,7 +203,7 @@ When the **reference marker faces the camera**, **+Z** points away from the came
 
 If the object is viewed from the back or from the side, the mapping between model **±Z** and closer/farther relative to the camera changes because the object rotated — the model frame itself does not change.
 
-`ObjectDetector` estimates one **camera-frame** `origin` and `rotation` from all visible marker-model corners with a layout-wide RANSAC PnP solve (requires at least two markers). This rejects inconsistent corner detections instead of averaging independent marker poses.
+`ObjectDetector` estimates one **camera-frame** `origin` and `rotation` from all visible marker-model corners with a layout-wide RANSAC PnP solve (requires at least two markers). Before RANSAC, an observed-image gate requires at least one marker pair whose IPPE plane normals are confidently nonparallel (≥ 20° across every valid branch combination; markers need ≥ 25 px mean edge and ≤ 5% relative reprojection error). That gate uses detected corners and each marker's physical `size_m`, but not layout footprint positions for observability. Parallel observed planes at different depths are conservatively rejected. RANSAC then rejects inconsistent corner detections instead of averaging independent marker poses.
 
 Marker model JSON uses top-level `marker_size_m` as the default physical edge length (meters). Each `markers.<id>` entry may optionally include `size_m` when that sticker differs from the default; omitted `size_m` means the default. Calibration writes `size_m` only for non-default markers. Saved models may include `anchor_marker_ids` when present in the layout metadata. Footprint validation checks each marker against its resolved size.
 
@@ -429,7 +430,7 @@ Live camera and video file CLIs use `--source`: pass a camera device index (e.g.
 | `annotation-tool`                   | `--split`                        | Dataset Split for the whole run: `train` or `val`                                             |
 | `annotation-tool`                   | `--run-name`                     | Unique Dataset Generation Run name                                                            |
 | `annotation-tool`                   | `--sample-rate-hz`               | Save the first Accepted Frame after this interval since the previous save                     |
-| `annotation-tool`                   | `--labeled-images`               | Annotated JPEG previews for the first N saved samples under `labeled-images/<split>/`       |
+| `annotation-tool`                   | `--labeled-images`               | Annotated JPEG previews; omit `N` to label every saved sample, or pass `N` for the first N only |
 | `annotation-tool`                   | `--cad-model`                    | GLB path; loads sibling `cad_registration.json` or auto-fits from `--object-model`            |
 | `object-calibrate-marker-model`     | `--config`                       | Calibration Workspace `config.json`                                                           |
 | `object-calibrate-marker-model`     | `--force`                        | Overwrite existing workspace `marker_model.json`, `object_model.json`, and `diagnostics.json` |

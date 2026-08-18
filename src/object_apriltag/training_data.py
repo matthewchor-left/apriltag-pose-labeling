@@ -65,6 +65,8 @@ YOLO_CLASS_ID = 0
 YOLO_KEYPOINT_VISIBILITY = YOLO_KEYPOINT_VISIBLE
 YOLO_FIELD_COUNT = 56
 JPEG_QUALITY = 95
+# CLI passes this when --labeled-images is set without a numeric limit.
+LABELED_IMAGES_ALL_SAMPLES = -1
 DATASET_SPLITS = frozenset({"train", "val"})
 RUN_REPORT_SCHEMA_VERSION = 1
 DATA_YAML_TEXT = (
@@ -115,6 +117,15 @@ class DatasetGenerationReport:
     samples_saved: int = 0
     rejections: RejectionCounts = field(default_factory=RejectionCounts)
     samples: list[dict[str, str]] = field(default_factory=list)
+
+
+def should_write_labeled_preview(labeled_images_limit: int | None, sample_index: int) -> bool:
+    """Return whether one saved sample should also emit a labeled JPEG preview."""
+    if labeled_images_limit is None:
+        return False
+    if labeled_images_limit == LABELED_IMAGES_ALL_SAMPLES:
+        return True
+    return sample_index < labeled_images_limit
 
 
 def require_positive_sample_rate(sample_rate_hz: float) -> None:
@@ -736,7 +747,7 @@ def _process_due_frame(
         "label": label_rel,
         "time_s": f"{current_time:.6f}",
     }
-    if labeled_images_limit is not None and sample_index < labeled_images_limit:
+    if should_write_labeled_preview(labeled_images_limit, sample_index):
         sample_record["labeled_image"] = write_labeled_training_image(
             output_dir,
             split=split,

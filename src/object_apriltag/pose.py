@@ -18,6 +18,14 @@ PoseTuple = tuple[np.ndarray, np.ndarray]
 GLOBAL_PNP_REPROJECTION_ERROR_PX = 3.0
 GLOBAL_PNP_ITERATIONS = 100
 GLOBAL_PNP_CONFIDENCE = 0.99
+# Observed-image gate before global PnP (see estimate_global_layout_pose).
+GLOBAL_MARKER_MIN_MEAN_EDGE_PX = 25.0
+# Max mean corner reprojection error as a fraction of observed mean marker edge
+# length. 0.05 ~= subpixel corner noise on a tag resolved to ~20+ px/edge.
+GLOBAL_MARKER_MAX_RELATIVE_REPROJ_ERROR = 0.05
+# Minimum angle (degrees) between marker plane normals across every valid IPPE
+# branch combination for a pair to count as confidently nonparallel.
+GLOBAL_MARKER_PAIR_MIN_NORMAL_ANGLE_DEG = 20.0
 
 # object_model.json uses +X left→right and +Z out of the rubber surface.
 
@@ -393,38 +401,251 @@ def _global_pose_correspondences(
     )
 
 
-def _has_multiple_ippe_solutions(
+def _detected_corners_valid(corners: np.ndarray) -> bool:
+    """Return whether detected marker corners are finite and non-degenerate."""
+    points = np.asarray(corners, dtype=np.float64).reshape(4, 2)
+    if points.shape != (4, 2) or not np.all(np.isfinite(points)):
+        return False
+    twice_area = 0.0
+    for index in range(4):
+        x1, y1 = points[index]
+        x2, y2 = points[(index + 1) % 4]
+        twice_area += x1 * y2 - x2 * y1
+    return abs(twice_area) > 1e-6
+
+
+def _mean_marker_edge_length_px(corners: np.ndarray) -> float:
+    """Return the mean side length of a quadrilateral marker in image pixels."""
+    points = np.asarray(corners, dtype=np.float64).reshape(4, 2)
+    edges = np.linalg.norm(np.roll(points, -1, axis=0) - points, axis=1)
+    return float(np.mean(edges))
+
+
+def _mean_reprojection_error_px(
     object_points: np.ndarray,
     image_points: np.ndarray,
+    rvec: np.ndarray,
+    tvec: np.ndarray,
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
-) -> bool:
-    """Return whether IPPE yields multiple pose hypotheses for the correspondences.
+) -> float:
+    projected, _ = cv2.projectPoints(
+        object_points.reshape(-1, 1, 3).astype(np.float32),
+        rvec,
+        tvec,
+        camera_matrix,
+        dist_coeffs,
+    )
+    projected_xy = projected.reshape(-1, 2)
+    return float(np.mean(np.linalg.norm(image_points.reshape(-1, 2) - projected_xy, axis=1)))
 
-    Args:
-        object_points: ``(N, 3)`` 3D points in the object frame.
-        image_points: ``(N, 2)`` corresponding image points.
-        camera_matrix: ``(3, 3)`` camera intrinsics matrix.
-        dist_coeffs: Distortion coefficients for the camera model.
+
+def _marker_corners_in_front_of_camera(
+    object_points: np.ndarray,
+    rvec: np.ndarray,
+    tvec: np.ndarray,
+) -> bool:
+    """Return whether all marker corners lie in front of the camera (Z > 0).
+
+    Runtime IPPE gating uses this cheirality check on the four transformed
+    corners rather than calibration's marker +Z normal heuristic. That matches
+    the trust boundary here: reject physically impossible poses while keeping
+    plane-normal comparisons unsigned (``abs(dot)``) across IPPE branches.
+    """
+    rotation, _ = cv2.Rodrigues(rvec)
+    camera_points = (np.asarray(rotation, dtype=np.float64) @ object_points.T).T
+    camera_points += np.asarray(tvec, dtype=np.float64).reshape(1, 3)
+    return bool(
+        np.all(np.isfinite(camera_points))
+        and np.all(camera_points[:, 2] > 0.0)
+    )
+
+
+def _marker_plane_normal_camera(rotation: np.ndarray) -> np.ndarray | None:
+    normal = np.asarray(rotation, dtype=np.float64) @ np.array([0.0, 0.0, 1.0])
+    norm = float(np.linalg.norm(normal))
+    if norm <= 0.0 or not np.isfinite(norm):
+        return None
+    return normal / norm
+
+
+def _relative_reprojection_error(
+    mean_error_px: float,
+    mean_edge_px: float,
+) -> float | None:
+    if mean_edge_px <= 0.0 or not np.isfinite(mean_edge_px):
+        return None
+    if not np.isfinite(mean_error_px):
+        return None
+    return mean_error_px / mean_edge_px
+
+
+def _ippe_marker_candidates(
+    corners: np.ndarray,
+    marker_size_m: float,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+) -> list[tuple[np.ndarray, np.ndarray, np.ndarray, float]]:
+    """Solve IPPE once and return valid branch hypotheses for the observed gate.
+
+    Each candidate must have finite pose, all four marker corners in front of
+    the camera, and relative reprojection error within
+    ``GLOBAL_MARKER_MAX_RELATIVE_REPROJ_ERROR``. Returns an empty list when
+    corners are non-finite, degenerate, too small, or no branch passes.
 
     Returns:
-        ``True`` when ``cv2.solvePnPGeneric`` reports more than one IPPE solution.
+        List of ``(rvec, rotation, plane_normal, relative_reproj_error)`` tuples.
     """
-    if object_points.shape[0] < 4:
-        return False
+    if not _detected_corners_valid(corners):
+        return []
+
+    mean_edge_px = _mean_marker_edge_length_px(corners)
+    if mean_edge_px < GLOBAL_MARKER_MIN_MEAN_EDGE_PX:
+        return []
+
+    object_points = marker_corner_object_points(marker_size_m)
+    image_points = corners.reshape(4, 2).astype(np.float32)
     try:
-        ok, rvecs, _, _ = cv2.solvePnPGeneric(
-            object_points.astype(np.float32),
-            image_points.astype(np.float32),
+        ok, rvecs, tvecs, _ = cv2.solvePnPGeneric(
+            object_points,
+            image_points,
             camera_matrix,
             dist_coeffs,
             flags=cv2.SOLVEPNP_IPPE,
         )
     except cv2.error:
-        return False
-    if not ok or rvecs is None:
-        return False
-    return len(rvecs) > 1
+        return []
+    if not ok or rvecs is None or tvecs is None:
+        return []
+
+    candidates: list[tuple[np.ndarray, np.ndarray, np.ndarray, float]] = []
+    for rvec, tvec in zip(rvecs, tvecs, strict=True):
+        rvec = np.asarray(rvec, dtype=np.float64).reshape(3)
+        tvec = np.asarray(tvec, dtype=np.float64).reshape(3)
+        if not np.all(np.isfinite(rvec)) or not np.all(np.isfinite(tvec)):
+            continue
+        rotation, _ = cv2.Rodrigues(rvec)
+        rotation = np.asarray(rotation, dtype=np.float64)
+        if not np.all(np.isfinite(rotation)):
+            continue
+        if not _marker_corners_in_front_of_camera(object_points, rvec, tvec):
+            continue
+        plane_normal = _marker_plane_normal_camera(rotation)
+        if plane_normal is None:
+            continue
+        mean_error_px = _mean_reprojection_error_px(
+            object_points, image_points, rvec, tvec, camera_matrix, dist_coeffs
+        )
+        relative_error = _relative_reprojection_error(mean_error_px, mean_edge_px)
+        if relative_error is None or relative_error > GLOBAL_MARKER_MAX_RELATIVE_REPROJ_ERROR:
+            continue
+        candidates.append((rvec, rotation, plane_normal, relative_error))
+    return candidates
+
+
+def _pair_minimum_normal_angle_deg(
+    normals_a: list[np.ndarray],
+    normals_b: list[np.ndarray],
+) -> float | None:
+    """Return the smallest unsigned normal angle across all branch combinations."""
+    if not normals_a or not normals_b:
+        return None
+    min_angle_rad = float(np.pi)
+    for normal_a in normals_a:
+        for normal_b in normals_b:
+            cosine = float(np.clip(abs(np.dot(normal_a, normal_b)), 0.0, 1.0))
+            min_angle_rad = min(min_angle_rad, float(np.arccos(cosine)))
+    return float(np.rad2deg(min_angle_rad))
+
+
+def _observed_marker_plane_gate_passes(
+    detections: list[Detection],
+    layout: MarkerLayout,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+) -> bool:
+    """Return whether observed marker planes are confidently nonparallel.
+
+    Builds per-marker IPPE candidate pools from image corners (one IPPE solve
+    per marker ID), then requires at least one marker pair whose minimum unsigned
+    plane-normal angle across every valid branch combination is at least
+    ``GLOBAL_MARKER_PAIR_MIN_NORMAL_ANGLE_DEG``.
+
+    Duplicate detections for the same marker ID are ignored after the first
+    in-list occurrence with a layout footprint. ``ObjectDetector`` normally emits
+    unique IDs; this policy hardens the trust boundary for arbitrary callers.
+
+    This gate tests **nonparallel observed planes**, not exact non-coplanarity.
+    Parallel planes at different depths remain conservatively rejected because
+    their image-observed normals stay aligned.
+    """
+    reliable: dict[int, tuple[float, list[np.ndarray], list[float]]] = {}
+    processed_marker_ids: set[int] = set()
+    detected_layout_marker_ids = sorted(
+        {
+            marker_id
+            for _, marker_id in detections
+            if marker_id in layout.footprints
+        }
+    )
+    for corners, marker_id in detections:
+        if marker_id not in layout.footprints:
+            continue
+        if marker_id in processed_marker_ids:
+            continue
+        processed_marker_ids.add(marker_id)
+        try:
+            marker_size_m = layout.marker_size_for(marker_id)
+        except KeyError:
+            continue
+        try:
+            candidates = _ippe_marker_candidates(
+                corners, marker_size_m, camera_matrix, dist_coeffs
+            )
+        except (ValueError, TypeError):
+            continue
+        if not candidates:
+            continue
+        mean_edge_px = _mean_marker_edge_length_px(corners)
+        normals = [candidate[2] for candidate in candidates]
+        rel_errors = [candidate[3] for candidate in candidates]
+        reliable[marker_id] = (mean_edge_px, normals, rel_errors)
+
+    print(
+        "[pose observability] "
+        f"markers={detected_layout_marker_ids}"
+    )
+    for marker_id in sorted(reliable):
+        mean_edge_px, _, rel_errors = reliable[marker_id]
+        rel_text = ",".join(f"{error:.4f}" for error in rel_errors)
+        print(
+            "[pose observability] "
+            f"m{marker_id}: edge={mean_edge_px:.1f}px rel_err=[{rel_text}]"
+        )
+
+    reliable_ids = sorted(reliable)
+    confident_pair = False
+    min_angle_threshold = GLOBAL_MARKER_PAIR_MIN_NORMAL_ANGLE_DEG
+    for left_index in range(len(reliable_ids)):
+        for right_index in range(left_index + 1, len(reliable_ids)):
+            marker_a = reliable_ids[left_index]
+            marker_b = reliable_ids[right_index]
+            _, normals_a, _ = reliable[marker_a]
+            _, normals_b, _ = reliable[marker_b]
+            min_angle = _pair_minimum_normal_angle_deg(normals_a, normals_b)
+            if min_angle is None:
+                pair_pass = False
+            else:
+                pair_pass = min_angle >= min_angle_threshold
+                if pair_pass:
+                    confident_pair = True
+            status = "pass" if pair_pass else "fail"
+            angle_text = "n/a" if min_angle is None else f"{min_angle:.1f}"
+            print(
+                "[pose observability] "
+                f"pair({marker_a},{marker_b}): min_angle={angle_text}° {status}"
+            )
+    return confident_pair
 
 
 def estimate_global_layout_pose(
@@ -436,8 +657,9 @@ def estimate_global_layout_pose(
     """Estimate layout-wide object pose from multi-marker RANSAC and LM refinement.
 
     Requires at least two distinct markers with inlier correspondences after
-    RANSAC. Returns ``None`` when ambiguity, insufficient markers, or invalid
-    geometry is detected.
+    RANSAC. Returns ``None`` when observed marker planes are not confidently
+    nonparallel (see ``_observed_marker_plane_gate_passes``), when marker count
+    is insufficient, or when RANSAC or refinement fails.
 
     Args:
         detections: List of ``(corners, marker_id)`` detections.
@@ -455,8 +677,8 @@ def estimate_global_layout_pose(
 
     if len(set(marker_ids.tolist())) < 2:
         return None
-    if _has_multiple_ippe_solutions(
-        object_points, image_points, camera_matrix, dist_coeffs
+    if not _observed_marker_plane_gate_passes(
+        detections, layout, camera_matrix, dist_coeffs
     ):
         return None
     try:

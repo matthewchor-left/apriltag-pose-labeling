@@ -30,6 +30,7 @@ from object_apriltag.training_data import (
     YOLO_FIELD_COUNT,
     YOLO_KEYPOINT_VISIBILITY,
     YOLO_LANDMARK_NAMES,
+    LABELED_IMAGES_ALL_SAMPLES,
     build_training_sample,
     draw_yolo_pose_label,
     ensure_dataset_layout,
@@ -41,6 +42,7 @@ from object_apriltag.training_data import (
     require_positive_sample_rate,
     require_yolo_landmarks,
     serialize_run_report,
+    should_write_labeled_preview,
     validate_run_report,
     write_labeled_training_image,
     write_training_sample,
@@ -485,6 +487,85 @@ class LabeledImageTests(unittest.TestCase):
             self.assertIn("labeled_image", report.samples[0])
             self.assertIn("labeled_image", report.samples[1])
             self.assertNotIn("labeled_image", report.samples[2])
+
+    def test_labeled_images_all_writes_preview_for_every_saved_sample(self) -> None:
+        if not TEST_MARKER_MODEL.exists():
+            self.skipTest("remote marker model fixture is not available")
+        marker_model = load_marker_model(TEST_MARKER_MODEL)
+        camera_matrix, dist_coeffs = synthetic_camera()
+        registration = load_registration_from_payload(identity_registration_payload())
+        cad_model = synthetic_triangle_model()
+        landmarks = synthetic_yolo_landmarks()
+        pose = ObjectPose(origin=np.array([0.0, 0.0, 0.8]), rotation=np.eye(3))
+        frame = np.full((480, 640, 3), 200, dtype=np.uint8)
+        fake_capture = mock.Mock()
+        fake_capture.get.side_effect = [10.0, 0.0, 1000.0, 2000.0, 3000.0]
+        read_state = {"index": 0}
+
+        def fake_read(_capture, _source, *, loop_on_eof: bool = True):
+            if read_state["index"] >= 3:
+                return False, None
+            read_state["index"] += 1
+            return True, frame
+
+        detector = mock.Mock()
+        detector.marker_model = marker_model
+        detector.find_markers.return_value = []
+        detector.fuse.return_value = pose
+        accepted_label = FrameLabel(
+            bbox_xyxy=(10.0, 10.0, 100.0, 100.0),
+            keypoints_xy=np.zeros((17, 2), dtype=np.float64),
+            keypoint_visibility=np.full(17, YOLO_KEYPOINT_VISIBILITY, dtype=np.int32),
+        )
+
+        with (
+            mock.patch(
+                "object_apriltag.training_data.open_frame_source",
+                return_value=fake_capture,
+            ),
+            mock.patch("object_apriltag.training_data.read_frame", side_effect=fake_read),
+            mock.patch(
+                "object_apriltag.training_data.build_training_sample",
+                return_value=accepted_label,
+            ),
+            mock.patch(
+                "object_apriltag.training_data.format_yolo_pose_label",
+                return_value="0 " + " ".join(["0.5"] * 55),
+            ),
+            tempfile.TemporaryDirectory() as tmp,
+        ):
+            output_dir = Path(tmp)
+            report = generate_dataset_from_source(
+                source=Path("clip.mov"),
+                output_dir=output_dir,
+                split="train",
+                run_name="labeled_all_run",
+                sample_rate_hz=1.0,
+                detector=detector,
+                cad_landmarks=landmarks,
+                cad_model=cad_model,
+                registration=registration,
+                camera_matrix=camera_matrix,
+                dist_coeffs=dist_coeffs,
+                image_width=640,
+                image_height=480,
+                inputs={"source": "clip.mov"},
+                show_preview=False,
+                labeled_images_limit=LABELED_IMAGES_ALL_SAMPLES,
+            )
+
+            self.assertEqual(report.samples_saved, 3)
+            labeled_dir = output_dir / "labeled-images" / "train"
+            for index in range(3):
+                self.assertTrue((labeled_dir / f"labeled_all_run_{index}.jpg").exists())
+                self.assertIn("labeled_image", report.samples[index])
+
+    def test_should_write_labeled_preview(self) -> None:
+        self.assertFalse(should_write_labeled_preview(None, 0))
+        self.assertTrue(should_write_labeled_preview(LABELED_IMAGES_ALL_SAMPLES, 99))
+        self.assertTrue(should_write_labeled_preview(2, 0))
+        self.assertTrue(should_write_labeled_preview(2, 1))
+        self.assertFalse(should_write_labeled_preview(2, 2))
 
 
 class SamplingBehaviorTests(unittest.TestCase):

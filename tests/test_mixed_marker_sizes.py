@@ -6,6 +6,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import cv2
 import numpy as np
@@ -32,7 +33,11 @@ from object_apriltag.marker_layout_calibration import (
 from object_apriltag.marker_layout_calibration.finalize import check_quality_gates
 from object_apriltag.marker_layout_calibration.input import parse_marker_size_override_spec
 from object_apriltag.marker_layout_calibration.solve_quality import pair_translation_gate
-from object_apriltag.pose import estimate_global_layout_pose, marker_corner_object_points
+from object_apriltag.pose import (
+    estimate_global_layout_pose,
+    marker_corner_object_points,
+    _ippe_marker_candidates,
+)
 from tests.test_marker_layout_calibration import (
     _default_camera,
     reference_gauge_pose,
@@ -47,6 +52,36 @@ def _square_payload(half: float, z: float = 0.0) -> dict[str, list[float]]:
         "top_right": [half, -half, z],
         "bottom_right": [half, half, z],
         "bottom_left": [-half, half, z],
+    }
+
+
+def _tilted_square_payload(
+    half: float, tilt_x_deg: float, z: float = 0.0
+) -> dict[str, list[float]]:
+    angle = np.deg2rad(tilt_x_deg)
+    rotation = np.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.0, np.cos(angle), -np.sin(angle)],
+            [0.0, np.sin(angle), np.cos(angle)],
+        ],
+        dtype=np.float64,
+    )
+    return {
+        corner: (rotation @ np.array(coords, dtype=np.float64)).tolist()
+        for corner, coords in _square_payload(half, z).items()
+    }
+
+
+def _shift_payload(
+    payload: dict[str, list[float]],
+    x: float = 0.0,
+    y: float = 0.0,
+    z: float = 0.0,
+) -> dict[str, list[float]]:
+    return {
+        corner: [coords[0] + x, coords[1] + y, coords[2] + z]
+        for corner, coords in payload.items()
     }
 
 
@@ -207,9 +242,18 @@ class MixedRuntimeFusionTests(unittest.TestCase):
         object_origin = np.array([0.02, -0.015, 0.62], dtype=np.float64)
         footprints = {
             0: footprint_from_dict(0, _square_payload(default_size / 2)),
-            1: footprint_from_dict(1, _square_payload(small_size / 2, z=0.12)),
-            2: footprint_from_dict(2, _square_payload(default_size / 2, z=0.12)),
-            3: footprint_from_dict(3, _square_payload(small_size / 2, z=0.24)),
+            1: footprint_from_dict(
+                1,
+                _shift_payload(_tilted_square_payload(small_size / 2, 35.0), x=0.12),
+            ),
+            2: footprint_from_dict(
+                2,
+                _shift_payload(_tilted_square_payload(default_size / 2, -25.0), x=-0.12),
+            ),
+            3: footprint_from_dict(
+                3,
+                _shift_payload(_tilted_square_payload(small_size / 2, 20.0), y=0.12),
+            ),
         }
         layout = build_marker_layout(
             0,
@@ -266,10 +310,60 @@ class MixedRuntimeFusionTests(unittest.TestCase):
         swapped_pose = estimate_global_layout_pose(
             swapped, layout, camera_matrix, dist_coeffs
         )
-        self.assertIsNotNone(swapped_pose)
-        swapped_origin, swapped_rotation = swapped_pose
-        assert origin is not None and swapped_origin is not None
-        self.assertGreater(np.linalg.norm(origin - swapped_origin), 1e-3)
+        self.assertIsNone(swapped_pose)
+
+    def test_ippe_marker_candidates_uses_supplied_physical_size(self) -> None:
+        default_size = 0.07
+        small_size = 0.05
+        object_rvec = np.array([0.18, -0.12, 0.07], dtype=np.float64)
+        object_origin = np.array([0.02, -0.015, 0.62], dtype=np.float64)
+        layout = build_marker_layout(
+            0,
+            default_size,
+            {
+                0: footprint_from_dict(0, _square_payload(default_size / 2)),
+                1: footprint_from_dict(
+                    1,
+                    _shift_payload(_tilted_square_payload(small_size / 2, 35.0), x=0.12),
+                ),
+            },
+            marker_sizes_m={0: default_size, 1: small_size},
+        )
+        camera_matrix, dist_coeffs = _default_camera()
+        object_points = np.stack(
+            [
+                layout_point_to_object_frame(point, layout)
+                for point in layout.footprints[1].corners()
+            ]
+        )
+        projected, _ = cv2.projectPoints(
+            object_points,
+            object_rvec,
+            object_origin,
+            camera_matrix,
+            dist_coeffs,
+        )
+        corners = projected.reshape(1, 4, 2).astype(np.float32)
+
+        with mock.patch(
+            "object_apriltag.pose.marker_corner_object_points",
+            wraps=marker_corner_object_points,
+        ) as object_points_mock:
+            _ippe_marker_candidates(corners, small_size, camera_matrix, dist_coeffs)
+        object_points_mock.assert_called_once_with(small_size)
+
+        with mock.patch(
+            "object_apriltag.pose.marker_corner_object_points",
+            wraps=marker_corner_object_points,
+        ) as object_points_mock:
+            _ippe_marker_candidates(corners, default_size, camera_matrix, dist_coeffs)
+        object_points_mock.assert_called_once_with(default_size)
+
+        correct = _ippe_marker_candidates(
+            corners, small_size, camera_matrix, dist_coeffs
+        )
+        self.assertGreater(len(correct), 0)
+        self.assertTrue(all(candidate[3] <= 0.05 for candidate in correct))
 
     def test_detector_rejects_scalar_override_on_mixed_model(self) -> None:
         layout = build_marker_layout(

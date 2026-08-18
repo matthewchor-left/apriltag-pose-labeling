@@ -25,13 +25,14 @@ uv run annotation-tool \
   --sample-rate-hz 2 \
   --dictionary 36h11 \
   --detection-sensitivity relaxed \
-  --labeled-images 5
+  --labeled-images
 ```
 
 Required flags: `--source`, `--calibration`, `--marker-model`, `--cad-model`,
 `--output`, `--split {train,val}`, `--run-name`, `--sample-rate-hz`,
-`--dictionary`, and `--detection-sensitivity`. Optional `--labeled-images N`
-writes annotated previews for the first `N` saved Training Samples.
+`--dictionary`, and `--detection-sensitivity`. Optional `--labeled-images`
+writes annotated previews: omit the numeric argument to label every saved sample,
+or pass `N` to label only the first `N` saved samples.
 
 `--object-model` is required only when sibling `cad_registration.json` next to
 `--cad-model` is absent; registration is then fitted in memory from matching
@@ -55,8 +56,16 @@ and requires the video container to report a finite, positive FPS.
 
 A frame is an Accepted Frame when:
 
-1. `ObjectDetector.fuse()` returns a Fused Object Pose (no extra marker-count or
-   reprojection gate).
+1. `ObjectDetector.fuse()` returns a Fused Object Pose. Global pose rejects frames
+   before RANSAC unless at least one reliable marker pair has **confidently
+   nonparallel observed planes**: each marker needs mean edge length ≥ 25 px,
+   IPPE reprojection error ≤ 5% of that edge length, and every valid IPPE branch
+   combination for some pair must differ in plane normal by at least 20° (unsigned).
+   This gate uses **image observations** for plane geometry; it does **not** use
+   layout-model SVD or relative 3D footprint positions for observability. It still
+   trusts each marker's physical `size_m` from the Marker Model when solving IPPE.
+   Parallel planes at different depths are conservatively rejected. There is no
+   extra marker-count or reprojection gate beyond that.
 2. All 17 fixed CAD landmarks project finitely, in front of the camera, and
    inside the image bounds.
 3. The clipped axis-aligned bounds of the projected CAD mesh silhouette are
@@ -75,15 +84,16 @@ Cropping, inpainting, and eraser masking are out of scope for this stage.
   data.yaml
   images/<split>/<run-name>_<sample-index>.jpg
   labels/<split>/<run-name>_<sample-index>.txt
-  labeled-images/<split>/<run-name>_<sample-index>.jpg   # optional, first N saved samples
+  labeled-images/<split>/<run-name>_<sample-index>.jpg   # optional labeled previews
   runs/<run-name>.json
 ```
 
 Saved images are raw full-resolution JPEG quality 95. Preview rendering never
-contaminates saved files. When `--labeled-images N` is set, the first `N` saved
-Training Samples also write annotated JPEG previews under `labeled-images/<split>/`
-with the generated bounding box and 17 named keypoints drawn on a copy of the raw
-frame. Visible keypoints (`v=2`) are orange; CAD-self-occluded keypoints (`v=1`)
+contaminates saved files. When `--labeled-images` is set, annotated JPEG
+previews are written under `labeled-images/<split>/` with the generated bounding
+box and 17 named keypoints drawn on a copy of the raw frame. Omit the numeric
+argument to label every saved sample, or pass `N` to label only the first `N`.
+Visible keypoints (`v=2`) are orange; CAD-self-occluded keypoints (`v=1`)
 are red, with a small legend in the preview image.
 
 `data.yaml` is created on first use and must match the schema below on later
