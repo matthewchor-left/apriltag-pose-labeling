@@ -9,7 +9,12 @@ import numpy as np
 from object_apriltag.layout import build_marker_layout
 
 from object_apriltag.marker_layout_calibration.input import object_points_by_marker
-from object_apriltag.marker_layout_calibration.solve_primitives import MarkerPair, PairConsensus, connected_marker_ids
+from object_apriltag.marker_layout_calibration.solve_primitives import (
+    CalibrationSolveDiagnostics,
+    MarkerPair,
+    PairConsensus,
+    connected_marker_ids,
+)
 from object_apriltag.marker_layout_calibration.solve_quality import (
     build_quality_report,
     collect_quality_gate_failures,
@@ -180,6 +185,7 @@ def emit_partial_calibration_result(
     best_effort: bool,
     anchor_marker_ids: Sequence[int] | None = None,
     quality: CalibrationQualityReport | None = None,
+    solve_diagnostics: CalibrationSolveDiagnostics | None = None,
 ) -> CalibrationResult:
     """Re-run calibration on the connected subset when partial output is allowed.
 
@@ -200,6 +206,7 @@ def emit_partial_calibration_result(
         best_effort: Whether best-effort policy applies to the subset solve.
         anchor_marker_ids: Optional explicit anchor-core marker IDs.
         quality: Optional quality report to preserve when subset re-solve is skipped.
+        solve_diagnostics: Optional timing collector shared with the parent solve.
 
     Returns:
         A ``partial`` result when the subset solve succeeds, or ``refused`` when
@@ -243,6 +250,11 @@ def emit_partial_calibration_result(
             filtered_anchors = None
     from object_apriltag.marker_layout_calibration.pipeline import calibrate_marker_layout
 
+    subset_diagnostics = (
+        solve_diagnostics.scoped("partial_subset_resolve")
+        if solve_diagnostics is not None
+        else None
+    )
     subset_result = calibrate_marker_layout(
         observations,
         camera_matrix,
@@ -255,6 +267,7 @@ def emit_partial_calibration_result(
         marker_sizes_m=emitted_sizes,
         best_effort=best_effort,
         partial_output=False,
+        solve_diagnostics=subset_diagnostics,
     )
     if subset_result.layout is None:
         return CalibrationResult(
@@ -296,6 +309,7 @@ def partial_from_pair_consensus_or_refuse(
     best_effort: bool,
     partial_output: bool,
     anchor_marker_ids: Sequence[int] | None,
+    solve_diagnostics: CalibrationSolveDiagnostics | None = None,
 ) -> CalibrationResult:
     """Attempt partial recovery after pair-consensus failure, or return a refused result.
 
@@ -316,6 +330,7 @@ def partial_from_pair_consensus_or_refuse(
         best_effort: Whether best-effort partial output is enabled.
         partial_output: Whether the caller requested partial output on failure.
         anchor_marker_ids: Optional explicit anchor-core marker IDs.
+        solve_diagnostics: Optional timing collector shared with a subset re-solve.
 
     Returns:
         A partial calibration result when ``partial_output`` and ``best_effort`` are
@@ -341,6 +356,7 @@ def partial_from_pair_consensus_or_refuse(
             best_effort=best_effort,
             anchor_marker_ids=anchor_marker_ids,
             quality=quality,
+            solve_diagnostics=solve_diagnostics,
         )
     return CalibrationResult(None, quality, failure_message)
 
@@ -364,6 +380,7 @@ def partial_after_missing_accepted_frames_or_refuse(
     best_effort: bool,
     partial_output: bool,
     anchor_marker_ids: Sequence[int] | None,
+    solve_diagnostics: CalibrationSolveDiagnostics | None = None,
 ) -> CalibrationResult:
     """Attempt partial recovery when some markers lack accepted-frame observations.
 
@@ -385,6 +402,7 @@ def partial_after_missing_accepted_frames_or_refuse(
         best_effort: Whether best-effort partial output is enabled.
         partial_output: Whether the caller requested partial output on failure.
         anchor_marker_ids: Optional explicit anchor-core marker IDs.
+        solve_diagnostics: Optional timing collector shared with a subset re-solve.
 
     Returns:
         A partial calibration result when ``partial_output`` and ``best_effort`` are
@@ -409,6 +427,7 @@ def partial_after_missing_accepted_frames_or_refuse(
             best_effort=best_effort,
             anchor_marker_ids=anchor_marker_ids,
             quality=quality,
+            solve_diagnostics=solve_diagnostics,
         )
     return CalibrationResult(None, quality, failure_message)
 

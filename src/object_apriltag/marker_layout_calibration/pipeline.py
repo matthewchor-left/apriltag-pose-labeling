@@ -30,6 +30,7 @@ from object_apriltag.marker_layout_calibration.continuous_refinement import (
 from object_apriltag.marker_layout_calibration import discrete_graph
 from object_apriltag.marker_layout_calibration.discrete_graph import (
     collect_pair_hypotheses,
+    connectivity_failure_message,
     connected_marker_ids_from_pairs,
     estimate_frame_candidates,
     estimate_pair_consensus,
@@ -119,6 +120,40 @@ def _auto_select_reference_marker(
             f"anchor_marker_ids {sorted(anchor_ids)}."
         )
     return selected, None
+
+
+def _reconcile_auto_reference_after_consensus(
+    *,
+    auto_reference: bool,
+    pair_consensus: Mapping[tuple[int, int], PairConsensus],
+    expected_ids: Sequence[int],
+    reference_marker_id: int,
+    keypoint_sources: Mapping[str, tuple[int, str, float]] | None,
+    anchor_ids: Sequence[int] | None,
+    connectivity_stage: str,
+    connectivity_failure: str | None,
+) -> tuple[int, str | None, str | None]:
+    """Re-select an automatic reference and refresh connectivity failure state."""
+    if not auto_reference or not pair_consensus:
+        return reference_marker_id, connectivity_failure, None
+    selected, auto_failure = _auto_select_reference_marker(
+        list(pair_consensus),
+        expected_ids,
+        keypoint_sources,
+        anchor_ids,
+    )
+    if auto_failure is not None:
+        return reference_marker_id, connectivity_failure, auto_failure
+    assert selected is not None
+    if connectivity_failure is None:
+        return selected, None, None
+    missing = sorted(missing_from_graph(pair_consensus, list(expected_ids), selected))
+    refreshed_failure = (
+        connectivity_failure_message(connectivity_stage, selected, missing)
+        if missing
+        else None
+    )
+    return selected, refreshed_failure, None
 
 
 def calibrate_marker_layout(
@@ -600,6 +635,7 @@ def calibrate_marker_layout(
                 best_effort=best_effort,
                 partial_output=partial_output,
                 anchor_marker_ids=anchor_ids,
+                solve_diagnostics=solve_diagnostics,
             )
         markers_in_accepted_frames = markers_in_frame_indices(
             normalized_observations,
@@ -643,6 +679,7 @@ def calibrate_marker_layout(
                 best_effort=best_effort,
                 partial_output=partial_output,
                 anchor_marker_ids=anchor_ids,
+                solve_diagnostics=solve_diagnostics,
             )
         assert preinitialized_marker_poses is not None
         marker_poses = preinitialized_marker_poses
@@ -718,6 +755,20 @@ def calibrate_marker_layout(
 
     dropped_edges = list(dropped_pair_edges)
     pair_failure = pair_failure if use_legacy_assignment else None
+    reference_marker_id, pair_failure, auto_failure = (
+        _reconcile_auto_reference_after_consensus(
+            auto_reference=auto_reference and use_legacy_assignment,
+            pair_consensus=pair_consensus,
+            expected_ids=expected_ids,
+            reference_marker_id=reference_marker_id,
+            keypoint_sources=keypoint_sources,
+            anchor_ids=anchor_ids,
+            connectivity_stage="initial_consensus",
+            connectivity_failure=pair_failure,
+        )
+    )
+    if auto_failure is not None:
+        return CalibrationResult(None, None, auto_failure)
     if pair_failure is not None:
         missing = missing_from_graph(pair_consensus, expected_ids, reference_marker_id)
         return partial_from_pair_consensus_or_refuse(
@@ -748,6 +799,7 @@ def calibrate_marker_layout(
             best_effort=best_effort,
             partial_output=partial_output,
             anchor_marker_ids=anchor_ids,
+            solve_diagnostics=solve_diagnostics,
         )
 
     assigned_candidates, rejected_frames, assignment_rejections, fallback_assignments = (
@@ -808,6 +860,20 @@ def calibrate_marker_layout(
         restored_pair_edges=restored_pair_edges,
     )
     dropped_edges.extend(assignment_drops)
+    reference_marker_id, assignment_support_failure, auto_failure = (
+        _reconcile_auto_reference_after_consensus(
+            auto_reference=auto_reference,
+            pair_consensus=pair_consensus,
+            expected_ids=expected_ids,
+            reference_marker_id=reference_marker_id,
+            keypoint_sources=keypoint_sources,
+            anchor_ids=anchor_ids,
+            connectivity_stage="assignment_support",
+            connectivity_failure=assignment_support_failure,
+        )
+    )
+    if auto_failure is not None:
+        return CalibrationResult(None, None, auto_failure)
     if assignment_support_failure is not None:
         return partial_from_pair_consensus_or_refuse(
             observations,
@@ -840,6 +906,7 @@ def calibrate_marker_layout(
             best_effort=best_effort,
             partial_output=partial_output,
             anchor_marker_ids=anchor_ids,
+            solve_diagnostics=solve_diagnostics,
         )
 
     markers_in_accepted_frames = markers_in_frame_indices(normalized_observations, accepted_frames)
@@ -877,19 +944,8 @@ def calibrate_marker_layout(
             best_effort=best_effort,
             partial_output=partial_output,
             anchor_marker_ids=anchor_ids,
+            solve_diagnostics=solve_diagnostics,
         )
-
-    if auto_reference and use_legacy_assignment:
-        selected_reference, auto_failure = _auto_select_reference_marker(
-            list(pair_consensus.keys()),
-            expected_ids,
-            keypoint_sources,
-            anchor_ids,
-        )
-        if auto_failure is not None:
-            return CalibrationResult(None, None, auto_failure)
-        assert selected_reference is not None
-        reference_marker_id = selected_reference
 
     ref_rotation, ref_translation = reference_gauge_pose(marker_sizes_m[reference_marker_id])
     marker_poses = initialize_marker_poses(
@@ -1143,6 +1199,7 @@ def _run_continuous_refinement(
             best_effort=best_effort,
             anchor_marker_ids=anchor_ids,
             quality=quality,
+            solve_diagnostics=refinement_context.solve_diagnostics,
         )
     finalized = finalize_solved_calibration(
         marker_poses,

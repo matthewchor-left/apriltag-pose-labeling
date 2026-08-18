@@ -18,7 +18,7 @@
   },
   "execution": {
     "mode": "benchmark",
-    "sample_rate_hz": 10.0,
+    "sample_rate_hz": 30.0,
     "frame_selection": "sharpest"
   },
   "solver": {
@@ -26,7 +26,7 @@
     "discrete_method": "rotation_consistent",
     "anchor_stop_after_expansion": false,
     "partial_output": true,
-    "min_inliers_per_edge": 20,
+    "min_inliers_per_edge": 5,
     "reprojection_rms_gate_px": 2.0,
     "pair_translation_rms_gate_ratio": 0.1,
     "pair_rotation_rms_gate_deg": 5.0,

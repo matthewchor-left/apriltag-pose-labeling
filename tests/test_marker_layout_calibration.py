@@ -1886,6 +1886,36 @@ class PartialOutputCalibrationTests(unittest.TestCase):
         self.settings = CalibrationSettings(min_inliers_per_edge=20)
         self.reference_marker_id = 0
 
+    def _isolated_raw_reference_observations(
+        self,
+    ) -> tuple[list[FrameObservation], dict[str, tuple[int, str, float]]]:
+        line = _line_marker_poses(4, marker_size_m=self.marker_size_m, spacing_m=0.12)
+        marker_poses = {
+            19: (
+                line[0][0],
+                line[0][1] + np.array([-0.12, 0.0, 0.0], dtype=np.float64),
+            ),
+            20: line[0],
+            21: line[1],
+            22: line[2],
+            23: line[3],
+        }
+        observations = synthesize_observations(
+            marker_poses,
+            frame_count=30,
+            marker_size_m=self.marker_size_m,
+            visible_markers=lambda frame_index: (
+                [19, 20, 21, 22, 23]
+                if frame_index % 3 == 0
+                else [20, 21, 22, 23]
+            ),
+        )
+        return observations, {
+            "left": (19, "top_right", 0.004),
+            "mid": (21, "top_right", 0.004),
+            "end": (23, "top_right", 0.004),
+        }
+
     def _raw_disconnected_observations(self) -> list[FrameObservation]:
         marker_poses = {
             **_triangle_marker_poses(self.marker_size_m),
@@ -1975,6 +2005,48 @@ class PartialOutputCalibrationTests(unittest.TestCase):
             "not_connected_in_raw_observations",
         )
 
+    def test_auto_reference_reselected_after_consensus_isolates_raw_choice(self) -> None:
+        observations, keypoint_sources = self._isolated_raw_reference_observations()
+        result = calibrate_marker_layout(
+            observations,
+            *_default_camera(),
+            expected_marker_ids=[19, 20, 21, 22, 23],
+            reference_marker_id=None,
+            marker_size_m=self.marker_size_m,
+            settings=CalibrationSettings(
+                min_inliers_per_edge=20,
+                discrete_method="rotation_consistent",
+            ),
+            best_effort=True,
+            partial_output=True,
+            keypoint_sources=keypoint_sources,
+        )
+
+        self.assertIsNone(result.failure_reason, msg=result.failure_reason)
+        assert result.layout is not None
+        self.assertNotEqual(result.layout.reference_marker_id, 19)
+        self.assertNotIn(19, result.layout.marker_ids)
+
+    def test_explicit_reference_keeps_isolated_consensus_root(self) -> None:
+        observations, _ = self._isolated_raw_reference_observations()
+        result = calibrate_marker_layout(
+            observations,
+            *_default_camera(),
+            expected_marker_ids=[19, 20, 21, 22, 23],
+            reference_marker_id=19,
+            marker_size_m=self.marker_size_m,
+            settings=CalibrationSettings(
+                min_inliers_per_edge=20,
+                discrete_method="rotation_consistent",
+            ),
+            best_effort=True,
+            partial_output=True,
+        )
+
+        self.assertIsNone(result.layout)
+        self.assertEqual(result.outcome, "refused")
+        self.assertIn("reference marker 19", result.failure_reason or "")
+
     def test_partial_model_roundtrips_and_loads(self) -> None:
         observations = self._raw_disconnected_observations()
         result = calibrate_marker_layout(
@@ -2025,6 +2097,47 @@ class PartialOutputCalibrationTests(unittest.TestCase):
         self.assertEqual(result.outcome, "refused")
         self.assertIsNotNone(result.quality)
         self.assertIn("reference", (result.failure_reason or "").lower())
+
+    def test_partial_subset_resolve_records_prefixed_solve_diagnostics(self) -> None:
+        from object_apriltag.marker_layout_calibration.finalize import (
+            emit_partial_calibration_result,
+        )
+
+        observations = synthesize_observations(
+            _two_marker_poses(self.marker_size_m),
+            frame_count=25,
+            marker_size_m=self.marker_size_m,
+        )
+        diagnostics = CalibrationSolveDiagnostics()
+        result = emit_partial_calibration_result(
+            observations,
+            *_default_camera(),
+            requested_marker_ids=[0, 1, 2],
+            connected_ids={0, 1},
+            omitted={2: "not_connected_to_reference"},
+            reference_marker_id=self.reference_marker_id,
+            marker_size_m=self.marker_size_m,
+            marker_sizes_m=uniform_marker_sizes([0, 1, 2], self.marker_size_m),
+            settings=self.settings,
+            best_effort=True,
+            solve_diagnostics=diagnostics,
+        )
+
+        self.assertEqual(result.outcome, "partial")
+        self.assertTrue(diagnostics.solve_stages_seconds)
+        self.assertTrue(
+            all(
+                stage.startswith("partial_subset_resolve.")
+                for stage in diagnostics.solve_stages_seconds
+            )
+        )
+        self.assertTrue(diagnostics.optimizer_runs)
+        self.assertTrue(
+            all(
+                run["stage"].startswith("partial_subset_resolve.")
+                for run in diagnostics.optimizer_runs
+            )
+        )
 
     def test_partial_output_validates_marker_sizes_for_emitted_subset(self) -> None:
         observations = self._raw_disconnected_observations()

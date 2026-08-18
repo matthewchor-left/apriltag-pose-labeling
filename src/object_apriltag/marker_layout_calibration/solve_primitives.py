@@ -109,6 +109,20 @@ class CalibrationSolveDiagnostics:
 
     solve_stages_seconds: dict[str, float] = field(default_factory=dict)
     optimizer_runs: list[dict[str, Any]] = field(default_factory=list)
+    stage_prefix: str = ""
+
+    def scoped(self, prefix: str) -> CalibrationSolveDiagnostics:
+        """Share this collector while prefixing stage names for a nested solve."""
+        normalized = prefix if prefix.endswith(".") else f"{prefix}."
+        return CalibrationSolveDiagnostics(
+            solve_stages_seconds=self.solve_stages_seconds,
+            optimizer_runs=self.optimizer_runs,
+            stage_prefix=f"{self.stage_prefix}{normalized}",
+        )
+
+    def stage_name(self, stage: str) -> str:
+        """Return a stage name qualified for this collector's scope."""
+        return f"{self.stage_prefix}{stage}"
 
 
 @contextmanager
@@ -133,8 +147,9 @@ def timed_solve_stage(
         yield
     finally:
         elapsed = time.perf_counter() - start
-        diagnostics.solve_stages_seconds[stage] = (
-            diagnostics.solve_stages_seconds.get(stage, 0.0) + elapsed
+        qualified_stage = diagnostics.stage_name(stage)
+        diagnostics.solve_stages_seconds[qualified_stage] = (
+            diagnostics.solve_stages_seconds.get(qualified_stage, 0.0) + elapsed
         )
 
 
@@ -159,8 +174,9 @@ def record_optimizer_run(
     """
     if diagnostics is None or stage_name is None:
         return
+    qualified_stage = diagnostics.stage_name(stage_name)
     entry: dict[str, Any] = {
-        "stage": stage_name,
+        "stage": qualified_stage,
         "active_frame_count": active_frame_count,
         "inlier_corner_count": inlier_corner_count,
     }

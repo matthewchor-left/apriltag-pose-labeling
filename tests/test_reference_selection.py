@@ -19,7 +19,7 @@ class ReferenceSelectionTests(unittest.TestCase):
             "right-center": (22, "top_right", 0.004),
             "back": (28, "top_right", 0.004),
         }
-        # Rooted at 22 reaches {22,23,19,28} -> 4 keypoint tags; 19 only reaches 2 tags.
+        # All roots reach four tags; marker 22 wins because two sources use it directly.
         self.assertEqual(
             select_reference_marker(pairs, expected_ids, keypoint_sources),
             22,
@@ -44,6 +44,18 @@ class ReferenceSelectionTests(unittest.TestCase):
         self.assertEqual(
             select_reference_marker(pairs, expected_ids, {}),
             5,
+        )
+
+    def test_skips_isolated_expected_id_when_pair_graph_has_edges(self) -> None:
+        pairs = [(22, 23), (23, 24)]
+        expected_ids = [19, 22, 23, 24]
+        keypoint_sources = {
+            "isolated": (19, "top_left", 0.0),
+            "connected": (22, "top_left", 0.0),
+        }
+        self.assertEqual(
+            select_reference_marker(pairs, expected_ids, keypoint_sources),
+            22,
         )
 
 

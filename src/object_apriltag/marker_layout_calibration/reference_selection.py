@@ -42,7 +42,13 @@ def select_reference_marker(
         ValueError: When ``expected_ids`` is empty.
     """
     pair_list = list(pairs)
-    candidates = sorted({int(marker_id) for marker_id in expected_ids})
+    all_candidates = sorted({int(marker_id) for marker_id in expected_ids})
+    markers_in_pairs = {marker_id for pair in pair_list for marker_id in pair}
+    candidates = (
+        [marker_id for marker_id in all_candidates if marker_id in markers_in_pairs]
+        if markers_in_pairs
+        else all_candidates
+    )
     if not candidates:
         raise ValueError("expected_ids is empty.")
 
