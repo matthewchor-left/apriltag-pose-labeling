@@ -12,17 +12,23 @@ from unittest import mock
 import numpy as np
 
 from object_apriltag.cad import (
+    CadLandmarks,
     load_cad_model,
     load_cad_registration,
 )
 from object_apriltag.detector import ObjectPose
 from object_apriltag.layout import load_marker_model
 from object_apriltag.viz.cad_overlay import (
+    _CAD_ONLY_LANDMARK_COLOR_BGR,
     _collect_visible_parts,
+    cad_only_landmark_names,
     cad_points_to_layout,
     draw_cad_model_overlay,
+    draw_cad_only_landmarks,
     layout_points_to_camera,
+    object_model_landmark_names,
     part_color_bgr,
+    project_cad_landmarks_to_image,
     project_camera_points,
     render_cad_model_view,
 )
@@ -32,6 +38,7 @@ NEXPLAYGROUND_GLB = REPO_ROOT / "config/Model/CAD/nexplayground_sim.glb"
 REMOTE_STATIC_MARKER_MODEL = (
     REPO_ROOT / "config/Model/remote_static_1_tag/marker_model.json"
 )
+REMOTE_MARKER_MODEL = REPO_ROOT / "config/Model/remote/marker_model.json"
 
 
 def synthetic_camera() -> tuple[np.ndarray, np.ndarray]:
@@ -532,6 +539,136 @@ class CadOverlayRenderTests(unittest.TestCase):
     def test_part_colors_are_distinct_and_stable(self) -> None:
         self.assertEqual(part_color_bgr("A"), part_color_bgr("A"))
         self.assertNotEqual(part_color_bgr("A"), part_color_bgr("B"))
+
+
+class CadOnlyLandmarkOverlayTests(unittest.TestCase):
+    def test_object_model_landmark_names_unions_keypoint_sources_and_keypoints(self) -> None:
+        document = {
+            "keypoint_sources": {"shared": {}, "source_only": {}},
+            "keypoints": {"shared": [0.0, 0.0, 0.0], "keypoint_only": [1.0, 0.0, 0.0]},
+        }
+        self.assertEqual(
+            object_model_landmark_names(document),
+            frozenset({"shared", "source_only", "keypoint_only"}),
+        )
+
+    def test_cad_only_landmark_names_excludes_shared_names(self) -> None:
+        cad_landmarks = CadLandmarks(
+            landmarks={
+                "shared": np.array([0.0, 0.0, 0.0]),
+                "cad_only_a": np.array([0.1, 0.0, 0.0]),
+                "cad_only_b": np.array([0.0, 0.1, 0.0]),
+            }
+        )
+        self.assertEqual(
+            cad_only_landmark_names(cad_landmarks, frozenset({"shared"})),
+            ("cad_only_a", "cad_only_b"),
+        )
+
+    def test_project_cad_landmarks_skips_points_behind_camera(self) -> None:
+        if not REMOTE_MARKER_MODEL.exists():
+            self.skipTest("remote marker model fixture is not available")
+        marker_model = load_marker_model(REMOTE_MARKER_MODEL)
+        registration = load_cad_registration_from_payload(identity_registration_payload())
+        pose = ObjectPose(
+            origin=np.array([0.0, 0.0, 0.8], dtype=np.float64),
+            rotation=np.eye(3, dtype=np.float64),
+        )
+        camera_matrix, dist_coeffs = synthetic_camera()
+        landmarks = {
+            "front": np.array([0.0, 0.0, 0.8], dtype=np.float64),
+            "behind": np.array([0.0, 0.0, -0.2], dtype=np.float64),
+        }
+        with mock.patch(
+            "object_apriltag.viz.cad_overlay.layout_points_to_camera",
+            return_value=np.array(
+                [
+                    [0.0, 0.0, 0.5],
+                    [0.0, 0.0, -0.2],
+                ],
+                dtype=np.float64,
+            ),
+        ):
+            projected = project_cad_landmarks_to_image(
+                landmarks,
+                ("front", "behind"),
+                pose,
+                camera_matrix,
+                dist_coeffs,
+                marker_model,
+                registration,
+            )
+
+        self.assertIsNotNone(projected["front"])
+        self.assertIsNone(projected["behind"])
+
+    def test_project_cad_landmarks_returns_image_point_when_in_front_of_camera(self) -> None:
+        if not REMOTE_MARKER_MODEL.exists():
+            self.skipTest("remote marker model fixture is not available")
+        marker_model = load_marker_model(REMOTE_MARKER_MODEL)
+        registration = load_cad_registration_from_payload(identity_registration_payload())
+        pose = ObjectPose(
+            origin=np.array([0.0, 0.0, 0.8], dtype=np.float64),
+            rotation=np.eye(3, dtype=np.float64),
+        )
+        camera_matrix, dist_coeffs = synthetic_camera()
+        landmarks = {"visible": np.array([0.0, 0.0, 0.8], dtype=np.float64)}
+        with mock.patch(
+            "object_apriltag.viz.cad_overlay.layout_points_to_camera",
+            return_value=np.array([[0.0, 0.0, 0.5]], dtype=np.float64),
+        ):
+            projected = project_cad_landmarks_to_image(
+                landmarks,
+                ("visible",),
+                pose,
+                camera_matrix,
+                dist_coeffs,
+                marker_model,
+                registration,
+            )
+
+        self.assertEqual(projected["visible"], (320, 240))
+
+    def test_draw_cad_only_landmarks_uses_orange_for_cad_only_names(self) -> None:
+        if not REMOTE_MARKER_MODEL.exists():
+            self.skipTest("remote marker model fixture is not available")
+        marker_model = load_marker_model(REMOTE_MARKER_MODEL)
+        registration = load_cad_registration_from_payload(identity_registration_payload())
+        pose = ObjectPose(
+            origin=np.array([0.0, 0.0, 0.8], dtype=np.float64),
+            rotation=np.eye(3, dtype=np.float64),
+        )
+        camera_matrix, dist_coeffs = synthetic_camera()
+        cad_landmarks = CadLandmarks(
+            landmarks={
+                "shared": np.array([0.0, 0.0, 0.8], dtype=np.float64),
+                "cad_only": np.array([0.02, 0.0, 0.8], dtype=np.float64),
+            }
+        )
+        cad_only_xy = (320, 240)
+
+        frame = np.full((480, 640, 3), 255, dtype=np.uint8)
+        untouched = frame[0, 0].copy()
+        with mock.patch(
+            "object_apriltag.viz.cad_overlay.project_cad_landmarks_to_image",
+            return_value={"cad_only": cad_only_xy},
+        ) as project_mock:
+            draw_cad_only_landmarks(
+                frame,
+                pose,
+                camera_matrix,
+                dist_coeffs,
+                marker_model,
+                cad_landmarks,
+                registration,
+                frozenset({"shared"}),
+            )
+
+        project_mock.assert_called_once()
+        projected_names = project_mock.call_args[0][1]
+        self.assertEqual(projected_names, ("cad_only",))
+        np.testing.assert_array_equal(frame[0, 0], untouched)
+        np.testing.assert_array_equal(frame[cad_only_xy[1], cad_only_xy[0]], _CAD_ONLY_LANDMARK_COLOR_BGR)
 
 
 class CadModelViewRenderTests(unittest.TestCase):

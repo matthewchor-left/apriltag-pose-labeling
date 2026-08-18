@@ -3,18 +3,22 @@
 from __future__ import annotations
 
 import zlib
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import cv2
 import numpy as np
 
-from object_apriltag.cad import CadModel, CadRegistration
+from object_apriltag.cad import CadLandmarks, CadModel, CadRegistration
 from object_apriltag.detector import ObjectPose
 from object_apriltag.layout import (
     MarkerLayout,
     layout_point_to_camera,
 )
+from object_apriltag.viz.projection import opencv_image_point
 
 _CAMERA_NEAR_M = 1e-4
+_CAD_ONLY_LANDMARK_COLOR_BGR = (0, 165, 255)
 
 _PART_COLORS_BGR: tuple[tuple[int, int, int], ...] = (
     (60, 76, 231),
@@ -86,6 +90,148 @@ def layout_points_to_camera(
         ],
         axis=0,
     )
+
+
+def object_model_landmark_names(document: Mapping[str, Any]) -> frozenset[str]:
+    """Collect landmark and keypoint names declared in an object model document.
+
+    Args:
+        document: Parsed object model JSON.
+
+    Returns:
+        Names from ``keypoint_sources`` and ``keypoints`` when present.
+    """
+    names: set[str] = set()
+    for field in ("keypoint_sources", "keypoints"):
+        raw = document.get(field)
+        if isinstance(raw, dict):
+            names.update(str(name) for name in raw)
+    return frozenset(names)
+
+
+def cad_only_landmark_names(
+    cad_landmarks: CadLandmarks,
+    object_model_names: frozenset[str],
+) -> tuple[str, ...]:
+    """Return CAD landmark names absent from the supplied object model.
+
+    Args:
+        cad_landmarks: Named CAD landmark positions.
+        object_model_names: Landmark/keypoint names declared by the object model.
+
+    Returns:
+        Sorted CAD-only landmark names.
+    """
+    return tuple(sorted(set(cad_landmarks.landmarks) - object_model_names))
+
+
+def project_cad_landmarks_to_image(
+    landmarks_cad: Mapping[str, np.ndarray],
+    names: Sequence[str],
+    pose: ObjectPose,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+    marker_model: MarkerLayout,
+    registration: CadRegistration,
+) -> dict[str, tuple[int, int] | None]:
+    """Project named CAD landmarks into image coordinates.
+
+    Args:
+        landmarks_cad: CAD-frame landmark positions keyed by name.
+        names: Landmark names to project.
+        pose: Fused object pose in the camera frame.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Distortion coefficients.
+        marker_model: Marker layout defining the object reference frame.
+        registration: CAD-to-marker_model registration transform.
+
+    Returns:
+        OpenCV-safe pixel coordinates keyed by name, or ``None`` when unusable.
+    """
+    if not names:
+        return {}
+
+    points_cad = np.stack([np.asarray(landmarks_cad[name], dtype=np.float64).reshape(3) for name in names])
+    layout_points = cad_points_to_layout(points_cad, registration)
+    camera_points = layout_points_to_camera(layout_points, pose, marker_model)
+    image_points = project_camera_points(camera_points, camera_matrix, dist_coeffs)
+
+    projected: dict[str, tuple[int, int] | None] = {}
+    for index, name in enumerate(names):
+        if camera_points[index, 2] <= _CAMERA_NEAR_M:
+            projected[name] = None
+            continue
+        projected[name] = opencv_image_point(image_points[index])
+    return projected
+
+
+def draw_cad_only_landmarks(
+    frame: np.ndarray,
+    pose: ObjectPose,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+    marker_model: MarkerLayout,
+    cad_landmarks: CadLandmarks,
+    registration: CadRegistration,
+    object_model_names: frozenset[str],
+) -> None:
+    """Draw CAD landmarks missing from the object model as orange markers.
+
+    Args:
+        frame: BGR image to draw on.
+        pose: Fused object pose in the camera frame.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Distortion coefficients.
+        marker_model: Marker layout defining the object reference frame.
+        cad_landmarks: Named CAD landmark positions.
+        registration: CAD-to-marker_model registration transform.
+        object_model_names: Landmark/keypoint names declared by the object model.
+
+    Raises:
+        ValueError: If ``frame`` is not a BGR image.
+    """
+    if frame.ndim != 3 or frame.shape[2] != 3:
+        raise ValueError("CAD-only landmark frame must be a BGR image with shape (H, W, 3).")
+
+    names = cad_only_landmark_names(cad_landmarks, object_model_names)
+    projected = project_cad_landmarks_to_image(
+        cad_landmarks.landmarks,
+        names,
+        pose,
+        camera_matrix,
+        dist_coeffs,
+        marker_model,
+        registration,
+    )
+    color = _CAD_ONLY_LANDMARK_COLOR_BGR
+    for name in names:
+        point = projected[name]
+        if point is None:
+            continue
+        cv2.circle(frame, point, 7, color, -1, lineType=cv2.LINE_AA)
+        cv2.circle(frame, point, 7, (0, 0, 0), 1, lineType=cv2.LINE_AA)
+        label_origin = opencv_image_point((point[0] + 8, point[1] - 8))
+        if label_origin is not None:
+            cv2.putText(
+                frame,
+                name,
+                label_origin,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (0, 0, 0),
+                3,
+                cv2.LINE_AA,
+            )
+            cv2.putText(
+                frame,
+                name,
+                label_origin,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                color,
+                1,
+                cv2.LINE_AA,
+            )
 
 
 def project_camera_points(

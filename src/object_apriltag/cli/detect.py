@@ -282,7 +282,10 @@ def main() -> None:
     )
     cad_model = None
     cad_registration = None
+    cad_landmarks = None
+    cad_object_model_landmark_names = None
     draw_cad_model_overlay = None
+    draw_cad_only_landmarks = None
     render_cad_model_view = None
     if needs_cad:
         from object_apriltag.cad import (
@@ -298,9 +301,10 @@ def main() -> None:
             from object_apriltag.evaluation.cad_geometry import fit_cad_registration
 
             _, object_model_document = load_object_model_document(args.object_model)
+            cad_landmarks = load_cad_landmarks(args.cad_model)
             try:
                 cad_registration = fit_cad_registration(
-                    load_cad_landmarks(args.cad_model),
+                    cad_landmarks,
                     object_model_document,
                     marker_model,
                 )
@@ -310,9 +314,24 @@ def main() -> None:
                     f"{args.object_model}: {error}"
                 ) from error
         if args.overlay_cad_model:
-            from object_apriltag.viz.cad_overlay import draw_cad_model_overlay as _draw_cad_overlay
+            from object_apriltag.viz.cad_overlay import (
+                draw_cad_model_overlay as _draw_cad_overlay,
+            )
 
             draw_cad_model_overlay = _draw_cad_overlay
+            if args.object_model is not None:
+                from object_apriltag.viz.cad_overlay import (
+                    draw_cad_only_landmarks as _draw_cad_only_landmarks,
+                    object_model_landmark_names,
+                )
+
+                if cad_landmarks is None:
+                    cad_landmarks = load_cad_landmarks(args.cad_model)
+                _, cad_object_model_document = load_object_model_document(args.object_model)
+                cad_object_model_landmark_names = object_model_landmark_names(
+                    cad_object_model_document
+                )
+                draw_cad_only_landmarks = _draw_cad_only_landmarks
         if args.side2side_cad_model:
             from object_apriltag.viz.cad_overlay import render_cad_model_view as _render_cad_view
 
@@ -416,6 +435,21 @@ def main() -> None:
                         cad_model,
                         cad_registration,
                     )
+                    if (
+                        draw_cad_only_landmarks is not None
+                        and cad_landmarks is not None
+                        and cad_object_model_landmark_names is not None
+                    ):
+                        draw_cad_only_landmarks(
+                            preview_frame,
+                            pose,
+                            camera_matrix,
+                            dist_coeffs,
+                            marker_model,
+                            cad_landmarks,
+                            cad_registration,
+                            cad_object_model_landmark_names,
+                        )
 
         layout_reproj = (
             layout_reprojection_errors(

@@ -120,6 +120,8 @@ uv run object-detect \
 | `--cad-model`           | GLB path; required with either CAD flag. Uses sibling `cad_registration.json`, or auto-fits from `--object-model` when absent |
 
 
+
+
 ## Core API
 
 ```python
@@ -192,13 +194,13 @@ Point the command at a Calibration Workspace `config.json`. Video and camera-int
 
 ```bash
 uv run object-calibrate-marker-model \
-  --config config/Model/playground/setup1/calibration_01/config.json \
+  --config config/Model/playground/setup3/calibration_01/config.json \
   --force
 ```
 
 `--force` overwrites existing sibling outputs. Without it, the command refuses when any generated artifact already exists.
 
-**Calibration Recipe (`config_version: 1`)** — strict JSON; unknown or missing fields are rejected:
+**Calibration Recipe (**`config_version: 1`**)** — strict JSON; unknown or missing fields are rejected:
 
 - `inputs` — `source` (video path) and `intrinsics` (camera JSON path), both resolved from the config directory.
 - `detector` — `dictionary` and `sensitivity` (`default`, `relaxed`, or `aggressive`).
@@ -286,7 +288,7 @@ for setup in setup1 setup3; do
 done
 ```
 
-**Manifest (`manifest_version: 1`):** declares shared `cad_model`, `object_model`, `intrinsics`, `detector`, `held_out_videos` (each must set `held_out: true`), and `candidates` with `{name, marker_model, capture_session, solver_variant, calibration_source}`. Relative paths resolve from the repository root (parent of `config/`). Comparable candidates must share the same marker IDs and object-model landmark coverage.
+**Manifest (**`manifest_version: 1`**):** declares shared `cad_model`, `object_model`, `intrinsics`, `detector`, `held_out_videos` (each must set `held_out: true`), and `candidates` with `{name, marker_model, capture_session, solver_variant, calibration_source}`. Relative paths resolve from the repository root (parent of `config/`). Comparable candidates must share the same marker IDs and object-model landmark coverage.
 
 **Held-out declaration:** the manifest states which videos were excluded from calibration. The tool preserves that declaration in the report but cannot independently verify it.
 
@@ -307,6 +309,8 @@ uv run object-inspect-marker-model \
   --visualize
 ```
 
+
+
 ## Optional visualization
 
 The `viz` extra adds overlays, skeleton keypoints, and matplotlib plots:
@@ -322,6 +326,8 @@ uv run object-detect \
   --plot-graph \
   --object-model config/Model/remote/object_model.json
 ```
+
+
 
 ## Development
 
@@ -394,3 +400,5 @@ Live camera and video file CLIs use `--source`: pass a camera device index (e.g.
 | `object-inspect-marker-model`       | `--marker-model` / `--visualize` | Print or diagram an existing marker model                                                     |
 | `object-evaluate-marker-model`      | `--manifest`                     | Versioned evaluation manifest JSON                                                            |
 | `object-evaluate-marker-model`      | `--output`                       | Versioned evaluation report JSON                                                              |
+
+
