@@ -1,25 +1,31 @@
-"""Tests for eraser-plane tag erasure."""
+"""Tests for eraser-plane tag erasure and annotation-tool CLI."""
 
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import cv2
 import numpy as np
 
 from object_apriltag.eraser import (
-    clip_polygon_to_rect,
-    eraser_offset_to_model_point,
     EraserPlane,
+    clip_polygon_to_rect,
+    erase_with_mask,
+    erase_with_planes,
+    eraser_offset_to_model_point,
     load_eraser_model,
     plane_from_dict,
     project_eraser_plane,
     project_eraser_planes,
 )
-from object_apriltag.cli.annotation_tool import erase_with_mask, erase_with_planes
-from object_apriltag.calibration import DEFAULT_MARKER_MODEL_PATH
 from object_apriltag.layout import load_marker_model
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+TEST_MARKER_MODEL = REPO_ROOT / "config/Model/remote/marker_model.json"
 
 REMOTE1_ERASER_MODEL_PATH = (
     Path(__file__).resolve().parents[1] / "config/Model/remote1/eraser_model.json"
@@ -28,7 +34,9 @@ REMOTE1_ERASER_MODEL_PATH = (
 
 class EraserOffsetTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.marker_model = load_marker_model(DEFAULT_MARKER_MODEL_PATH)
+        if not TEST_MARKER_MODEL.exists():
+            self.skipTest("remote marker model fixture is not available")
+        self.marker_model = load_marker_model(TEST_MARKER_MODEL)
 
     def test_offset_maps_to_reference_marker_center(self) -> None:
         point = eraser_offset_to_model_point(np.array([0.01, -0.02, 0.0]), self.marker_model)
@@ -94,7 +102,9 @@ class ClipPolygonToRectTests(unittest.TestCase):
 
 class ProjectEraserPlaneTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.marker_model = load_marker_model(DEFAULT_MARKER_MODEL_PATH)
+        if not TEST_MARKER_MODEL.exists():
+            self.skipTest("remote marker model fixture is not available")
+        self.marker_model = load_marker_model(TEST_MARKER_MODEL)
         self.camera_matrix = np.array(
             [[900.0, 0.0, 320.0], [0.0, 900.0, 240.0], [0.0, 0.0, 1.0]],
             dtype=np.float64,
@@ -183,11 +193,16 @@ class ProjectEraserPlaneTests(unittest.TestCase):
 
 class LoadEraserModelTests(unittest.TestCase):
     def test_loads_default_eraser_model(self) -> None:
-        model = load_eraser_model("config/Model/object_01/eraser_model.json")
+        eraser_path = REPO_ROOT / "config/Model/remote/eraser_model.json"
+        if not eraser_path.exists():
+            self.skipTest("remote eraser model fixture is not available")
+        model = load_eraser_model(eraser_path)
         self.assertEqual(model.origin, "reference_marker_center")
         self.assertGreater(len(model.planes), 0)
 
     def test_remote1_loads_plane_id_names(self) -> None:
+        if not REMOTE1_ERASER_MODEL_PATH.exists():
+            self.skipTest("remote1 eraser model fixture is not available")
         model = load_eraser_model(REMOTE1_ERASER_MODEL_PATH)
         self.assertEqual(
             [plane.plane_id for plane in model.planes],
@@ -222,8 +237,13 @@ class LoadEraserModelTests(unittest.TestCase):
         self.assertEqual(plane.plane_id, "legacy")
 
     def test_projects_all_planes_from_model(self) -> None:
-        marker_model = load_marker_model(DEFAULT_MARKER_MODEL_PATH)
-        model = load_eraser_model("config/Model/object_01/eraser_model.json")
+        if not TEST_MARKER_MODEL.exists():
+            self.skipTest("remote marker model fixture is not available")
+        eraser_path = REPO_ROOT / "config/Model/remote/eraser_model.json"
+        if not eraser_path.exists():
+            self.skipTest("remote eraser model fixture is not available")
+        marker_model = load_marker_model(TEST_MARKER_MODEL)
+        model = load_eraser_model(eraser_path)
         camera_matrix = np.array(
             [[900.0, 0.0, 320.0], [0.0, 900.0, 240.0], [0.0, 0.0, 1.0]],
             dtype=np.float64,
@@ -244,6 +264,185 @@ class LoadEraserModelTests(unittest.TestCase):
         )
 
         self.assertEqual(len(polygons), len(model.planes))
+
+
+class AnnotationToolCliTests(unittest.TestCase):
+    def test_requires_object_model_when_registration_is_missing(self) -> None:
+        if not TEST_MARKER_MODEL.exists():
+            self.skipTest("remote marker model fixture is not available")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            calibration = root / "intrinsic.json"
+            calibration.write_text(
+                json.dumps(
+                    {
+                        "camera_matrix": [[900, 0, 320], [0, 900, 240], [0, 0, 1]],
+                        "dist_coeffs": [[0], [0], [0], [0], [0]],
+                        "image_width": 640,
+                        "image_height": 480,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            marker_model = root / "marker_model.json"
+            marker_model.write_text(
+                TEST_MARKER_MODEL.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            cad_model = root / "model.glb"
+            cad_model.write_bytes(b"placeholder")
+            argv = [
+                "annotation-tool",
+                "--source",
+                "0",
+                "--calibration",
+                str(calibration),
+                "--marker-model",
+                str(marker_model),
+                "--cad-model",
+                str(cad_model),
+                "--output",
+                str(root / "dataset"),
+                "--split",
+                "train",
+                "--run-name",
+                "cli_run",
+                "--sample-rate-hz",
+                "1",
+                "--dictionary",
+                "36h11",
+                "--detection-sensitivity",
+                "relaxed",
+            ]
+            with mock.patch("sys.argv", argv):
+                from object_apriltag.cli import annotation_tool
+
+                with self.assertRaisesRegex(RuntimeError, "cad_registration.json"):
+                    annotation_tool.main()
+
+    def test_fits_registration_when_object_model_is_provided(self) -> None:
+        if not TEST_MARKER_MODEL.exists():
+            self.skipTest("remote marker model fixture is not available")
+        nodes = []
+        for index, name in enumerate(
+            (
+                "back-center",
+                "back-left-center",
+                "back-right-center",
+                "front-center",
+                "front-left-center",
+                "front-right-center",
+                "left-center",
+                "right-center",
+                "top-back-center",
+                "top-back-left",
+                "top-back-right",
+                "top-center",
+                "top-front-center",
+                "top-front-left",
+                "top-front-right",
+                "top-left-center",
+                "top-right-center",
+            )
+        ):
+            nodes.append({"name": name, "translation": [0.01 * index, 0.0, 0.0]})
+        gltf = {
+            "asset": {"version": "2.0"},
+            "nodes": nodes,
+            "scenes": [{"nodes": list(range(len(nodes)))}],
+        }
+        json_chunk = json.dumps(gltf, separators=(",", ":")).encode("utf-8")
+        json_padding = (4 - (len(json_chunk) % 4)) % 4
+        json_chunk += b" " * json_padding
+        header = b"glTF" + (2).to_bytes(4, "little") + (12 + 8 + len(json_chunk) + 8).to_bytes(4, "little")
+        json_header = len(json_chunk).to_bytes(4, "little") + b"JSON"
+        bin_header = (0).to_bytes(4, "little") + b"BIN\x00"
+        glb_bytes = header + json_header + json_chunk + bin_header
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            calibration = root / "intrinsic.json"
+            calibration.write_text(
+                json.dumps(
+                    {
+                        "camera_matrix": [[900, 0, 320], [0, 900, 240], [0, 0, 1]],
+                        "dist_coeffs": [[0], [0], [0], [0], [0]],
+                        "image_width": 640,
+                        "image_height": 480,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            marker_model = root / "marker_model.json"
+            marker_model.write_text(
+                TEST_MARKER_MODEL.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            object_model = root / "object_model.json"
+            object_model.write_text("{}", encoding="utf-8")
+            cad_model = root / "model.glb"
+            cad_model.write_bytes(glb_bytes)
+            (root / "clip.mov").write_bytes(b"\x00")
+            argv = [
+                "annotation-tool",
+                "--source",
+                str(root / "clip.mov"),
+                "--calibration",
+                str(calibration),
+                "--marker-model",
+                str(marker_model),
+                "--cad-model",
+                str(cad_model),
+                "--object-model",
+                str(object_model),
+                "--output",
+                str(root / "dataset"),
+                "--split",
+                "train",
+                "--run-name",
+                "cli_fit_run",
+                "--sample-rate-hz",
+                "1",
+                "--dictionary",
+                "36h11",
+                "--detection-sensitivity",
+                "relaxed",
+            ]
+            fitted_registration = mock.Mock(name="cad_registration")
+            with (
+                mock.patch("sys.argv", argv),
+                mock.patch(
+                    "object_apriltag.cli.annotation_tool.load_cad_model",
+                    return_value=mock.Mock(name="cad_model"),
+                ),
+                mock.patch(
+                    "object_apriltag.cli.annotation_tool.load_required_yolo_landmarks",
+                    return_value=mock.Mock(landmarks={"back-center": np.zeros(3)}),
+                ),
+                mock.patch(
+                    "object_apriltag.cli.annotation_tool.load_object_model_document",
+                    return_value=(mock.Mock(), {"keypoint_sources": {"back-center": {}}}),
+                ),
+                mock.patch(
+                    "object_apriltag.evaluation.cad_geometry.fit_cad_registration",
+                    return_value=fitted_registration,
+                ) as fit_mock,
+                mock.patch(
+                    "object_apriltag.cli.annotation_tool.generate_dataset_from_source",
+                    return_value=mock.Mock(
+                        frames_processed=0,
+                        samples_saved=0,
+                        rejections=mock.Mock(no_pose=0, landmarks=0, bbox=0),
+                    ),
+                ) as generate_mock,
+            ):
+                from object_apriltag.cli import annotation_tool
+
+                annotation_tool.main()
+
+            fit_mock.assert_called_once()
+            generate_mock.assert_called_once()
+            self.assertIs(generate_mock.call_args.kwargs["registration"], fitted_registration)
 
 
 if __name__ == "__main__":

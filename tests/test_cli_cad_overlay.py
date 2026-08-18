@@ -14,8 +14,10 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CALIBRATION = REPO_ROOT / "config/Camera/nexplaygroundcam/intrinsics.json"
-MARKER_MODEL = REPO_ROOT / "config/Model/remote_static_1_tag/marker_model.json"
-OBJECT_MODEL = REPO_ROOT / "config/Model/remote_static_1_tag/object_model.json"
+MARKER_MODEL = REPO_ROOT / "config/Model/remote/marker_model.json"
+OBJECT_MODEL = REPO_ROOT / "config/Model/remote/object_model.json"
+REMOTE_MARKER_MODEL = MARKER_MODEL
+REMOTE_OBJECT_MODEL = OBJECT_MODEL
 
 
 def _run_cli_help(command: str) -> str:
@@ -52,6 +54,23 @@ def _write_cad_assets(directory: Path) -> tuple[Path, Path]:
     registration = directory / "cad_registration.json"
     registration.write_text(json.dumps({"version": 1}), encoding="utf-8")
     return cad_model, registration
+
+
+def _remote_detect_argv(*extra: str) -> list[str]:
+    return [
+        "object-detect",
+        "--source",
+        "0",
+        "--calibration",
+        str(CALIBRATION),
+        "--marker-model",
+        str(REMOTE_MARKER_MODEL),
+        "--dictionary",
+        "36h11",
+        "--detection-sensitivity",
+        "relaxed",
+        *extra,
+    ]
 
 
 class CliCadOverlayHelpTests(unittest.TestCase):
@@ -114,7 +133,15 @@ class CliCadOverlayContractTests(unittest.TestCase):
             cad_geometry_module = mock.Mock(
                 fit_cad_registration=mock.Mock(return_value=fitted_registration)
             )
-            cad_overlay_module = mock.Mock(draw_cad_model_overlay=mock.Mock())
+            draw_cad_only_landmarks = mock.Mock()
+            cad_overlay_module = mock.Mock(
+                draw_cad_model_overlay=mock.Mock(),
+                draw_cad_only_landmarks=draw_cad_only_landmarks,
+                object_model_landmark_names=mock.Mock(return_value=frozenset()),
+            )
+            load_object_model_document = mock.Mock(
+                return_value=(mock.Mock(), {"keypoint_sources": {}}),
+            )
             argv = [
                 "object-detect",
                 "--source",
@@ -164,7 +191,7 @@ class CliCadOverlayContractTests(unittest.TestCase):
                 ),
                 mock.patch(
                     "object_apriltag.cli.detect.load_object_model_document",
-                    return_value=(mock.Mock(), {"keypoint_sources": {}}),
+                    load_object_model_document,
                 ),
                 mock.patch(
                     "object_apriltag.cli.detect.open_frame_source",
@@ -181,6 +208,118 @@ class CliCadOverlayContractTests(unittest.TestCase):
             {"keypoint_sources": {}},
             marker_layout,
         )
+        load_object_model_document.assert_called_once_with(object_model_path)
+
+    def test_object_model_document_loaded_once_for_in_memory_fit_and_cad_only_overlay(
+        self,
+    ) -> None:
+        from object_apriltag.cli.detect import main as detect_main
+        from object_apriltag.viz import cad_overlay as real_cad_overlay
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            directory = Path(tmp_dir)
+            calibration = directory / "intrinsics.json"
+            marker_model_path = directory / "marker_model.json"
+            object_model_path = directory / "object_model.json"
+            cad_model_path = directory / "model.glb"
+            for path in (
+                calibration,
+                marker_model_path,
+                object_model_path,
+                cad_model_path,
+            ):
+                path.write_bytes(b"fixture")
+
+            marker_layout = mock.Mock(name="marker_layout", marker_ids={0, 1, 2})
+            detector = mock.Mock(marker_model=marker_layout, marker_size_m=0.07)
+            fitted_registration = mock.Mock(name="fitted_registration")
+            cad_landmarks = mock.Mock(name="cad_landmarks")
+            cad_module = mock.Mock(
+                load_cad_model=mock.Mock(return_value=mock.Mock(name="cad_model")),
+                load_cad_landmarks=mock.Mock(return_value=cad_landmarks),
+                load_cad_registration=mock.Mock(),
+            )
+            cad_geometry_module = mock.Mock(
+                fit_cad_registration=mock.Mock(return_value=fitted_registration)
+            )
+            cad_overlay_module = mock.Mock(
+                draw_cad_model_overlay=mock.Mock(),
+                draw_cad_only_landmarks=mock.Mock(),
+                object_model_landmark_names=real_cad_overlay.object_model_landmark_names,
+            )
+            object_model_document = {
+                "keypoint_sources": {"shared": {}},
+                "keypoints": {"shared": [0.0, 0.0, 0.0]},
+            }
+            load_object_model_document = mock.Mock(
+                return_value=(mock.Mock(), object_model_document),
+            )
+            argv = [
+                "object-detect",
+                "--source",
+                "0",
+                "--calibration",
+                str(calibration),
+                "--marker-model",
+                str(marker_model_path),
+                "--dictionary",
+                "36h11",
+                "--detection-sensitivity",
+                "relaxed",
+                "--object-model",
+                str(object_model_path),
+                "--overlay-cad-model",
+                "--cad-model",
+                str(cad_model_path),
+            ]
+
+            with (
+                mock.patch.dict(
+                    sys.modules,
+                    {
+                        "object_apriltag.cad": cad_module,
+                        "object_apriltag.evaluation.cad_geometry": cad_geometry_module,
+                        "object_apriltag.viz.cad_overlay": cad_overlay_module,
+                    },
+                ),
+                mock.patch("sys.argv", argv),
+                mock.patch(
+                    "object_apriltag.cli.detect.load_intrinsics",
+                    return_value=(
+                        np.eye(3),
+                        np.zeros(5),
+                        640,
+                        480,
+                        "test",
+                    ),
+                ),
+                mock.patch(
+                    "object_apriltag.cli.detect.require_calibration_image_size",
+                    return_value=(640, 480),
+                ),
+                mock.patch(
+                    "object_apriltag.cli.detect.ObjectDetector",
+                    return_value=detector,
+                ),
+                mock.patch(
+                    "object_apriltag.cli.detect.load_object_model_document",
+                    load_object_model_document,
+                ),
+                mock.patch(
+                    "object_apriltag.cli.detect.open_frame_source",
+                    side_effect=RuntimeError("stop-after-startup"),
+                ),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "stop-after-startup"):
+                    detect_main()
+
+        load_object_model_document.assert_called_once_with(object_model_path)
+        cad_geometry_module.fit_cad_registration.assert_called_once_with(
+            cad_landmarks,
+            object_model_document,
+            marker_layout,
+        )
+        cad_overlay_module.draw_cad_only_landmarks.assert_not_called()
 
     def test_cad_overlay_is_allowed_with_pose_projection_overlay(self) -> None:
         from object_apriltag.cli.detect import main as detect_main
@@ -630,6 +769,166 @@ class CliSide2SideCadModelTests(unittest.TestCase):
 
         render_cad_model_view.assert_called_once()
         cad_overlay_module.draw_cad_model_overlay.assert_not_called()
+
+
+class CliCadOnlyLandmarkOverlayTests(unittest.TestCase):
+    def test_overlay_draws_cad_only_landmarks_when_object_model_supplied(self) -> None:
+        if not REMOTE_MARKER_MODEL.exists() or not REMOTE_OBJECT_MODEL.exists():
+            self.skipTest("remote model fixtures are not available")
+        from object_apriltag.cli.detect import main as detect_main
+        from object_apriltag.viz import cad_overlay as real_cad_overlay
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cad_model, _ = _write_cad_assets(Path(tmp_dir))
+            argv = _remote_detect_argv(
+                "--overlay-cad-model",
+                "--cad-model",
+                str(cad_model),
+                "--object-model",
+                str(REMOTE_OBJECT_MODEL),
+            )
+            fake_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+            fake_pose = mock.Mock(name="pose", rotation=mock.Mock(), origin=mock.Mock())
+            loaded_cad = mock.Mock(name="cad_model")
+            loaded_registration = mock.Mock(name="cad_registration")
+            loaded_landmarks = mock.Mock(name="cad_landmarks")
+            draw_cad_model_overlay = mock.Mock()
+            draw_cad_only_landmarks = mock.Mock()
+            cad_module = mock.Mock(
+                load_cad_model=mock.Mock(return_value=loaded_cad),
+                load_cad_registration=mock.Mock(return_value=loaded_registration),
+                load_cad_landmarks=mock.Mock(return_value=loaded_landmarks),
+            )
+            cad_overlay_module = mock.Mock(
+                draw_cad_model_overlay=draw_cad_model_overlay,
+                draw_cad_only_landmarks=draw_cad_only_landmarks,
+                object_model_landmark_names=real_cad_overlay.object_model_landmark_names,
+            )
+
+            with mock.patch.dict(
+                sys.modules,
+                {
+                    "object_apriltag.cad": cad_module,
+                    "object_apriltag.viz.cad_overlay": cad_overlay_module,
+                },
+            ):
+                with mock.patch("sys.argv", argv):
+                    with mock.patch(
+                        "object_apriltag.cli.detect.open_frame_source",
+                        return_value=mock.Mock(),
+                    ):
+                        with mock.patch(
+                            "object_apriltag.cli.detect.read_frame",
+                            side_effect=[(True, fake_frame), (False, None)],
+                        ):
+                            with mock.patch(
+                                "object_apriltag.cli.detect.ObjectDetector"
+                            ) as detector_cls:
+                                detector = detector_cls.return_value
+                                detector.marker_model = mock.Mock(
+                                    marker_ids=[1],
+                                    reference_marker_id=1,
+                                )
+                                detector.marker_size_m = 0.05
+                                detector.find_markers.return_value = []
+                                detector.fuse.return_value = fake_pose
+                                with mock.patch(
+                                    "object_apriltag.cli.detect.reference_marker_camera_position",
+                                    return_value=None,
+                                ):
+                                    with mock.patch(
+                                        "object_apriltag.cli.detect.layout_reprojection_errors",
+                                        return_value=(0.1, 0.2),
+                                    ):
+                                        with mock.patch("object_apriltag.cli.detect.cv2.imshow"):
+                                            with mock.patch(
+                                                "object_apriltag.cli.detect.cv2.waitKey",
+                                                return_value=ord("q"),
+                                            ):
+                                                detect_main()
+
+        cad_module.load_cad_landmarks.assert_called_once_with(cad_model)
+        draw_cad_model_overlay.assert_called_once()
+        draw_cad_only_landmarks.assert_called_once()
+        draw_args, draw_kwargs = draw_cad_only_landmarks.call_args
+        self.assertEqual(draw_args[0].shape, fake_frame.shape)
+        self.assertIs(draw_args[1], fake_pose)
+        self.assertIs(draw_args[5], loaded_landmarks)
+        self.assertIs(draw_args[6], loaded_registration)
+        self.assertIsInstance(draw_args[7], frozenset)
+        self.assertTrue(draw_args[7])
+
+    def test_overlay_skips_cad_only_landmarks_without_object_model(self) -> None:
+        if not REMOTE_MARKER_MODEL.exists():
+            self.skipTest("remote marker model fixture is not available")
+        from object_apriltag.cli.detect import main as detect_main
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cad_model, _ = _write_cad_assets(Path(tmp_dir))
+            argv = _remote_detect_argv(
+                "--overlay-cad-model",
+                "--cad-model",
+                str(cad_model),
+            )
+            fake_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+            fake_pose = mock.Mock(name="pose", rotation=mock.Mock(), origin=mock.Mock())
+            draw_cad_model_overlay = mock.Mock()
+            draw_cad_only_landmarks = mock.Mock()
+            cad_module = mock.Mock(
+                load_cad_model=mock.Mock(return_value=mock.Mock(name="cad_model")),
+                load_cad_registration=mock.Mock(return_value=mock.Mock(name="cad_registration")),
+                load_cad_landmarks=mock.Mock(),
+            )
+            cad_overlay_module = mock.Mock(
+                draw_cad_model_overlay=draw_cad_model_overlay,
+                draw_cad_only_landmarks=draw_cad_only_landmarks,
+            )
+
+            with mock.patch.dict(
+                sys.modules,
+                {
+                    "object_apriltag.cad": cad_module,
+                    "object_apriltag.viz.cad_overlay": cad_overlay_module,
+                },
+            ):
+                with mock.patch("sys.argv", argv):
+                    with mock.patch(
+                        "object_apriltag.cli.detect.open_frame_source",
+                        return_value=mock.Mock(),
+                    ):
+                        with mock.patch(
+                            "object_apriltag.cli.detect.read_frame",
+                            side_effect=[(True, fake_frame), (False, None)],
+                        ):
+                            with mock.patch(
+                                "object_apriltag.cli.detect.ObjectDetector"
+                            ) as detector_cls:
+                                detector = detector_cls.return_value
+                                detector.marker_model = mock.Mock(
+                                    marker_ids=[1],
+                                    reference_marker_id=1,
+                                )
+                                detector.marker_size_m = 0.05
+                                detector.find_markers.return_value = []
+                                detector.fuse.return_value = fake_pose
+                                with mock.patch(
+                                    "object_apriltag.cli.detect.reference_marker_camera_position",
+                                    return_value=None,
+                                ):
+                                    with mock.patch(
+                                        "object_apriltag.cli.detect.layout_reprojection_errors",
+                                        return_value=(0.1, 0.2),
+                                    ):
+                                        with mock.patch("object_apriltag.cli.detect.cv2.imshow"):
+                                            with mock.patch(
+                                                "object_apriltag.cli.detect.cv2.waitKey",
+                                                return_value=ord("q"),
+                                            ):
+                                                detect_main()
+
+        cad_module.load_cad_landmarks.assert_not_called()
+        draw_cad_model_overlay.assert_called_once()
+        draw_cad_only_landmarks.assert_not_called()
 
 
 if __name__ == "__main__":

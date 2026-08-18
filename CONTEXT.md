@@ -127,3 +127,23 @@ _Avoid_: reprojection error, in-sample residual
 **Evaluation Candidate**:
 One marker-model layout under test, declared in an evaluation manifest with `name`, `marker_model`, `capture_session`, `solver_variant`, and calibration-source provenance.
 _Avoid_: calibration run, layout variant
+
+**Training Dataset**:
+Root directory of YOLO pose images, labels, `data.yaml`, and per-run provenance under `runs/`.
+_Avoid_: dataset folder, export directory
+
+**Dataset Generation Run**:
+One invocation of `annotation-tool` that appends Training Samples for a single Dataset Split using a unique `--run-name`.
+_Avoid_: capture session, labeling batch
+
+**Dataset Split**:
+Either `train` or `val`. Each Dataset Generation Run belongs wholly to one split; there is no random per-frame split.
+_Avoid_: fold, shard
+
+**Training Sample**:
+One raw full-resolution JPEG and matching YOLO pose label row emitted for an Accepted Frame.
+_Avoid_: annotation, labeled frame
+
+**Accepted Frame**:
+A source frame with a Fused Object Pose from `ObjectDetector.fuse()` whose fixed 17 CAD landmarks and CAD mesh silhouette bounding box all project validly into the image.
+_Avoid_: valid frame, kept frame

@@ -17,7 +17,8 @@ from object_apriltag.layout import (
 )
 from object_apriltag.viz.projection import opencv_image_point
 
-_CAMERA_NEAR_M = 1e-4
+CAMERA_NEAR_M = 1e-4
+_CAMERA_NEAR_M = CAMERA_NEAR_M
 _CAD_ONLY_LANDMARK_COLOR_BGR = (0, 165, 255)
 
 _PART_COLORS_BGR: tuple[tuple[int, int, int], ...] = (
@@ -258,6 +259,62 @@ def project_camera_points(
         dist_coeffs,
     )
     return projected.reshape(-1, 2)
+
+
+def project_cad_mesh_silhouette_bounds(
+    pose: ObjectPose,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+    marker_model: MarkerLayout,
+    cad_model: CadModel,
+    registration: CadRegistration,
+    *,
+    image_width: int,
+    image_height: int,
+) -> tuple[float, float, float, float] | None:
+    """Return clipped axis-aligned bounds of the projected CAD mesh silhouette.
+
+    Args:
+        pose: Fused object pose in the camera frame.
+        camera_matrix: Camera intrinsic matrix.
+        dist_coeffs: Distortion coefficients.
+        marker_model: Marker layout defining the object reference frame.
+        cad_model: CAD mesh model to project.
+        registration: CAD-to-marker_model registration transform.
+        image_width: Image width in pixels.
+        image_height: Image height in pixels.
+
+    Returns:
+        ``(x_min, y_min, x_max, y_max)`` pixel bounds, or ``None`` when no
+        front-facing silhouette projects into the image.
+    """
+    parts = _collect_visible_parts(
+        pose=pose,
+        camera_matrix=camera_matrix,
+        dist_coeffs=dist_coeffs,
+        marker_model=marker_model,
+        cad_model=cad_model,
+        registration=registration,
+        color_mode="material",
+    )
+    if not parts:
+        return None
+
+    xs: list[float] = []
+    ys: list[float] = []
+    for _, _, image_triangles in parts:
+        xs.extend(image_triangles[:, :, 0].ravel().tolist())
+        ys.extend(image_triangles[:, :, 1].ravel().tolist())
+    if not xs or not ys:
+        return None
+
+    x_min = max(0.0, min(xs))
+    x_max = min(float(image_width), max(xs))
+    y_min = max(0.0, min(ys))
+    y_max = min(float(image_height), max(ys))
+    if x_max <= x_min or y_max <= y_min:
+        return None
+    return x_min, y_min, x_max, y_max
 
 
 def render_cad_model_view(

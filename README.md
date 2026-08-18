@@ -119,8 +119,37 @@ uv run object-detect \
 | `--side2side-cad-model` | Side-by-side opaque CAD pane (requires `--preview` and `--cad-model`)                                                         |
 | `--cad-model`           | GLB path; required with either CAD flag. Uses sibling `cad_registration.json`, or auto-fits from `--object-model` when absent |
 
+### Training-data label contract
 
+The fixed 17-keypoint GLB landmark order, YOLO pose row layout, and `data.yaml`
+configuration for generating `nexplayground` training data are documented in
+[`docs/training-data.md`](docs/training-data.md).
 
+## 3. Generate YOLO pose training data
+
+`annotation-tool` replaces the legacy Background Plate eraser workflow. It writes
+Training Samples for one Dataset Split per run: raw JPEG/label pairs, root
+`data.yaml`, and `runs/<run-name>.json` provenance.
+
+```bash
+uv run annotation-tool \
+  --source data/playground/setup3/test_01.mov \
+  --calibration config/Camera/logi_hd_1080p/intrinsic.json \
+  --marker-model config/Model/playground/setup3/calibration_01/marker_model.json \
+  --cad-model config/Model/CAD/nexplayground_sim.glb \
+  --output data/yolo/nexplayground \
+  --split train \
+  --run-name setup3_test01 \
+  --sample-rate-hz 2 \
+  --dictionary 36h11 \
+  --detection-sensitivity relaxed \
+  --labeled-images 5
+```
+
+Video sources run headlessly to EOF. Live camera shows a preview and stops on **q**.
+Add `--labeled-images N` to write annotated previews for the first `N` saved samples
+under `labeled-images/<split>/`. See [`docs/training-data.md`](docs/training-data.md)
+for acceptance rules, output layout, and the fixed 17-landmark contract.
 
 ## Core API
 
@@ -350,7 +379,7 @@ src/object_apriltag/
   layout.py            # marker model JSON + transforms
   calibration.py       # intrinsics loader + config profile paths
   viz/                 # optional overlays and plots
-  cli/                 # object-detect, object-charuco, object-calibrate-marker-model, object-inspect-marker-model, object-evaluate-marker-model
+  cli/                 # object-detect, annotation-tool, object-charuco, object-calibrate-marker-model, object-inspect-marker-model, object-evaluate-marker-model
 config/
   evaluation/
     playground/
@@ -395,6 +424,12 @@ Live camera and video file CLIs use `--source`: pass a camera device index (e.g.
 | `object-detect`                     | `--side2side-cad-model`          | Side-by-side opaque CAD pane (`--preview` required)                                           |
 | `object-detect`                     | `--cad-model`                    | GLB path; loads sibling `cad_registration.json` or auto-fits from `--object-model`            |
 | `object-detect` / `annotation-tool` | `--source`                       | Camera device index (e.g. `0`) or path to a video file                                        |
+| `annotation-tool`                   | `--output`                       | Training Dataset root (`images/`, `labels/`, `data.yaml`, `runs/`)                            |
+| `annotation-tool`                   | `--split`                        | Dataset Split for the whole run: `train` or `val`                                             |
+| `annotation-tool`                   | `--run-name`                     | Unique Dataset Generation Run name                                                            |
+| `annotation-tool`                   | `--sample-rate-hz`               | Save the first Accepted Frame after this interval since the previous save                     |
+| `annotation-tool`                   | `--labeled-images`               | Annotated JPEG previews for the first N saved samples under `labeled-images/<split>/`       |
+| `annotation-tool`                   | `--cad-model`                    | GLB path; loads sibling `cad_registration.json` or auto-fits from `--object-model`            |
 | `object-calibrate-marker-model`     | `--config`                       | Calibration Workspace `config.json`                                                           |
 | `object-calibrate-marker-model`     | `--force`                        | Overwrite existing workspace `marker_model.json`, `object_model.json`, and `diagnostics.json` |
 | `object-inspect-marker-model`       | `--marker-model` / `--visualize` | Print or diagram an existing marker model                                                     |

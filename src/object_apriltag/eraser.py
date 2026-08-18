@@ -324,3 +324,52 @@ def project_eraser_planes(
         if polygon is not None:
             polygons.append(polygon)
     return polygons
+
+
+def erase_with_mask(
+    frame: np.ndarray,
+    plate: np.ndarray,
+    mask: np.ndarray,
+) -> np.ndarray:
+    """Replace masked pixels in ``frame`` with values from ``plate``.
+
+    Args:
+        frame: Input BGR image.
+        plate: Background plate with the same shape as ``frame``.
+        mask: Single-channel mask; pixels with value > 0 are replaced.
+
+    Returns:
+        Copy of ``frame`` with masked pixels taken from ``plate``.
+
+    Raises:
+        ValueError: ``plate`` shape does not match ``frame``.
+    """
+    if plate.shape != frame.shape:
+        raise ValueError("Background plate must match the frame shape.")
+    output = frame.copy()
+    output[mask > 0] = plate[mask > 0]
+    return output
+
+
+def build_eraser_mask(
+    frame_shape: tuple[int, int],
+    polygons: list[np.ndarray],
+) -> np.ndarray:
+    """Rasterize projected eraser polygons into a binary mask."""
+    mask = np.zeros(frame_shape, dtype=np.uint8)
+    for polygon in polygons:
+        points = np.round(polygon).astype(np.int32).reshape(-1, 1, 2)
+        cv2.fillPoly(mask, [points], 255)
+    return mask
+
+
+def erase_with_planes(
+    frame: np.ndarray,
+    plate: np.ndarray,
+    polygons: list[np.ndarray],
+) -> np.ndarray:
+    """Erase projected eraser regions by compositing ``plate`` through a polygon mask."""
+    if not polygons:
+        return frame.copy()
+    mask = build_eraser_mask(frame.shape[:2], polygons)
+    return erase_with_mask(frame, plate, mask)

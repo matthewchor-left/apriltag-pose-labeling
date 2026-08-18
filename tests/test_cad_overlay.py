@@ -29,6 +29,7 @@ from object_apriltag.viz.cad_overlay import (
     object_model_landmark_names,
     part_color_bgr,
     project_cad_landmarks_to_image,
+    project_cad_mesh_silhouette_bounds,
     project_camera_points,
     render_cad_model_view,
 )
@@ -362,6 +363,97 @@ def load_cad_registration_from_payload(payload: dict[str, object]):
         return load_cad_registration(handle.name)
 
 
+class CadMeshSilhouetteBoundsTests(unittest.TestCase):
+    def _triangle_fixtures(
+        self,
+    ) -> tuple[object, object, object, ObjectPose, np.ndarray, np.ndarray]:
+        if not REMOTE_MARKER_MODEL.exists():
+            self.skipTest("remote marker model fixture is not available")
+        vertices = np.array(
+            [
+                [-0.08, -0.08, 0.0],
+                [0.08, -0.08, 0.0],
+                [-0.08, 0.08, 0.0],
+                [0.08, 0.08, 0.0],
+            ],
+            dtype=np.float32,
+        )
+        glb = build_triangle_glb(
+            vertices=vertices,
+            indices=np.array([0, 1, 2, 1, 3, 2], dtype=np.uint16),
+        )
+        with tempfile.NamedTemporaryFile(suffix=".glb") as handle:
+            handle.write(glb)
+            handle.flush()
+            cad_model = load_cad_model(handle.name)
+
+        marker_model = load_marker_model(REMOTE_MARKER_MODEL)
+        registration = load_cad_registration_from_payload(identity_registration_payload())
+        pose = ObjectPose(
+            origin=np.array([0.0, 0.0, 0.8], dtype=np.float64),
+            rotation=np.eye(3, dtype=np.float64),
+        )
+        camera_matrix, dist_coeffs = synthetic_camera()
+        return cad_model, marker_model, registration, pose, camera_matrix, dist_coeffs
+
+    def test_returns_clipped_bounds_for_visible_triangle(self) -> None:
+        cad_model, marker_model, registration, pose, camera_matrix, dist_coeffs = (
+            self._triangle_fixtures()
+        )
+
+        bounds = project_cad_mesh_silhouette_bounds(
+            pose,
+            camera_matrix,
+            dist_coeffs,
+            marker_model,
+            cad_model,
+            registration,
+            image_width=640,
+            image_height=480,
+        )
+
+        self.assertIsNotNone(bounds)
+        assert bounds is not None
+        x_min, y_min, x_max, y_max = bounds
+        self.assertLess(x_min, x_max)
+        self.assertLess(y_min, y_max)
+        self.assertGreaterEqual(x_min, 0.0)
+        self.assertGreaterEqual(y_min, 0.0)
+        self.assertLessEqual(x_max, 640.0)
+        self.assertLessEqual(y_max, 480.0)
+
+    def test_returns_none_when_no_geometry_is_visible(self) -> None:
+        cad_model, marker_model, registration, pose, camera_matrix, dist_coeffs = (
+            self._triangle_fixtures()
+        )
+        behind_camera = np.array(
+            [
+                [0.0, 0.0, -0.2],
+                [0.1, 0.0, -0.2],
+                [0.0, 0.1, -0.2],
+                [0.1, 0.1, -0.2],
+            ],
+            dtype=np.float64,
+        )
+
+        with mock.patch(
+            "object_apriltag.viz.cad_overlay.layout_points_to_camera",
+            return_value=behind_camera,
+        ):
+            bounds = project_cad_mesh_silhouette_bounds(
+                pose,
+                camera_matrix,
+                dist_coeffs,
+                marker_model,
+                cad_model,
+                registration,
+                image_width=640,
+                image_height=480,
+            )
+
+        self.assertIsNone(bounds)
+
+
 class CadOverlayRenderTests(unittest.TestCase):
     def test_overlay_draws_without_darkening_background(self) -> None:
         vertices = np.array(
@@ -565,6 +657,30 @@ class CadOnlyLandmarkOverlayTests(unittest.TestCase):
             ("cad_only_a", "cad_only_b"),
         )
 
+    def test_cad_only_landmark_names_treats_keypoints_only_names_as_object_model_members(
+        self,
+    ) -> None:
+        cad_landmarks = CadLandmarks(
+            landmarks={
+                "registered": np.array([0.0, 0.0, 0.0]),
+                "persisted_only": np.array([0.1, 0.0, 0.0]),
+                "cad_extra": np.array([0.0, 0.1, 0.0]),
+            }
+        )
+        object_names = object_model_landmark_names(
+            {
+                "keypoint_sources": {"registered": {}},
+                "keypoints": {
+                    "registered": [0.0, 0.0, 0.0],
+                    "persisted_only": [1.0, 0.0, 0.0],
+                },
+            }
+        )
+        self.assertEqual(
+            cad_only_landmark_names(cad_landmarks, object_names),
+            ("cad_extra",),
+        )
+
     def test_project_cad_landmarks_skips_points_behind_camera(self) -> None:
         if not REMOTE_MARKER_MODEL.exists():
             self.skipTest("remote marker model fixture is not available")
@@ -602,7 +718,7 @@ class CadOnlyLandmarkOverlayTests(unittest.TestCase):
         self.assertIsNotNone(projected["front"])
         self.assertIsNone(projected["behind"])
 
-    def test_project_cad_landmarks_returns_image_point_when_in_front_of_camera(self) -> None:
+    def test_project_cad_landmarks_projects_visible_landmark_through_full_chain(self) -> None:
         if not REMOTE_MARKER_MODEL.exists():
             self.skipTest("remote marker model fixture is not available")
         marker_model = load_marker_model(REMOTE_MARKER_MODEL)
@@ -612,22 +728,19 @@ class CadOnlyLandmarkOverlayTests(unittest.TestCase):
             rotation=np.eye(3, dtype=np.float64),
         )
         camera_matrix, dist_coeffs = synthetic_camera()
-        landmarks = {"visible": np.array([0.0, 0.0, 0.8], dtype=np.float64)}
-        with mock.patch(
-            "object_apriltag.viz.cad_overlay.layout_points_to_camera",
-            return_value=np.array([[0.0, 0.0, 0.5]], dtype=np.float64),
-        ):
-            projected = project_cad_landmarks_to_image(
-                landmarks,
-                ("visible",),
-                pose,
-                camera_matrix,
-                dist_coeffs,
-                marker_model,
-                registration,
-            )
+        landmarks = {"visible": np.array([0.01, -0.02, 0.03], dtype=np.float64)}
 
-        self.assertEqual(projected["visible"], (320, 240))
+        projected = project_cad_landmarks_to_image(
+            landmarks,
+            ("visible",),
+            pose,
+            camera_matrix,
+            dist_coeffs,
+            marker_model,
+            registration,
+        )
+
+        self.assertEqual(projected["visible"], (332, 263))
 
     def test_draw_cad_only_landmarks_uses_orange_for_cad_only_names(self) -> None:
         if not REMOTE_MARKER_MODEL.exists():

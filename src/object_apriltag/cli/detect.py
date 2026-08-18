@@ -295,17 +295,19 @@ def main() -> None:
         )
 
         cad_model = load_cad_model(args.cad_model)
+        cad_object_model_document = None
+        if args.object_model is not None:
+            _, cad_object_model_document = load_object_model_document(args.object_model)
         if cad_registration_path.exists():
             cad_registration = load_cad_registration(cad_registration_path)
         else:
             from object_apriltag.evaluation.cad_geometry import fit_cad_registration
 
-            _, object_model_document = load_object_model_document(args.object_model)
             cad_landmarks = load_cad_landmarks(args.cad_model)
             try:
                 cad_registration = fit_cad_registration(
                     cad_landmarks,
-                    object_model_document,
+                    cad_object_model_document,
                     marker_model,
                 )
             except ValueError as error:
@@ -319,7 +321,7 @@ def main() -> None:
             )
 
             draw_cad_model_overlay = _draw_cad_overlay
-            if args.object_model is not None:
+            if cad_object_model_document is not None:
                 from object_apriltag.viz.cad_overlay import (
                     draw_cad_only_landmarks as _draw_cad_only_landmarks,
                     object_model_landmark_names,
@@ -327,7 +329,6 @@ def main() -> None:
 
                 if cad_landmarks is None:
                     cad_landmarks = load_cad_landmarks(args.cad_model)
-                _, cad_object_model_document = load_object_model_document(args.object_model)
                 cad_object_model_landmark_names = object_model_landmark_names(
                     cad_object_model_document
                 )
